@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"alchat-backend/internal/database"
@@ -293,7 +294,17 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// Update database
+	// 1. Find existing user to get old avatar URL
+	var user models.User
+	err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		// Even if we fail to get the user, we should probably still try to update it,
+		// but we won't be able to delete the old avatar.
+		fmt.Printf("Warning: Failed to find user %s to get old avatar: %v\n", userID.Hex(), err)
+	}
+	oldAvatarURL := user.Avatar
+
+	// 2. Update database with new avatar URL
 	_, err = h.db.Users().UpdateOne(
 		ctx,
 		bson.M{"_id": userID},
@@ -302,6 +313,29 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user avatar in database"})
 		return
+	}
+
+	// 3. If update successful and old avatar exists, delete old avatar from OSS
+	if oldAvatarURL != "" && strings.Contains(oldAvatarURL, "aliyuncs.com") {
+		// Extract object key from URL
+		// Example URL: https://bucket-name.oss-cn-beijing.aliyuncs.com/avatars/123.jpg
+		// We need to extract: avatars/123.jpg
+
+		// Find the index after ".com/"
+		idx := strings.Index(oldAvatarURL, ".com/")
+		if idx != -1 {
+			objectKey := oldAvatarURL[idx+5:]
+
+			// Run deletion asynchronously so it doesn't block the response
+			go func(key string) {
+				delErr := h.ossService.DeleteFile(key)
+				if delErr != nil {
+					fmt.Printf("Failed to delete old avatar from OSS (key: %s): %v\n", key, delErr)
+				} else {
+					fmt.Printf("Successfully deleted old avatar from OSS: %s\n", key)
+				}
+			}(objectKey)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
