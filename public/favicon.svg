@@ -1,0 +1,24 @@
+<?xml version="1.0" standalone="no"?>
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" id="logo-svg" viewBox="0 0 300 300" width="240" height="240" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- 左上到右下的线性渐变：深车厘子色 -> 深粉色 -->
+        <linearGradient id="cherryPinkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#790604"/>
+            <stop offset="100%" stop-color="#D81B60"/>
+        </linearGradient>
+    </defs>
+    <g transform="translate(150, 150) scale(1.1)">
+        <!-- 外层：8个相交的圆形成扁平化花瓣图案，使用渐变色 -->
+        <g>
+            <circle cx="0" cy="-55" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="0" cy="55" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="-55" cy="0" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="55" cy="0" r="60" fill="url(#cherryPinkGradient)"/>
+            
+            <circle cx="-39" cy="-39" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="39" cy="-39" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="-39" cy="39" r="60" fill="url(#cherryPinkGradient)"/>
+            <circle cx="39" cy="39" r="60" fill="url(#cherryPinkGradient)"/>
+        </g>
+    </g>
+</svg>

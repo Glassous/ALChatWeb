@@ -4,7 +4,7 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="topbar-logo-container">
-        <img src="/AL_Chat_Horizontal_Logo.svg" alt="AL Chat Logo" className="topbar-logo" />
+        <h1 className="topbar-title">AL Chat</h1>
       </div>
     </header>
   );
