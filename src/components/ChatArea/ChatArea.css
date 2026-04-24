@@ -48,3 +48,100 @@
   line-height: 1.6;
   font-size: 16px;
 }
+
+/* Markdown Styles */
+.assistant-text p {
+  margin: 0 0 12px 0;
+}
+
+.assistant-text p:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-text h1,
+.assistant-text h2,
+.assistant-text h3,
+.assistant-text h4,
+.assistant-text h5,
+.assistant-text h6 {
+  margin: 24px 0 12px 0;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.assistant-text h1 { font-size: 1.8em; }
+.assistant-text h2 { font-size: 1.5em; }
+.assistant-text h3 { font-size: 1.3em; }
+
+.assistant-text ul,
+.assistant-text ol {
+  margin: 0 0 12px 0;
+  padding-left: 24px;
+}
+
+.assistant-text li {
+  margin-bottom: 4px;
+}
+
+.assistant-text code {
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Cascadia Code', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+  font-size: 0.9em;
+}
+
+.assistant-text pre {
+  background-color: #1e1e1e;
+  padding: 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.assistant-text pre code {
+  background-color: transparent;
+  padding: 0;
+  color: #d4d4d4;
+  font-size: 14px;
+  display: block;
+}
+
+.assistant-text blockquote {
+  border-left: 4px solid var(--button-bg);
+  margin: 12px 0;
+  padding: 8px 16px;
+  background-color: var(--surface-color);
+  color: var(--text-muted);
+}
+
+.assistant-text table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+}
+
+.assistant-text th,
+.assistant-text td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.assistant-text th {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.assistant-text img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.assistant-text a {
+  color: #4facfe;
+  text-decoration: none;
+}
+
+.assistant-text a:hover {
+  text-decoration: underline;
+}

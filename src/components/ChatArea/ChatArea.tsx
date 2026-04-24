@@ -1,3 +1,5 @@
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ChatArea.css';
 
 export interface Message {
@@ -24,7 +26,9 @@ export function ChatArea({ messages }: ChatAreaProps) {
               </div>
             ) : (
               <div className="message-text assistant-text">
-                {msg.content}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {msg.content}
+                </ReactMarkdown>
               </div>
             )}
           </div>
