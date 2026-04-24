@@ -207,7 +207,7 @@ function App() {
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>
               <div className="empty-greeting">
                 <img src="/AL_Logo.svg" alt="AL Logo" className="empty-logo" />
-                <h2>Hello, how can I help you today?</h2>
+                <h2>你好，今天我能帮你什么？</h2>
               </div>
             </div>
           ) : (

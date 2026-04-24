@@ -200,10 +200,10 @@ export function Sidebar({
             <button 
               className="new-chat-button"
               onClick={onNewChat}
-              aria-label="New chat"
+              aria-label="新对话"
             >
               <span className="icon" style={{ maskImage: 'url(/icons/add.svg)', WebkitMaskImage: 'url(/icons/add.svg)' }} />
-              <span className="label">New chat</span>
+              <span className="label">新对话</span>
             </button>
           </div>
         </div>
@@ -211,7 +211,7 @@ export function Sidebar({
         <div className="sidebar-content">
           <md-list className={isExpanded ? '' : 'hidden'}>
             {isLoading ? (
-              <div className="empty-history">Loading...</div>
+              <div className="empty-history">加载中...</div>
             ) : conversations && conversations.length > 0 ? (
               conversations.map((conv) => (
                 <div 
@@ -228,7 +228,7 @@ export function Sidebar({
                 </div>
               ))
             ) : (
-              <div className="empty-history">No conversations yet</div>
+              <div className="empty-history">暂无对话</div>
             )}
           </md-list>
         </div>
@@ -251,26 +251,26 @@ export function Sidebar({
               }}
             >
               <div className="settings-row">
-                <span className="settings-label">Theme</span>
+                <span className="settings-label">主题</span>
                 <div className="theme-toggle-group">
                   <button 
                     className={`theme-button ${theme === 'auto' ? 'active' : ''}`}
                     onClick={() => setTheme('auto')}
-                    title="Auto"
+                    title="自动"
                   >
                     <span className="icon" style={{ maskImage: 'url(/icons/auto.svg)', WebkitMaskImage: 'url(/icons/auto.svg)' }} />
                   </button>
                   <button 
                     className={`theme-button ${theme === 'light' ? 'active' : ''}`}
                     onClick={() => setTheme('light')}
-                    title="Light"
+                    title="浅色"
                   >
                     <span className="icon" style={{ maskImage: 'url(/icons/light_mode.svg)', WebkitMaskImage: 'url(/icons/light_mode.svg)' }} />
                   </button>
                   <button 
                     className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
                     onClick={() => setTheme('dark')}
-                    title="Dark"
+                    title="深色"
                   >
                     <span className="icon" style={{ maskImage: 'url(/icons/dark_mode.svg)', WebkitMaskImage: 'url(/icons/dark_mode.svg)' }} />
                   </button>

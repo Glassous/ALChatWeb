@@ -29,7 +29,7 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
         <input
           type="text"
           className="chat-input"
-          placeholder="Type a message..."
+          placeholder="输入消息..."
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
