@@ -220,7 +220,9 @@ export function Sidebar({
               setIsExpanded(!isExpanded);
             }
           }}>
-            <span className="icon" style={{ maskImage: 'url(/icons/menu.svg)', WebkitMaskImage: 'url(/icons/menu.svg)' }} />
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+              <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z"/>
+            </svg>
           </md-icon-button>
           
           <div className="fab-container">
@@ -229,7 +231,9 @@ export function Sidebar({
               onClick={onNewChat}
               aria-label="新对话"
             >
-              <span className="icon" style={{ maskImage: 'url(/icons/add.svg)', WebkitMaskImage: 'url(/icons/add.svg)' }} />
+              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
+              </svg>
               <span className="label">新对话</span>
             </button>
           </div>
@@ -249,7 +253,9 @@ export function Sidebar({
                   <div className="history-item-content">{conv.title}</div>
                   <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
                     <md-icon-button onClick={(e: React.MouseEvent) => handleMoreClick(e, conv)}>
-                      <span className="icon" style={{ maskImage: 'url(/icons/more_vert.svg)', WebkitMaskImage: 'url(/icons/more_vert.svg)' }} />
+                      <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M480-160q-33 0-56.5-23.5T400-240q0-33 23.5-56.5T480-320q33 0 56.5 23.5T560-240q0 33-23.5 56.5T480-160Zm0-240q-33 0-56.5-23.5T400-480q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm0-240q-33 0-56.5-23.5T400-720q0-33 23.5-56.5T480-800q33 0 56.5 23.5T560-720q0 33-23.5 56.5T480-640Z"/>
+                      </svg>
                     </md-icon-button>
                   </div>
                 </div>
@@ -263,7 +269,9 @@ export function Sidebar({
         <div className="sidebar-bottom">
           <div className="settings-button-container" ref={settingsButtonRef}>
             <md-icon-button onClick={() => setShowSettings(!showSettings)}>
-              <span className="icon" style={{ maskImage: 'url(/icons/settings.svg)', WebkitMaskImage: 'url(/icons/settings.svg)' }} />
+              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                <path d="m370-80-16-128q-13-5-24.5-12T307-235l-119 50L78-375l103-78q-1-7-1-13.5v-27q0-6.5 1-13.5L78-585l110-190 119 50q11-8 23-15t24-12l16-128h220l16 128q13 5 24.5 12t22.5 15l119-50 110 190-103 78q1 7 1 13.5v27q0 6.5-2 13.5l103 78-110 190-118-50q-11 8-23 15t-24 12L590-80H370Zm70-80h79l14-106q31-8 57.5-23.5T639-327l99 41 39-68-86-65q5-14 7-29.5t2-31.5q0-16-2-31.5t-7-29.5l86-65-39-68-99 42q-22-23-48.5-38.5T533-694l-13-106h-79l-14 106q-31 8-57.5 23.5T321-633l-99-41-39 68 86 64q-5 15-7 30t-2 32q0 16 2 31t7 30l-86 65 39 68 99-42q22 23 48.5 38.5T427-266l13 106Zm42-180q58 0 99-41t41-99q0-58-41-99t-99-41q-59 0-99.5 41T342-480q0 58 40.5 99t99.5 41Zm-2-140Z"/>
+              </svg>
             </md-icon-button>
           </div>
 
@@ -285,21 +293,27 @@ export function Sidebar({
                     onClick={() => setTheme('auto')}
                     title="自动"
                   >
-                    <span className="icon" style={{ maskImage: 'url(/icons/auto.svg)', WebkitMaskImage: 'url(/icons/auto.svg)' }} />
+                    <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                      <path d="M312-320h64l32-92h146l32 92h62L512-680h-64L312-320Zm114-144 52-150h4l52 150H426Zm54 436L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"/>
+                    </svg>
                   </button>
                   <button 
                     className={`theme-button ${theme === 'light' ? 'active' : ''}`}
                     onClick={() => setTheme('light')}
                     title="浅色"
                   >
-                    <span className="icon" style={{ maskImage: 'url(/icons/light_mode.svg)', WebkitMaskImage: 'url(/icons/light_mode.svg)' }} />
+                    <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                      <path d="M565-395q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm-226.5 56.5Q280-397 280-480t58.5-141.5Q397-680 480-680t141.5 58.5Q680-563 680-480t-58.5 141.5Q563-280 480-280t-141.5-58.5ZM200-440H40v-80h160v80Zm720 0H760v-80h160v80ZM440-760v-160h80v160h-80Zm0 720v-160h80v160h-80ZM256-650l-101-97 57-59 96 100-52 56Zm492 496-97-101 53-55 101 97-57 59Zm-98-550 97-101 59 57-100 96-56-52ZM154-212l101-97 55 53-97 101-59-57Zm326-268Z"/>
+                    </svg>
                   </button>
                   <button 
                     className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
                     onClick={() => setTheme('dark')}
                     title="深色"
                   >
-                    <span className="icon" style={{ maskImage: 'url(/icons/dark_mode.svg)', WebkitMaskImage: 'url(/icons/dark_mode.svg)' }} />
+                    <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                      <path d="M480-120q-150 0-255-105T120-480q0-150 105-255t255-105q14 0 27.5 1t26.5 3q-41 29-65.5 75.5T444-660q0 90 63 153t153 63q55 0 101-24.5t75-65.5q2 13 3 26.5t1 27.5q0 150-105 255T480-120Zm0-80q88 0 158-48.5T740-375q-20 5-40 8t-40 3q-123 0-209.5-86.5T364-660q0-20 3-40t8-40q-78 32-126.5 102T200-480q0 116 82 198t198 82Zm-10-270Z"/>
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -355,11 +369,13 @@ export function Sidebar({
                 onClick={() => {
                   const conv = conversations.find(c => c.id === contextMenu.conversationId);
                   if (conv) handleEditClick(conv);
-                }}
-              >
-                <span className="icon" style={{ maskImage: 'url(/icons/settings.svg)', WebkitMaskImage: 'url(/icons/settings.svg)' }} />
-                <span>编辑标题</span>
-              </button>
+              }}
+            >
+              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
+              </svg>
+              <span>编辑标题</span>
+            </button>
               <button 
                 className="context-menu-item danger"
                 onClick={() => {
@@ -367,7 +383,9 @@ export function Sidebar({
                   if (conv) handleDeleteClick(conv);
                 }}
               >
-                <span className="icon" style={{ maskImage: 'url(/icons/add.svg)', WebkitMaskImage: 'url(/icons/add.svg)', transform: 'rotate(45deg)' }} />
+                <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                  <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
+                </svg>
                 <span>删除对话</span>
               </button>
             </div>,

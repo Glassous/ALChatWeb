@@ -117,18 +117,31 @@
 .icon {
   width: 24px;
   height: 24px;
-  background-color: var(--text-color);
   display: inline-block;
+  vertical-align: middle;
+  transition: background-color 0.2s ease, fill 0.2s ease;
+}
+
+span.icon {
+  background-color: var(--text-color);
   mask-repeat: no-repeat;
   -webkit-mask-repeat: no-repeat;
   mask-position: center;
   -webkit-mask-position: center;
   mask-size: contain;
   -webkit-mask-size: contain;
-  vertical-align: middle;
-  transition: background-color 0.2s ease;
 }
 
-md-icon-button .icon {
+svg.icon {
+  fill: currentColor;
+}
+
+md-icon-button span.icon {
   background-color: var(--text-color);
+}
+
+md-icon-button svg {
+  width: 24px;
+  height: 24px;
+  fill: var(--text-color);
 }

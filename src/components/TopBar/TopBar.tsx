@@ -12,7 +12,9 @@ export function TopBar({ conversationTitle, onMenuClick, onNewChat }: TopBarProp
     <header className="topbar">
       <div className="topbar-left">
         <md-icon-button className="mobile-menu-button" onClick={onMenuClick}>
-          <span className="icon" style={{ maskImage: 'url(/icons/menu.svg)', WebkitMaskImage: 'url(/icons/menu.svg)' }} />
+          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+            <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z"/>
+          </svg>
         </md-icon-button>
         <div className="topbar-logo-container">
           <h1 className="topbar-title">AL Chat</h1>
@@ -28,7 +30,9 @@ export function TopBar({ conversationTitle, onMenuClick, onNewChat }: TopBarProp
       )}
       <div className="topbar-right">
         <md-icon-button className="mobile-new-chat-button" onClick={onNewChat}>
-          <span className="icon" style={{ maskImage: 'url(/icons/add.svg)', WebkitMaskImage: 'url(/icons/add.svg)' }} />
+          <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+            <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
+          </svg>
         </md-icon-button>
       </div>
     </header>

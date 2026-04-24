@@ -207,11 +207,7 @@
   color: var(--button-bg);
 }
 
-.theme-button.active .icon {
-  background-color: var(--button-bg);
-}
-
-.theme-button .icon {
+.theme-button svg {
   width: 20px;
   height: 20px;
 }
@@ -219,23 +215,36 @@
 .icon {
   width: 24px;
   height: 24px;
-  background-color: var(--text-color);
   display: inline-block;
+  vertical-align: middle;
+  transition: background-color 0.2s ease, fill 0.2s ease;
+}
+
+span.icon {
+  background-color: var(--text-color);
   mask-repeat: no-repeat;
   -webkit-mask-repeat: no-repeat;
   mask-position: center;
   -webkit-mask-position: center;
   mask-size: contain;
   -webkit-mask-size: contain;
-  vertical-align: middle;
-  transition: background-color 0.2s ease;
 }
 
-md-icon-button .icon {
+svg.icon {
+  fill: currentColor;
+}
+
+md-icon-button span.icon {
   background-color: var(--text-color);
 }
 
-.fab-container .icon {
+md-icon-button svg {
+  width: 24px;
+  height: 24px;
+  fill: var(--text-color);
+}
+
+.fab-container span.icon {
   background-color: var(--text-color);
 }
 
@@ -291,9 +300,8 @@ md-icon-button .icon {
   pointer-events: none;
 }
 
-.new-chat-button .icon {
+.new-chat-button span.icon {
   background-color: var(--text-color);
-  flex-shrink: 0;
 }
 
 .sidebar-content {
@@ -438,8 +446,12 @@ md-list.hidden {
   flex-shrink: 0;
 }
 
-.context-menu-item.danger .icon {
+.context-menu-item.danger span.icon {
   background-color: #d32f2f;
+}
+
+.context-menu-item.danger svg.icon {
+  fill: #d32f2f;
 }
 
 /* Dialog Overlay */
