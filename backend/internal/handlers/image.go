@@ -4,6 +4,7 @@ import (
 	"alchat-backend/internal/services"
 	"fmt"
 	"net/http"
+	"regexp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,14 +35,29 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
+	// Get conversation history to check for previous image
+	messages, err := h.conversationService.GetMessages(c.Request.Context(), req.ConversationID)
+	var refImageURL string
+	if err == nil && len(messages) > 0 {
+		lastMsg := messages[len(messages)-1]
+		if lastMsg.Role == "assistant" {
+			// Extract image URL from <image src="..."> tag
+			re := regexp.MustCompile(`<image src="([^"]+)">`)
+			matches := re.FindStringSubmatch(lastMsg.Content)
+			if len(matches) > 1 {
+				refImageURL = matches[1]
+			}
+		}
+	}
+
 	// Save user prompt message
-	_, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Prompt, userID)
+	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Prompt, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save user message"})
 		return
 	}
 
-	url, err := h.imageService.GenerateAndUploadImage(c.Request.Context(), req.Prompt, req.Resolution)
+	url, err := h.imageService.GenerateAndUploadImage(c.Request.Context(), req.Prompt, req.Resolution, refImageURL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

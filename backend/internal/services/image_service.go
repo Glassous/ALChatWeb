@@ -31,7 +31,7 @@ func NewImageService(apiKey, endpointID string, ossService *OSSService) (*ImageS
 }
 
 // GenerateAndUploadImage generates an image using Volcengine and uploads it to Aliyun OSS.
-func (s *ImageService) GenerateAndUploadImage(ctx context.Context, prompt, resolution string) (string, error) {
+func (s *ImageService) GenerateAndUploadImage(ctx context.Context, prompt, resolution, refImageURL string) (string, error) {
 	format := model.GenerateImagesResponseFormatBase64
 	addWatermark := false
 	req := model.GenerateImagesRequest{
@@ -43,6 +43,10 @@ func (s *ImageService) GenerateAndUploadImage(ctx context.Context, prompt, resol
 
 	if resolution != "" {
 		req.Size = &resolution
+	}
+
+	if refImageURL != "" {
+		req.Image = refImageURL
 	}
 
 	resp, err := s.client.GenerateImages(ctx, req)
