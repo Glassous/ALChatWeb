@@ -206,11 +206,16 @@ class APIClient {
     return data.title;
   }
 
-  async generateImage(conversationId: string, prompt: string, resolution: string): Promise<string> {
+  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string): Promise<string> {
     const response = await fetch(`${this.baseURL}/api/chat/image`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify({ conversation_id: conversationId, prompt, resolution }),
+      body: JSON.stringify({ 
+        conversation_id: conversationId, 
+        prompt, 
+        resolution,
+        ref_image_url: refImageUrl
+      }),
     });
     if (!response.ok) {
       const error = await response.json();
@@ -218,6 +223,38 @@ class APIClient {
     }
     const data = await response.json();
     return data.url;
+  }
+
+  async uploadReferenceImage(file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const headers = { ...this.getHeaders() } as any;
+    delete headers['Content-Type'];
+
+    const response = await fetch(`${this.baseURL}/api/chat/upload-reference`, {
+      method: 'POST',
+      headers: headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to upload reference image');
+    }
+    const data = await response.json();
+    return data.url;
+  }
+
+  async deleteReferenceImage(url: string): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/chat/reference-image`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ url }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete reference image');
+    }
   }
 
   // Chat API with SSE streaming

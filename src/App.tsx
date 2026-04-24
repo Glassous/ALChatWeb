@@ -64,7 +64,7 @@ function ChatApp() {
     }
   };
 
-  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string }) => {
+  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
@@ -92,12 +92,18 @@ function ChatApp() {
       }, 400);
     }
 
-    // Add user message
+    // Add user message to UI immediately
+    const userMsgId = Date.now().toString();
+    let userMsgContent = text;
+    if (options?.refImageUrl) {
+      userMsgContent = `<image src="${options.refImageUrl}">\n${text}`;
+    }
+
     const newUserMsg: Message = {
-      id: Date.now().toString(),
+      id: userMsgId,
       conversation_id: conversationId,
       role: 'user',
-      content: text,
+      content: userMsgContent,
       created_at: new Date().toISOString(),
     };
     
@@ -122,7 +128,7 @@ function ChatApp() {
       setIsLoading(true);
 
       try {
-        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution);
+        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl);
         
         // Update loading message with image tag and completed status
         setMessages((prev) =>

@@ -87,7 +87,29 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
         {msg.role === 'user' ? (
           <>
             <div className="message-bubble user-bubble">
-              {msg.content}
+              {msg.content.includes('<image') ? (
+                <div className="user-message-with-image">
+                  {(() => {
+                    const re = /<image src="([^"]+)">/;
+                    const match = msg.content.match(re);
+                    if (match) {
+                      const imageUrl = match[1];
+                      const textContent = msg.content.replace(re, '').trim();
+                      return (
+                        <>
+                          <div className="user-ref-image-card" onClick={() => onImageClick(imageUrl)}>
+                            <img src={imageUrl} alt="Reference" />
+                          </div>
+                          {textContent && <div className="user-message-text">{textContent}</div>}
+                        </>
+                      );
+                    }
+                    return msg.content;
+                  })()}
+                </div>
+              ) : (
+                msg.content
+              )}
             </div>
             <button 
               className={`copy-button ${copied ? 'copied' : ''}`} 

@@ -55,7 +55,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService)
-	imageHandler := handlers.NewImageHandler(imageService, conversationService)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -92,6 +92,8 @@ func main() {
 			// Chat route
 			protected.POST("/chat", chatHandler.Chat)
 			protected.POST("/chat/image", imageHandler.GenerateImage)
+			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
+			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
 		}
 	}
 
