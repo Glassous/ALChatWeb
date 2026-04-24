@@ -43,6 +43,10 @@ func (m *MongoDB) Close() error {
 	return m.Client.Disconnect(ctx)
 }
 
+func (m *MongoDB) Users() *mongo.Collection {
+	return m.Database.Collection("users")
+}
+
 func (m *MongoDB) Conversations() *mongo.Collection {
 	return m.Database.Collection("conversations")
 }

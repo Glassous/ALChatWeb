@@ -13,3 +13,7 @@ declare module 'react' {
   }
 }
 
+declare module '@fontsource-variable/playwrite-no' {
+  const content: any;
+  export default content;
+}

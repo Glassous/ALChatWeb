@@ -1,12 +1,27 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message } from './components/ChatArea/ChatArea';
 import { InputArea } from './components/InputArea/InputArea';
 import { apiClient, type Conversation } from './services/api';
+import { Welcome } from './pages/Welcome';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
+import { ResetPassword } from './pages/ResetPassword';
 import './App.css';
 
-function App() {
+// Protected Route component
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return <Navigate to="/welcome" replace />;
+  }
+  return children;
+}
+
+// Chat Application component
+function ChatApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -219,6 +234,27 @@ function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/welcome" element={<Welcome />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <ChatApp />
+            </ProtectedRoute>
+          } 
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

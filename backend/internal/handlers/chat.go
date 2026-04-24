@@ -25,6 +25,7 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 }
 
 func (h *ChatHandler) Chat(c *gin.Context) {
+	userID := c.GetString("user_id")
 	var req models.ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
@@ -37,13 +38,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	// Save user message
-	_, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Message)
+	_, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Message, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save user message"})
 		return
 	}
 
 	// Get conversation history
+	// Note: We've already verified ownership in SaveMessage
 	messages, err := h.conversationService.GetMessages(c.Request.Context(), req.ConversationID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch conversation history"})
@@ -107,7 +109,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	// Save assistant message
-	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String())
+	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID)
 	if err != nil {
 		errorResponse := models.ChatStreamResponse{
 			Type:    "error",

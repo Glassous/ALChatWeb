@@ -16,6 +16,7 @@ func NewConversationHandler(service *services.ConversationService) *Conversation
 }
 
 func (h *ConversationHandler) CreateConversation(c *gin.Context) {
+	userID := c.GetString("user_id")
 	var req struct {
 		Title string `json:"title"`
 	}
@@ -29,7 +30,7 @@ func (h *ConversationHandler) CreateConversation(c *gin.Context) {
 		req.Title = "New Conversation"
 	}
 
-	conversation, err := h.service.CreateConversation(c.Request.Context(), req.Title)
+	conversation, err := h.service.CreateConversation(c.Request.Context(), req.Title, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -39,7 +40,8 @@ func (h *ConversationHandler) CreateConversation(c *gin.Context) {
 }
 
 func (h *ConversationHandler) GetAllConversations(c *gin.Context) {
-	conversations, err := h.service.GetAllConversations(c.Request.Context())
+	userID := c.GetString("user_id")
+	conversations, err := h.service.GetAllConversations(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -49,9 +51,10 @@ func (h *ConversationHandler) GetAllConversations(c *gin.Context) {
 }
 
 func (h *ConversationHandler) GetConversation(c *gin.Context) {
+	userID := c.GetString("user_id")
 	conversationID := c.Param("id")
 
-	conversation, err := h.service.GetConversationWithMessages(c.Request.Context(), conversationID)
+	conversation, err := h.service.GetConversationWithMessages(c.Request.Context(), conversationID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -61,9 +64,10 @@ func (h *ConversationHandler) GetConversation(c *gin.Context) {
 }
 
 func (h *ConversationHandler) DeleteConversation(c *gin.Context) {
+	userID := c.GetString("user_id")
 	conversationID := c.Param("id")
 
-	err := h.service.DeleteConversation(c.Request.Context(), conversationID)
+	err := h.service.DeleteConversation(c.Request.Context(), conversationID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -73,6 +77,7 @@ func (h *ConversationHandler) DeleteConversation(c *gin.Context) {
 }
 
 func (h *ConversationHandler) UpdateConversationTitle(c *gin.Context) {
+	userID := c.GetString("user_id")
 	conversationID := c.Param("id")
 
 	var req struct {
@@ -89,7 +94,7 @@ func (h *ConversationHandler) UpdateConversationTitle(c *gin.Context) {
 		return
 	}
 
-	err := h.service.UpdateConversationTitle(c.Request.Context(), conversationID, req.Title)
+	err := h.service.UpdateConversationTitle(c.Request.Context(), conversationID, req.Title, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

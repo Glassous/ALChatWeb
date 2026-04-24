@@ -20,15 +20,21 @@ func NewConversationService(db *database.MongoDB) *ConversationService {
 	return &ConversationService{db: db}
 }
 
-func (s *ConversationService) CreateConversation(ctx context.Context, title string) (*models.Conversation, error) {
+func (s *ConversationService) CreateConversation(ctx context.Context, title string, userIDStr string) (*models.Conversation, error) {
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
 	conversation := &models.Conversation{
 		ID:        primitive.NewObjectID(),
+		UserID:    userID,
 		Title:     title,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	_, err := s.db.Conversations().InsertOne(ctx, conversation)
+	_, err = s.db.Conversations().InsertOne(ctx, conversation)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -36,9 +42,14 @@ func (s *ConversationService) CreateConversation(ctx context.Context, title stri
 	return conversation, nil
 }
 
-func (s *ConversationService) GetAllConversations(ctx context.Context) ([]models.Conversation, error) {
+func (s *ConversationService) GetAllConversations(ctx context.Context, userIDStr string) ([]models.Conversation, error) {
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
 	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}})
-	cursor, err := s.db.Conversations().Find(ctx, bson.M{}, opts)
+	cursor, err := s.db.Conversations().Find(ctx, bson.M{"user_id": userID}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch conversations: %w", err)
 	}
@@ -57,14 +68,18 @@ func (s *ConversationService) GetAllConversations(ctx context.Context) ([]models
 	return conversations, nil
 }
 
-func (s *ConversationService) GetConversationWithMessages(ctx context.Context, conversationID string) (*models.ConversationWithMessages, error) {
+func (s *ConversationService) GetConversationWithMessages(ctx context.Context, conversationID string, userIDStr string) (*models.ConversationWithMessages, error) {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid conversation ID: %w", err)
 	}
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
 
 	var conversation models.Conversation
-	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": objID}).Decode(&conversation)
+	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": objID, "user_id": userID}).Decode(&conversation)
 	if err != nil {
 		return nil, fmt.Errorf("conversation not found: %w", err)
 	}
@@ -106,10 +121,21 @@ func (s *ConversationService) GetMessages(ctx context.Context, conversationID st
 	return messages, nil
 }
 
-func (s *ConversationService) SaveMessage(ctx context.Context, conversationID, role, content string) (*models.Message, error) {
+func (s *ConversationService) SaveMessage(ctx context.Context, conversationID, role, content string, userIDStr string) (*models.Message, error) {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid conversation ID: %w", err)
+	}
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	// Verify conversation ownership
+	var conversation models.Conversation
+	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": objID, "user_id": userID}).Decode(&conversation)
+	if err != nil {
+		return nil, fmt.Errorf("conversation not found or access denied: %w", err)
 	}
 
 	message := &models.Message{
@@ -138,10 +164,21 @@ func (s *ConversationService) SaveMessage(ctx context.Context, conversationID, r
 	return message, nil
 }
 
-func (s *ConversationService) DeleteConversation(ctx context.Context, conversationID string) error {
+func (s *ConversationService) DeleteConversation(ctx context.Context, conversationID string, userIDStr string) error {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {
 		return fmt.Errorf("invalid conversation ID: %w", err)
+	}
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	// Verify ownership first
+	var conversation models.Conversation
+	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": objID, "user_id": userID}).Decode(&conversation)
+	if err != nil {
+		return fmt.Errorf("conversation not found or access denied: %w", err)
 	}
 
 	// Delete all messages in the conversation
@@ -159,15 +196,19 @@ func (s *ConversationService) DeleteConversation(ctx context.Context, conversati
 	return nil
 }
 
-func (s *ConversationService) UpdateConversationTitle(ctx context.Context, conversationID, title string) error {
+func (s *ConversationService) UpdateConversationTitle(ctx context.Context, conversationID, title string, userIDStr string) error {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {
 		return fmt.Errorf("invalid conversation ID: %w", err)
 	}
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
 
 	_, err = s.db.Conversations().UpdateOne(
 		ctx,
-		bson.M{"_id": objID},
+		bson.M{"_id": objID, "user_id": userID},
 		bson.M{
 			"$set": bson.M{
 				"title":      title,

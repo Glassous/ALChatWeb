@@ -31,10 +31,72 @@ class APIClient {
     this.baseURL = baseURL;
   }
 
+  private getHeaders(): HeadersInit {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    const token = localStorage.getItem('token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  }
+
+  // Auth APIs
+  async register(data: any) {
+    const response = await fetch(`${this.baseURL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to register');
+    }
+    return response.json();
+  }
+
+  async login(data: any) {
+    const response = await fetch(`${this.baseURL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to login');
+    }
+    return response.json();
+  }
+
+  async getSecurityQuestion(username: string) {
+    const response = await fetch(`${this.baseURL}/api/auth/security-question?username=${encodeURIComponent(username)}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch security question');
+    }
+    return response.json();
+  }
+
+  async resetPassword(data: any) {
+    const response = await fetch(`${this.baseURL}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to reset password');
+    }
+    return response.json();
+  }
+
   // Conversation APIs
   async getConversations(): Promise<Conversation[]> {
     try {
-      const response = await fetch(`${this.baseURL}/api/conversations`);
+      const response = await fetch(`${this.baseURL}/api/conversations`, {
+        headers: this.getHeaders(),
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch conversations');
       }
@@ -49,9 +111,7 @@ class APIClient {
   async createConversation(title: string = 'New Conversation'): Promise<Conversation> {
     const response = await fetch(`${this.baseURL}/api/conversations`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify({ title }),
     });
     if (!response.ok) {
@@ -62,7 +122,9 @@ class APIClient {
 
   async getConversation(id: string): Promise<ConversationWithMessages> {
     try {
-      const response = await fetch(`${this.baseURL}/api/conversations/${id}`);
+      const response = await fetch(`${this.baseURL}/api/conversations/${id}`, {
+        headers: this.getHeaders(),
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch conversation');
       }
@@ -81,6 +143,7 @@ class APIClient {
   async deleteConversation(id: string): Promise<void> {
     const response = await fetch(`${this.baseURL}/api/conversations/${id}`, {
       method: 'DELETE',
+      headers: this.getHeaders(),
     });
     if (!response.ok) {
       throw new Error('Failed to delete conversation');
@@ -90,9 +153,7 @@ class APIClient {
   async updateConversationTitle(id: string, title: string): Promise<void> {
     const response = await fetch(`${this.baseURL}/api/conversations/${id}/title`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify({ title }),
     });
     if (!response.ok) {
@@ -110,9 +171,7 @@ class APIClient {
   ): Promise<void> {
     const response = await fetch(`${this.baseURL}/api/chat`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify({
         conversation_id: conversationId,
         message,

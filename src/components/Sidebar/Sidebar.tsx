@@ -250,6 +250,34 @@ export function Sidebar({
                 left: `${cardPosition.left}px`
               }}
             >
+              <div className="settings-row user-info-row">
+                <span className="settings-label user-label">用户</span>
+                <div className="user-actions">
+                  <span className="username-text">
+                    {(() => {
+                      try {
+                        const userStr = localStorage.getItem('user');
+                        if (userStr) {
+                          const user = JSON.parse(userStr);
+                          return user.nickname || user.username || '用户';
+                        }
+                      } catch (e) { }
+                      return '用户';
+                    })()}
+                  </span>
+                  <button 
+                    className="logout-button"
+                    onClick={() => {
+                      localStorage.removeItem('token');
+                      localStorage.removeItem('user');
+                      window.location.href = '/welcome';
+                    }}
+                  >
+                    退出登录
+                  </button>
+                </div>
+              </div>
+              <div className="settings-divider"></div>
               <div className="settings-row">
                 <span className="settings-label">主题</span>
                 <div className="theme-toggle-group">

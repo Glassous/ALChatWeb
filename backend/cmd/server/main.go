@@ -36,6 +36,7 @@ func main() {
 	conversationService := services.NewConversationService(db)
 
 	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
 	conversationHandler := handlers.NewConversationHandler(conversationService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService)
 
@@ -46,15 +47,29 @@ func main() {
 	// API routes
 	api := router.Group("/api")
 	{
-		// Conversation routes
-		api.GET("/conversations", conversationHandler.GetAllConversations)
-		api.POST("/conversations", conversationHandler.CreateConversation)
-		api.GET("/conversations/:id", conversationHandler.GetConversation)
-		api.PUT("/conversations/:id/title", conversationHandler.UpdateConversationTitle)
-		api.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
+		// Public routes
+		auth := api.Group("/auth")
+		{
+			auth.POST("/register", authHandler.Register)
+			auth.POST("/login", authHandler.Login)
+			auth.POST("/reset-password", authHandler.ResetPassword)
+			auth.GET("/security-question", authHandler.GetSecurityQuestion)
+		}
 
-		// Chat route
-		api.POST("/chat", chatHandler.Chat)
+		// Protected routes
+		protected := api.Group("/")
+		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		{
+			// Conversation routes
+			protected.GET("/conversations", conversationHandler.GetAllConversations)
+			protected.POST("/conversations", conversationHandler.CreateConversation)
+			protected.GET("/conversations/:id", conversationHandler.GetConversation)
+			protected.PUT("/conversations/:id/title", conversationHandler.UpdateConversationTitle)
+			protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
+
+			// Chat route
+			protected.POST("/chat", chatHandler.Chat)
+		}
 	}
 
 	// Health check
