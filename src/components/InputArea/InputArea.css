@@ -205,6 +205,29 @@
   background-color: rgba(16, 163, 127, 0.1);
 }
 
+.search-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+}
+
+.search-toggle-btn.active {
+  color: #10a37f;
+  border-color: rgba(16, 163, 127, 0.3);
+  background-color: rgba(16, 163, 127, 0.1);
+}
+
+.search-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .tool-btn:hover {
   color: var(--text-color);
   background-color: rgba(255, 255, 255, 0.1);

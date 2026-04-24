@@ -111,6 +111,17 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 			return nil
 		},
+		func(searchData models.SearchData) error {
+			// Send search progress as SSE
+			response := models.ChatStreamResponse{
+				Type: "search",
+				Data: searchData,
+			}
+			data, _ := json.Marshal(response)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			c.Writer.Flush()
+			return nil
+		},
 	)
 
 	if err != nil {

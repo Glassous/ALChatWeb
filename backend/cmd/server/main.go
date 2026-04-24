@@ -38,6 +38,10 @@ func main() {
 		cfg.TitleAIAPIKey,
 		cfg.TitleAIBaseURL,
 		cfg.TitleAIModel,
+		cfg.SearchAPIKey,
+		cfg.SearchBaseURL,
+		cfg.SearchModel,
+		cfg.BochaAPIKey,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI service: %v", err)

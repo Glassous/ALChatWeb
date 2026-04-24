@@ -21,9 +21,11 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error';
+  type: 'token' | 'reasoning' | 'done' | 'error' | 'search';
   content?: string;
+  data?: any;
 }
+
 
 class APIClient {
   private baseURL: string;
@@ -262,9 +264,10 @@ class APIClient {
   async sendMessage(
     conversationId: string,
     message: string,
-    mode: 'daily' | 'expert',
+    mode: 'daily' | 'expert' | 'search',
     onToken: (token: string) => void,
     onReasoning: (reasoning: string) => void,
+    onSearch: (data: any) => void,
     onDone: () => void,
     onError: (error: string) => void
   ): Promise<void> {
@@ -307,6 +310,8 @@ class APIClient {
                 onToken(parsed.content);
               } else if (parsed.type === 'reasoning' && parsed.content) {
                 onReasoning(parsed.content);
+              } else if (parsed.type === 'search' && parsed.data) {
+                onSearch(parsed.data);
               } else if (parsed.type === 'done') {
                 onDone();
               } else if (parsed.type === 'error') {

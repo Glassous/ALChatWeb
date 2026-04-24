@@ -64,7 +64,7 @@ function ChatApp() {
     }
   };
 
-  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => {
+  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
@@ -200,6 +200,16 @@ function ChatApp() {
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
                 ? { ...msg, reasoning: (msg.reasoning || '') + reasoning }
+                : msg
+            )
+          );
+        },
+        (searchData) => {
+          // Update assistant message with search data
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg) =>
+              msg.id === assistantMsgId
+                ? { ...msg, search: searchData }
                 : msg
             )
           );

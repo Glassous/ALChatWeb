@@ -3,7 +3,7 @@ import './InputArea.css';
 import { apiClient } from '../../services/api';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
   disabled?: boolean;
 }
 
@@ -18,6 +18,7 @@ const RESOLUTIONS = [
 export function InputArea({ onSend, disabled = false }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
   const [resolution, setResolution] = useState(RESOLUTIONS[0]);
   const [showResolutions, setShowResolutions] = useState(false);
@@ -40,11 +41,18 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
+      let finalMode: 'daily' | 'expert' | 'search' = mode;
+      if (isImageMode) {
+        finalMode = 'daily';
+      } else if (isSearchMode) {
+        finalMode = 'search';
+      }
+
       onSend(text.trim(), { 
         isImageMode, 
         resolution, 
         refImageUrl: refImageUrl || undefined,
-        mode: isImageMode ? 'daily' : mode
+        mode: finalMode
       });
       setText('');
       setRefImageUrl(null);
@@ -137,16 +145,34 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
         </div>
         <div className="input-bottom-row">
           <div className="tools-left">
-            <button 
-              className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
-              onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
-              title={mode === 'daily' ? '日常模式' : '专家模式'}
-            >
-              {mode === 'daily' ? '日常' : '专家'}
-            </button>
+            {!isImageMode && (
+              <button 
+                className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
+                onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+                title={mode === 'daily' ? '日常模式' : '专家模式'}
+                disabled={isSearchMode}
+              >
+                {mode === 'daily' ? '日常' : '专家'}
+              </button>
+            )}
+            {!isImageMode && (
+              <button 
+                className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
+                onClick={() => setIsSearchMode(!isSearchMode)}
+                title="联网搜索"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                  <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-120q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-320h480v-40H240v40Z"/>
+                </svg>
+                <span>联网搜索</span>
+              </button>
+            )}
             <button 
               className={`tool-btn ${isImageMode ? 'active' : ''}`}
-              onClick={() => setIsImageMode(!isImageMode)}
+              onClick={() => {
+                setIsImageMode(!isImageMode);
+                if (!isImageMode) setIsSearchMode(false);
+              }}
               title="图片生成"
             >
               <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3">

@@ -28,6 +28,10 @@ type Config struct {
 	OSSBucketName      string
 	VolcengineAPIKey   string
 	VolcengineImageEP  string
+	BochaAPIKey        string
+	SearchAPIKey       string
+	SearchBaseURL      string
+	SearchModel        string
 }
 
 func Load() *Config {
@@ -60,6 +64,10 @@ func Load() *Config {
 		OSSBucketName:      getEnv("OSS_BUCKET_NAME", ""),
 		VolcengineAPIKey:   getEnv("VOLCENGINE_API_KEY", ""),
 		VolcengineImageEP:  getEnv("VOLCENGINE_IMAGE_EP", ""),
+		BochaAPIKey:        getEnv("BOCHA_API_KEY", ""),
+		SearchAPIKey:       getEnv("SEARCH_API_KEY", ""),
+		SearchBaseURL:      getEnv("SEARCH_BASE_URL", "https://api.openai.com/v1"),
+		SearchModel:        getEnv("SEARCH_MODEL", "gpt-4"),
 	}
 
 	// Enhanced Debug Logging for OSS

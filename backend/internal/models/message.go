@@ -18,10 +18,23 @@ type Message struct {
 type ChatRequest struct {
 	ConversationID string `json:"conversation_id"`
 	Message        string `json:"message"`
-	Mode           string `json:"mode"` // "daily" or "expert"
+	Mode           string `json:"mode"` // "daily", "expert", or "search"
+}
+
+type SearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
+
+type SearchData struct {
+	Query   string         `json:"query"`
+	Status  string         `json:"status"` // "searching", "completed"
+	Results []SearchResult `json:"results,omitempty"`
 }
 
 type ChatStreamResponse struct {
-	Type    string `json:"type"` // "token", "reasoning", "error", or "done"
-	Content string `json:"content,omitempty"`
+	Type    string      `json:"type"` // "token", "reasoning", "error", "done", or "search"
+	Content string      `json:"content,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
 }

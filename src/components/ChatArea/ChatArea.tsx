@@ -9,12 +9,22 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
+  search?: {
+    query: string;
+    status: 'searching' | 'completed';
+    results?: Array<{
+      title: string;
+      url: string;
+      snippet: string;
+    }>;
+  };
   created_at: string;
   status?: 'pending' | 'loading' | 'completed' | 'error';
   metadata?: {
     resolution?: string;
   };
 }
+
 
 interface ChatAreaProps {
   messages: Message[];
@@ -32,6 +42,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isManual, setIsManual] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
 
   // Auto-collapse logic
   useEffect(() => {
@@ -72,10 +83,73 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
       );
     }
 
-    const processedContent = msg.content.replace(/<image src="([^"]+)">/g, '![generated-image]($1)');
+    const processedContent = msg.content
+      .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
+      .replace(/<search>[\s\S]*?<\/search>/g, ''); // Remove search tag from markdown content
 
     return (
       <>
+        {msg.search && (
+          <div 
+            className={`search-container ${msg.search.status === 'completed' ? 'completed' : ''}`}
+            onClick={() => msg.search?.status === 'completed' && setShowSearchModal(true)}
+          >
+            <div className="search-status-icon">
+              {msg.search.status === 'searching' ? (
+                <div className="search-spinner"></div>
+              ) : (
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                </svg>
+              )}
+            </div>
+            <div className="search-info">
+              <span className="search-text">
+                {msg.search.status === 'searching' ? `正在搜索: ${msg.search.query}` : `已找到 ${msg.search.results?.length || 0} 条相关结果`}
+              </span>
+            </div>
+            {msg.search.status === 'completed' && (
+              <div className="search-view-more">
+                查看来源
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                </svg>
+              </div>
+            )}
+          </div>
+        )}
+        {showSearchModal && msg.search?.results && (
+          <div className="search-modal-overlay" onClick={() => setShowSearchModal(false)}>
+            <div className="search-modal" onClick={e => e.stopPropagation()}>
+              <div className="search-modal-header">
+                <h3>搜索结果: {msg.search.query}</h3>
+                <button className="close-modal-btn" onClick={() => setShowSearchModal(false)}>
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  </svg>
+                </button>
+              </div>
+              <div className="search-results-list">
+                {msg.search.results.map((result, idx) => (
+                  <a 
+                    key={idx} 
+                    href={result.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="search-result-item"
+                  >
+                    <div className="result-index">{idx + 1}</div>
+                    <div className="result-content">
+                      <div className="result-title">{result.title}</div>
+                      <div className="result-url">{result.url}</div>
+                      <div className="result-snippet">{result.snippet}</div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {msg.reasoning && (
           <div className={`reasoning-container ${isCollapsed ? 'collapsed' : ''}`}>
             <div 
