@@ -6,13 +6,32 @@ import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import './Sidebar.css';
 
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface SidebarProps {
+  conversations: Conversation[];
+  currentConversationId: string | null;
   onNewChat: () => void;
+  onSelectConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => void;
+  isLoading?: boolean;
 }
 
 type Theme = 'auto' | 'light' | 'dark';
 
-export function Sidebar({ onNewChat }: SidebarProps) {
+export function Sidebar({ 
+  conversations, 
+  currentConversationId, 
+  onNewChat, 
+  onSelectConversation,
+  onDeleteConversation,
+  isLoading = false
+}: SidebarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -85,15 +104,21 @@ export function Sidebar({ onNewChat }: SidebarProps) {
 
       <div className="sidebar-content">
         <md-list className={isExpanded ? '' : 'hidden'}>
-          <md-list-item className="history-item">
-            <div slot="headline">Project Alpha</div>
-          </md-list-item>
-          <md-list-item className="history-item">
-            <div slot="headline">Project Beta</div>
-          </md-list-item>
-          <md-list-item className="history-item">
-            <div slot="headline">Research notes</div>
-          </md-list-item>
+          {isLoading ? (
+            <div className="empty-history">Loading...</div>
+          ) : conversations && conversations.length > 0 ? (
+            conversations.map((conv) => (
+              <md-list-item 
+                key={conv.id}
+                className={`history-item ${conv.id === currentConversationId ? 'active' : ''}`}
+                onClick={() => onSelectConversation(conv.id)}
+              >
+                <div slot="headline">{conv.title}</div>
+              </md-list-item>
+            ))
+          ) : (
+            <div className="empty-history">No conversations yet</div>
+          )}
         </md-list>
       </div>
 
