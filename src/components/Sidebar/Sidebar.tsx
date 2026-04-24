@@ -142,11 +142,13 @@ export function Sidebar({
     if (selectedConversation) {
       try {
         await apiClient.deleteConversation(selectedConversation.id);
-        onDeleteConversation(selectedConversation.id);
         setShowDeleteDialog(false);
         setSelectedConversation(null);
+        // Call the callback after successful deletion
+        onDeleteConversation(selectedConversation.id);
       } catch (error) {
         console.error('Failed to delete conversation:', error);
+        alert('删除对话失败，请重试');
       }
     }
   };
@@ -155,12 +157,14 @@ export function Sidebar({
     if (selectedConversation && editTitle.trim()) {
       try {
         await apiClient.updateConversationTitle(selectedConversation.id, editTitle.trim());
-        onUpdateConversation(selectedConversation.id, editTitle.trim());
         setShowEditDialog(false);
         setSelectedConversation(null);
         setEditTitle('');
+        // Call the callback after successful update
+        onUpdateConversation(selectedConversation.id, editTitle.trim());
       } catch (error) {
         console.error('Failed to update conversation title:', error);
+        alert('更新标题失败，请重试');
       }
     }
   };

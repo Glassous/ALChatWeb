@@ -116,9 +116,9 @@ function App() {
           );
         },
         () => {
-          // Done
+          // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
-          loadConversations(); // Refresh conversation list
+          loadConversations();
         },
         (error) => {
           // Error
@@ -149,7 +149,8 @@ function App() {
     loadConversation(conversationId);
   };
 
-  const handleDeleteConversation = async (conversationId: string) => {
+  const handleDeleteConversation = (conversationId: string) => {
+    // Remove from local state
     setConversations((prev) => prev.filter((c) => c.id !== conversationId));
     
     // If deleted conversation is current, reset
@@ -159,9 +160,20 @@ function App() {
   };
 
   const handleUpdateConversation = (conversationId: string, newTitle: string) => {
-    setConversations((prev) =>
-      prev.map((c) => (c.id === conversationId ? { ...c, title: newTitle } : c))
-    );
+    // Update local state with new title and updated timestamp
+    const now = new Date().toISOString();
+    setConversations((prev) => {
+      // Update the conversation
+      const updated = prev.map((c) => 
+        c.id === conversationId 
+          ? { ...c, title: newTitle, updated_at: now } 
+          : c
+      );
+      // Sort by updated_at descending (most recent first)
+      return updated.sort((a, b) => 
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+    });
   };
 
   return (
