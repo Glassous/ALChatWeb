@@ -21,16 +21,21 @@
   position: relative;
 }
 
+.previews-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
 .ref-image-preview-card {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 16px;
-  background: var(--surface-color);
+  position: relative;
+  background: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -39,23 +44,33 @@
 }
 
 .ref-image-preview-card img {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   object-fit: cover;
   border-radius: 8px;
-  border: 1px solid var(--border-color);
+}
+
+.video-preview-placeholder {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  color: var(--text-muted);
 }
 
 .ref-image-preview-card.uploading {
-  min-width: 120px;
-  height: 80px;
+  min-width: 100px;
+  height: 64px;
   justify-content: center;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .ref-image-preview-card.uploading span {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -166,15 +181,62 @@
 .input-bottom-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-top: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--border-color);
 }
 
-.tools-left {
+.tools-left, .tools-right {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.attachment-selector {
+  position: relative;
+}
+
+.attachment-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  min-width: 100px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slide-up 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.attachment-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-color);
+  font-size: 14px;
+}
+
+.attachment-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.attachment-menu-item svg {
+  color: var(--text-muted);
+}
+
+.tool-btn.attachment-btn.active {
+  color: #10a37f;
 }
 
 .tool-btn {

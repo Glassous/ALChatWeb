@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/firebase/genkit/go/ai"
@@ -16,20 +17,23 @@ import (
 )
 
 type AIService struct {
-	g             *genkit.Genkit
-	model         string
-	expertAPIKey  string
-	expertBaseURL string
-	expertModel   string
-	titleModel    string
-	searchAPIKey  string
-	searchBaseURL string
-	searchModel   string
-	bochaAPIKey   string
-	searchService *SearchService
+	g                 *genkit.Genkit
+	model             string
+	expertAPIKey      string
+	expertBaseURL     string
+	expertModel       string
+	titleModel        string
+	searchAPIKey      string
+	searchBaseURL     string
+	searchModel       string
+	multimodalAPIKey  string
+	multimodalBaseURL string
+	multimodalModel   string
+	bochaAPIKey       string
+	searchService     *SearchService
 }
 
-func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel string) (*AIService, error) {
 	ctx := context.Background()
 
 	// Initialize Genkit with multiple OpenAI-compatible plugins
@@ -51,21 +55,32 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 					option.WithHeader("Content-Type", "application/json"),
 				},
 			},
+			&compat_oai.OpenAICompatible{
+				Provider: "openai-multimodal",
+				APIKey:   multimodalAPIKey,
+				BaseURL:  multimodalBaseURL,
+				Opts: []option.RequestOption{
+					option.WithHeader("Content-Type", "application/json"),
+				},
+			},
 		),
 	)
 
 	return &AIService{
-		g:             g,
-		model:         model,
-		expertAPIKey:  expertAPIKey,
-		expertBaseURL: expertBaseURL,
-		expertModel:   expertModel,
-		titleModel:    titleModel,
-		searchAPIKey:  searchAPIKey,
-		searchBaseURL: searchBaseURL,
-		searchModel:   searchModel,
-		bochaAPIKey:   bochaAPIKey,
-		searchService: NewSearchService(bochaAPIKey),
+		g:                 g,
+		model:             model,
+		expertAPIKey:      expertAPIKey,
+		expertBaseURL:     expertBaseURL,
+		expertModel:       expertModel,
+		titleModel:        titleModel,
+		searchAPIKey:      searchAPIKey,
+		searchBaseURL:     searchBaseURL,
+		searchModel:       searchModel,
+		multimodalAPIKey:  multimodalAPIKey,
+		multimodalBaseURL: multimodalBaseURL,
+		multimodalModel:   multimodalModel,
+		bochaAPIKey:       bochaAPIKey,
+		searchService:     NewSearchService(bochaAPIKey),
 	}, nil
 }
 
@@ -73,6 +88,26 @@ type SearchCallback func(data models.SearchData) error
 
 // GenerateStream generates AI response with streaming
 func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+	// Check if any message contains multimodal content (<file> or <image> tags)
+	hasMultimodal := false
+	for _, m := range messages {
+		for _, p := range m.Content {
+			if p.IsText() {
+				if strings.Contains(p.Text, "<file") || strings.Contains(p.Text, "<image") {
+					hasMultimodal = true
+					break
+				}
+			}
+		}
+		if hasMultimodal {
+			break
+		}
+	}
+
+	if hasMultimodal && s.multimodalAPIKey != "" {
+		return s.generateMultimodalStream(ctx, messages, callback)
+	}
+
 	if mode == "expert" {
 		return s.generateExpertStream(ctx, messages, callback)
 	}
@@ -112,6 +147,171 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 
 func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
 	return s.generateCustomStream(ctx, messages, s.expertAPIKey, s.expertBaseURL, s.expertModel, callback)
+}
+
+func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+	// For multimodal models, we need to parse <file> and <image> tags
+	// and convert them to the format the API expects (image_url or file_url).
+
+	type oaiContent struct {
+		Type     string                 `json:"type"`
+		Text     string                 `json:"text,omitempty"`
+		ImageURL map[string]interface{} `json:"image_url,omitempty"`
+		// Some providers might support video/file differently, but many use the same structure
+		// For now, let's treat both image and file as image_url as most vision models expect that.
+	}
+
+	type oaiMessage struct {
+		Role    string       `json:"role"`
+		Content []oaiContent `json:"content"`
+	}
+
+	var oaiMessages []oaiMessage
+	for _, m := range messages {
+		role := "user"
+		if m.Role == ai.RoleModel {
+			role = "assistant"
+		} else if m.Role == ai.RoleSystem {
+			role = "system"
+		}
+
+		var contents []oaiContent
+		for _, p := range m.Content {
+			if p.IsText() {
+				text := p.Text
+				// Find all <image src="..."> and <file src="..."> tags
+				imageRe := regexp.MustCompile(`<(image|file) src="([^"]+)">`)
+				matches := imageRe.FindAllStringSubmatch(text, -1)
+
+				// Split text by tags and add parts
+				lastIdx := 0
+				for _, match := range matches {
+					fullMatch := match[0]
+					url := match[2]
+					idx := strings.Index(text[lastIdx:], fullMatch)
+
+					// Add text before the tag
+					if idx > 0 {
+						contents = append(contents, oaiContent{
+							Type: "text",
+							Text: text[lastIdx : lastIdx+idx],
+						})
+					}
+
+					// Add image/file URL
+					contents = append(contents, oaiContent{
+						Type: "image_url",
+						ImageURL: map[string]interface{}{
+							"url": url,
+						},
+					})
+
+					lastIdx += idx + len(fullMatch)
+				}
+
+				// Add remaining text
+				if lastIdx < len(text) {
+					remaining := text[lastIdx:]
+					if remaining != "" {
+						contents = append(contents, oaiContent{
+							Type: "text",
+							Text: remaining,
+						})
+					}
+				}
+			}
+		}
+
+		oaiMessages = append(oaiMessages, oaiMessage{
+			Role:    role,
+			Content: contents,
+		})
+	}
+
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"model":    s.multimodalModel,
+		"messages": oaiMessages,
+		"stream":   true,
+	})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/chat/completions", s.multimodalBaseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(requestBody)))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.multimodalAPIKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Multimodal AI API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	reader := io.Reader(resp.Body)
+	buf := make([]byte, 4096)
+	var remainder string
+
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			chunk := remainder + string(buf[:n])
+			lines := strings.Split(chunk, "\n")
+			remainder = lines[len(lines)-1]
+
+			for i := 0; i < len(lines)-1; i++ {
+				line := strings.TrimSpace(lines[i])
+				if line == "" || !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					return nil
+				}
+
+				var streamResp struct {
+					Choices []struct {
+						Delta struct {
+							Content          string `json:"content"`
+							ReasoningContent string `json:"reasoning_content"`
+						} `json:"delta"`
+					} `json:"choices"`
+				}
+
+				if err := json.Unmarshal([]byte(data), &streamResp); err == nil {
+					if len(streamResp.Choices) > 0 {
+						content := streamResp.Choices[0].Delta.Content
+						reasoning := streamResp.Choices[0].Delta.ReasoningContent
+						if content != "" || reasoning != "" {
+							if err := callback(content, reasoning); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {

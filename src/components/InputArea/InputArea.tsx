@@ -24,13 +24,22 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
   const [showResolutions, setShowResolutions] = useState(false);
   const [refImageUrl, setRefImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [attachments, setAttachments] = useState<Array<{url: string, type: 'image' | 'video'}>>([]);
+  const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
         setShowResolutions(false);
+      }
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
+        setShowAttachmentMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -48,7 +57,14 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
         finalMode = 'search';
       }
 
-      onSend(text.trim(), { 
+      // Format attachments into message
+      let finalMsg = text.trim();
+      if (attachments.length > 0) {
+        const attachmentTags = attachments.map(att => `<file src="${att.url}">`).join('\n');
+        finalMsg = `${attachmentTags}\n${finalMsg}`;
+      }
+
+      onSend(finalMsg, { 
         isImageMode, 
         resolution, 
         refImageUrl: refImageUrl || undefined,
@@ -56,6 +72,11 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
       });
       setText('');
       setRefImageUrl(null);
+      setAttachments([]);
+      setSelectedAttachmentType(null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
     }
   };
 
@@ -76,6 +97,22 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
     fileInputRef.current?.click();
   };
 
+  const handleAttachmentClick = () => {
+    if (selectedAttachmentType) {
+      attachmentInputRef.current?.click();
+    } else {
+      setShowAttachmentMenu(!showAttachmentMenu);
+    }
+  };
+
+  const handleAttachmentTypeSelect = (type: 'image' | 'video') => {
+    setSelectedAttachmentType(type);
+    setShowAttachmentMenu(false);
+    setTimeout(() => {
+      attachmentInputRef.current?.click();
+    }, 0);
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -93,6 +130,28 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
     }
   };
 
+  const handleAttachmentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    try {
+      const newAttachments = [...attachments];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = await apiClient.uploadReferenceImage(file);
+        newAttachments.push({ url, type: selectedAttachmentType! });
+      }
+      setAttachments(newAttachments);
+    } catch (error) {
+      console.error('Failed to upload file:', error);
+      alert('上传文件失败，请重试');
+    } finally {
+      setIsUploading(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+    }
+  };
+
   const removeRefImage = async () => {
     if (refImageUrl) {
       try {
@@ -104,23 +163,60 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
     setRefImageUrl(null);
   };
 
+  const removeAttachment = async (index: number) => {
+    const att = attachments[index];
+    try {
+      await apiClient.deleteReferenceImage(att.url);
+    } catch (error) {
+      console.error('Failed to delete file from OSS:', error);
+    }
+    const newAttachments = [...attachments];
+    newAttachments.splice(index, 1);
+    setAttachments(newAttachments);
+    if (newAttachments.length === 0) {
+      setSelectedAttachmentType(null);
+    }
+  };
+
   return (
     <div className="input-area-wrapper">
       <div className="input-container-square">
-        {refImageUrl && (
-          <div className="ref-image-preview-card">
-            <img src={refImageUrl} alt="Reference" />
-            <button className="remove-ref-image" onClick={removeRefImage}>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-              </svg>
-            </button>
-          </div>
-        )}
-        {isUploading && (
-          <div className="ref-image-preview-card uploading">
-            <div className="upload-spinner"></div>
-            <span>上传中...</span>
+        {(refImageUrl || attachments.length > 0 || isUploading) && (
+          <div className="previews-container">
+            {refImageUrl && (
+              <div className="ref-image-preview-card">
+                <img src={refImageUrl} alt="Reference" />
+                <button className="remove-ref-image" onClick={removeRefImage}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            {attachments.map((att, index) => (
+              <div key={index} className="ref-image-preview-card">
+                {att.type === 'image' ? (
+                  <img src={att.url} alt={`Attachment ${index}`} />
+                ) : (
+                  <div className="video-preview-placeholder">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                      <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09s-.03 1.29-.1 2.09c-.06.8-.15 1.43-.28 1.9-.13.47-.4.83-.8 1.08-.4.25-.97.43-1.7.54-1 .16-2.23.23-3.69.23-1.47 0-2.7-.07-3.69-.23-.74-.11-1.3-.29-1.7-.54-.4-.25-.67-.61-.8-1.08-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09s.03-1.29.1-2.09c.06-.8.15-1.43.28-1.9.13-.46.4-.82.8-1.07.4-.25.97-.43 1.7-.54 1-.16 2.23-.23 3.69-.23 1.47 0 2.7.07 3.69.23.74.11 1.3.29 1.7.54.4.25.67.61.8 1.07z" />
+                    </svg>
+                  </div>
+                )}
+                <button className="remove-ref-image" onClick={() => removeAttachment(index)}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+            {isUploading && (
+              <div className="ref-image-preview-card uploading">
+                <div className="upload-spinner"></div>
+                <span>上传中...</span>
+              </div>
+            )}
           </div>
         )}
         <div className="input-top-row">
@@ -132,6 +228,7 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
             onKeyDown={handleKeyDown}
             disabled={disabled || isUploading}
             rows={1}
+            ref={textareaRef}
           />
           <button 
             className="send-button" 
@@ -227,6 +324,45 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
                   style={{ display: 'none' }}
                 />
               </>
+            )}
+          </div>
+          <div className="tools-right">
+            {!isImageMode && (
+              <div className="attachment-selector" ref={attachmentMenuRef}>
+                <button 
+                  className={`tool-btn attachment-btn ${selectedAttachmentType ? 'active' : ''}`}
+                  onClick={handleAttachmentClick}
+                  title="添加附件"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                    <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
+                  </svg>
+                </button>
+                {showAttachmentMenu && (
+                  <div className="attachment-menu">
+                    <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
+                      <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+                      </svg>
+                      <span>图片</span>
+                    </div>
+                    <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
+                      <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                        <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
+                      </svg>
+                      <span>视频</span>
+                    </div>
+                  </div>
+                )}
+                <input 
+                  type="file"
+                  ref={attachmentInputRef}
+                  onChange={handleAttachmentFileChange}
+                  accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
+                  multiple
+                  style={{ display: 'none' }}
+                />
+              </div>
             )}
           </div>
         </div>

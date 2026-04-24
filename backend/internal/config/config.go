@@ -32,6 +32,9 @@ type Config struct {
 	SearchAPIKey       string
 	SearchBaseURL      string
 	SearchModel        string
+	MultimodalAPIKey    string
+	MultimodalBaseURL   string
+	MultimodalModel     string
 }
 
 func Load() *Config {
@@ -68,6 +71,9 @@ func Load() *Config {
 		SearchAPIKey:       getEnv("SEARCH_API_KEY", ""),
 		SearchBaseURL:      getEnv("SEARCH_BASE_URL", "https://api.openai.com/v1"),
 		SearchModel:        getEnv("SEARCH_MODEL", "gpt-4"),
+		MultimodalAPIKey:    getEnv("MULTIMODAL_API_KEY", ""),
+		MultimodalBaseURL:   getEnv("MULTIMODAL_BASE_URL", "https://api.openai.com/v1"),
+		MultimodalModel:     getEnv("MULTIMODAL_MODEL", "gpt-4o"),
 	}
 
 	// Enhanced Debug Logging for OSS

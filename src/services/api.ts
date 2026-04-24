@@ -230,7 +230,7 @@ class APIClient {
 
   async uploadReferenceImage(file: File): Promise<string> {
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('file', file);
 
     const headers = { ...this.getHeaders() } as any;
     delete headers['Content-Type'];
@@ -242,13 +242,13 @@ class APIClient {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to upload reference image');
+      throw new Error(error.error || 'Failed to upload file');
     }
     const data = await response.json();
     return data.url;
   }
 
-  async deleteReferenceImage(url: string): Promise<void> {
+  async deleteReferenceImage(url: string) {
     const response = await fetch(`${this.baseURL}/api/chat/reference-image`, {
       method: 'DELETE',
       headers: this.getHeaders(),
@@ -256,8 +256,9 @@ class APIClient {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to delete reference image');
+      throw new Error(error.error || 'Failed to delete file');
     }
+    return response.json();
   }
 
   // Chat API with SSE streaming

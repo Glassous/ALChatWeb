@@ -116,22 +116,26 @@ func (h *ImageHandler) DeleteReferenceImage(c *gin.Context) {
 }
 
 func (h *ImageHandler) UploadReferenceImage(c *gin.Context) {
-	file, err := c.FormFile("image")
+	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No image file provided"})
-		return
+		// Fallback to "image" for backward compatibility
+		file, err = c.FormFile("image")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
+			return
+		}
 	}
 
 	f, err := file.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open image file"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
 		return
 	}
 	defer f.Close()
 
-	url, err := h.ossService.UploadFile(f, file.Filename, "reference_images")
+	url, err := h.ossService.UploadFile(f, file.Filename, "reference_files")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload image to OSS: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload file to OSS: %v", err)})
 		return
 	}
 

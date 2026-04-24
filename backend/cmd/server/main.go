@@ -42,6 +42,9 @@ func main() {
 		cfg.SearchBaseURL,
 		cfg.SearchModel,
 		cfg.BochaAPIKey,
+		cfg.MultimodalAPIKey,
+		cfg.MultimodalBaseURL,
+		cfg.MultimodalModel,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI service: %v", err)
