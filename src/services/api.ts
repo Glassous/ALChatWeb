@@ -175,6 +175,18 @@ class APIClient {
     }
   }
 
+  async generateTitle(id: string): Promise<string> {
+    const response = await fetch(`${this.baseURL}/api/conversations/${id}/generate-title`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to generate title');
+    }
+    const data = await response.json();
+    return data.title;
+  }
+
   // Chat API with SSE streaming
   async sendMessage(
     conversationId: string,

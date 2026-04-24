@@ -531,3 +531,64 @@ md-outlined-text-field {
   --md-outlined-text-field-focus-label-text-color: var(--button-bg);
   --md-outlined-text-field-input-text-color: var(--text-color);
 }
+
+.dialog-input {
+  width: 100%;
+  padding: 12px;
+  padding-right: 40px; /* Space for the AI button */
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.dialog-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.ai-generate-button {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.ai-generate-button:hover {
+  background-color: var(--surface-hover);
+}
+
+.ai-generate-button.loading {
+  animation: rotate 2s linear infinite;
+}
+
+.ai-generate-button svg {
+  fill: #e3e3e3;
+}
+
+[data-theme="light"] .ai-generate-button svg {
+  fill: #757575;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}

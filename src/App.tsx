@@ -70,13 +70,11 @@ function ChatApp() {
     let conversationId = currentConversationId;
 
     // Create new conversation if needed
+    let isFirstMessage = false;
     if (!conversationId) {
       try {
-        // Clean and truncate message for title
-        // Remove newlines and extra spaces
-        const cleanText = text.replace(/\s+/g, ' ').trim();
-        const title = cleanText.length > 50 ? cleanText.substring(0, 50) + '...' : cleanText;
-        const newConv = await apiClient.createConversation(title);
+        isFirstMessage = true;
+        const newConv = await apiClient.createConversation(' ');
         conversationId = newConv.id;
         setCurrentConversationId(conversationId);
         setConversations((prev) => [newConv, ...prev]);
@@ -132,9 +130,20 @@ function ChatApp() {
             )
           );
         },
-        () => {
+        async () => {
           // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
+          
+          // If this was the first message, generate a title using AI
+          if (isFirstMessage && conversationId) {
+            try {
+              const generatedTitle = await apiClient.generateTitle(conversationId);
+              handleUpdateConversation(conversationId, generatedTitle);
+            } catch (error) {
+              console.error('Failed to auto-generate title:', error);
+            }
+          }
+          
           loadConversations();
         },
         (error) => {

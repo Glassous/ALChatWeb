@@ -28,7 +28,14 @@ func main() {
 	defer db.Close()
 
 	// Initialize services
-	aiService, err := services.NewAIService(cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel)
+	aiService, err := services.NewAIService(
+		cfg.OpenAIAPIKey,
+		cfg.OpenAIBaseURL,
+		cfg.OpenAIModel,
+		cfg.TitleAIAPIKey,
+		cfg.TitleAIBaseURL,
+		cfg.TitleAIModel,
+	)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI service: %v", err)
 	}
@@ -37,7 +44,7 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
-	conversationHandler := handlers.NewConversationHandler(conversationService)
+	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService)
 
 	// Setup Gin router
@@ -68,6 +75,7 @@ func main() {
 			protected.POST("/conversations", conversationHandler.CreateConversation)
 			protected.GET("/conversations/:id", conversationHandler.GetConversation)
 			protected.PUT("/conversations/:id/title", conversationHandler.UpdateConversationTitle)
+			protected.POST("/conversations/:id/generate-title", conversationHandler.GenerateTitle)
 			protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
 
 			// Chat route

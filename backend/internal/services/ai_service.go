@@ -11,14 +11,16 @@ import (
 )
 
 type AIService struct {
-	g     *genkit.Genkit
-	model string
+	g          *genkit.Genkit
+	model      string
+	titleG     *genkit.Genkit
+	titleModel string
 }
 
-func NewAIService(apiKey, baseURL, model string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, titleAPIKey, titleBaseURL, titleModel string) (*AIService, error) {
 	ctx := context.Background()
 
-	// Initialize Genkit with OpenAI-compatible plugin
+	// Initialize Genkit with OpenAI-compatible plugin for main chat
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&compat_oai.OpenAICompatible{
 			Provider: "openai",
@@ -30,9 +32,23 @@ func NewAIService(apiKey, baseURL, model string) (*AIService, error) {
 		}),
 	)
 
+	// Initialize Genkit for title generation
+	titleG := genkit.Init(ctx,
+		genkit.WithPlugins(&compat_oai.OpenAICompatible{
+			Provider: "openai-title",
+			APIKey:   titleAPIKey,
+			BaseURL:  titleBaseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
+			},
+		}),
+	)
+
 	return &AIService{
-		g:     g,
-		model: model,
+		g:          g,
+		model:      model,
+		titleG:     titleG,
+		titleModel: titleModel,
 	}, nil
 }
 
@@ -63,6 +79,27 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 	}
 
 	return nil
+}
+
+// GenerateTitle generates a title for the conversation based on messages
+func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (string, error) {
+	// Add a system message to instruct the AI to generate a title
+	titlePrompt := &ai.Message{
+		Role:    ai.RoleUser,
+		Content: []*ai.Part{ai.NewTextPart("Please generate a short, concise title for this conversation based on the above messages. The title should be in the same language as the conversation and should not exceed 10 words. Only output the title itself, no quotes or extra text.")},
+	}
+
+	allMessages := append(messages, titlePrompt)
+
+	resp, err := genkit.Generate(ctx, s.titleG,
+		ai.WithModelName(fmt.Sprintf("openai-title/%s", s.titleModel)),
+		ai.WithMessages(allMessages...),
+	)
+	if err != nil {
+		return "", fmt.Errorf("title generation failed: %w", err)
+	}
+
+	return resp.Text(), nil
 }
 
 // ConvertToGenkitMessages converts our message format to Genkit format

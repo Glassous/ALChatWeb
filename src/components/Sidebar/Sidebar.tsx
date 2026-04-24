@@ -31,6 +31,12 @@ interface SidebarProps {
   onMobileDrawerClose?: () => void;
 }
 
+const AI_ICON = (
+  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3">
+    <path d="m176-120-56-56 301-302-181-45 198-123-17-234 179 151 216-88-87 217 151 178-234-16-124 198-45-181-301 301Zm24-520-80-80 80-80 80 80-80 80Zm355 197 48-79 93 7-60-71 35-86-86 35-71-59 7 92-79 49 90 22 23 90Zm165 323-80-80 80-80 80 80-80 80ZM569-570Z"/>
+  </svg>
+);
+
 type Theme = 'auto' | 'light' | 'dark';
 
 interface ContextMenuState {
@@ -60,6 +66,7 @@ export function Sidebar({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
   const [userNickname, setUserNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
@@ -182,6 +189,21 @@ export function Sidebar({
         console.error('Failed to update conversation title:', error);
         alert('更新标题失败，请重试');
       }
+    }
+  };
+
+  const handleAIGenerateTitle = async () => {
+    if (!selectedConversation || isGeneratingTitle) return;
+
+    setIsGeneratingTitle(true);
+    try {
+      const newTitle = await apiClient.generateTitle(selectedConversation.id);
+      setEditTitle(newTitle);
+    } catch (error) {
+      console.error('Failed to generate AI title:', error);
+      alert('AI 生成标题失败，请重试');
+    } finally {
+      setIsGeneratingTitle(false);
     }
   };
 
@@ -407,19 +429,29 @@ export function Sidebar({
             <div className="dialog-overlay" onClick={() => setShowEditDialog(false)}>
               <div className="dialog" onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-title">编辑对话标题</div>
-                <input 
-                  type="text"
-                  className="dialog-input"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleConfirmEdit();
-                    }
-                  }}
-                  autoFocus
-                  placeholder="输入新标题"
-                />
+                <div className="dialog-input-container">
+                  <input 
+                    type="text"
+                    className="dialog-input"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleConfirmEdit();
+                      }
+                    }}
+                    autoFocus
+                    placeholder="输入新标题"
+                  />
+                  <button 
+                    className={`ai-generate-button ${isGeneratingTitle ? 'loading' : ''}`}
+                    onClick={handleAIGenerateTitle}
+                    title="AI 生成标题"
+                    disabled={isGeneratingTitle}
+                  >
+                    {AI_ICON}
+                  </button>
+                </div>
                 <div className="dialog-actions">
                   <button 
                     className="dialog-button secondary"
