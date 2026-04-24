@@ -57,6 +57,8 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState('');
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
   const [userNickname, setUserNickname] = useState('');
+  const [originalNickname, setOriginalNickname] = useState('');
+  const [isUserDialogClosing, setIsUserDialogClosing] = useState(false);
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -115,6 +117,29 @@ export function Sidebar({
       };
     }
   }, [showSettings, contextMenu]);
+
+  const handleCloseUserDialog = () => {
+    if (!isUserDialogClosing) {
+      setIsUserDialogClosing(true);
+    }
+  };
+
+  // 处理关闭动画完成后的清理
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isUserDialogClosing) {
+      timer = setTimeout(() => {
+        setShowUserProfileDialog(false);
+        setIsUserDialogClosing(false);
+      }, 300);
+    }
+    
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [isUserDialogClosing]);
 
   const handleMoreClick = (e: React.MouseEvent, conversation: Conversation) => {
     e.stopPropagation();
@@ -287,7 +312,9 @@ export function Sidebar({
                     const userStr = localStorage.getItem('user');
                     if (userStr) {
                       const user = JSON.parse(userStr);
-                      setUserNickname(user.nickname || user.username || '');
+                      const nickname = user.nickname || user.username || '';
+                      setUserNickname(nickname);
+                      setOriginalNickname(nickname);
                     }
                   } catch (e) { }
                   setShowUserProfileDialog(true);
@@ -413,51 +440,77 @@ export function Sidebar({
       </div>
 
       {showUserProfileDialog && (
-      <div className="dialog-overlay" onClick={() => setShowUserProfileDialog(false)}>
-        <div className="dialog" onClick={e => e.stopPropagation()}>
+      <div 
+        className={`dialog-overlay user-settings-overlay ${isUserDialogClosing ? 'closing' : ''}`} 
+        onClick={handleCloseUserDialog}
+      >
+        <div 
+          className={`dialog user-settings-dialog ${isUserDialogClosing ? 'closing' : ''}`} 
+          onClick={e => e.stopPropagation()}
+        >
           <h3 className="dialog-title">用户设置</h3>
-          <div className="dialog-input-group" style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-color)' }}>修改昵称</label>
-            <input 
-              type="text" 
-              className="dialog-input"
-              value={userNickname}
-              onChange={e => setUserNickname(e.target.value)}
-              placeholder="请输入新昵称"
-            />
-          </div>
-          <div className="dialog-actions" style={{ justifyContent: 'space-between' }}>
-            <button 
-              className="dialog-button danger" 
-              style={{ color: 'var(--danger-color)', backgroundColor: 'transparent', border: '1px solid var(--danger-color)' }}
-              onClick={() => {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                window.location.href = '/welcome';
-              }}
-            >
-              退出登录
-            </button>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="dialog-button cancel" onClick={() => setShowUserProfileDialog(false)}>取消</button>
-              <button className="dialog-button confirm" onClick={async () => {
-                try {
-                  // Call API to update user profile
-                  await apiClient.updateProfile({ nickname: userNickname });
-                  
-                  // Update local storage
-                  const userStr = localStorage.getItem('user');
-                  if (userStr) {
-                    const user = JSON.parse(userStr);
-                    user.nickname = userNickname;
-                    localStorage.setItem('user', JSON.stringify(user));
-                  }
-                  setShowUserProfileDialog(false);
-                } catch (error) {
-                  console.error('Failed to update profile', error);
-                  alert('修改昵称失败，请稍后重试');
-                }
-              }}>保存</button>
+          
+          <div className="user-settings-content">
+            <div className="nickname-section">
+              <label className="nickname-label">修改昵称</label>
+              <div className="nickname-input-container">
+                <input 
+                  type="text" 
+                  className="nickname-input"
+                  value={userNickname}
+                  onChange={e => setUserNickname(e.target.value)}
+                  placeholder="请输入新昵称"
+                />
+                {userNickname !== originalNickname && userNickname.trim() && (
+                  <div className="nickname-actions">
+                    <button 
+                      className="nickname-action-btn cancel-btn"
+                      onClick={() => setUserNickname(originalNickname)}
+                      title="取消"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
+                        <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
+                      </svg>
+                    </button>
+                    <button 
+                      className="nickname-action-btn confirm-btn"
+                      onClick={async () => {
+                        try {
+                          await apiClient.updateProfile({ nickname: userNickname });
+                          const userStr = localStorage.getItem('user');
+                          if (userStr) {
+                            const user = JSON.parse(userStr);
+                            user.nickname = userNickname;
+                            localStorage.setItem('user', JSON.stringify(user));
+                          }
+                          setOriginalNickname(userNickname);
+                        } catch (error) {
+                          console.error('Failed to update profile', error);
+                          alert('修改昵称失败，请稍后重试');
+                        }
+                      }}
+                      title="确认"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
+                        <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="logout-section">
+              <button 
+                className="logout-btn"
+                onClick={() => {
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('user');
+                  window.location.href = '/welcome';
+                }}
+              >
+                退出登录
+              </button>
             </div>
           </div>
         </div>
