@@ -26,6 +26,7 @@
 
 .mobile-new-chat-button {
   display: none;
+  --md-icon-button-icon-size: 28px;
 }
 
 .mobile-conversation-title {
