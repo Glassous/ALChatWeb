@@ -14,6 +14,7 @@ declare module 'react' {
       'md-filled-button': any;
       'md-outlined-button': any;
       'md-text-button': any;
+      'md-circular-progress': any;
     }
   }
 }
