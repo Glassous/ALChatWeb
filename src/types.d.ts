@@ -9,6 +9,11 @@ declare module 'react' {
       'md-list': any;
       'md-list-item': any;
       'md-divider': any;
+      'md-dialog': any;
+      'md-outlined-text-field': any;
+      'md-filled-button': any;
+      'md-outlined-button': any;
+      'md-text-button': any;
     }
   }
 }

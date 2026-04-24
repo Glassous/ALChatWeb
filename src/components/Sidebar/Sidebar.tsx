@@ -4,6 +4,11 @@ import '@material/web/iconbutton/icon-button.js';
 import '@material/web/fab/fab.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
+import '@material/web/dialog/dialog.js';
+import '@material/web/textfield/outlined-text-field.js';
+import '@material/web/button/filled-button.js';
+import '@material/web/button/outlined-button.js';
+import '@material/web/button/text-button.js';
 import './Sidebar.css';
 import { apiClient } from '../../services/api';
 
@@ -58,7 +63,6 @@ export function Sidebar({
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
   const [userNickname, setUserNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
-  const [isUserDialogClosing, setIsUserDialogClosing] = useState(false);
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -119,27 +123,8 @@ export function Sidebar({
   }, [showSettings, contextMenu]);
 
   const handleCloseUserDialog = () => {
-    if (!isUserDialogClosing) {
-      setIsUserDialogClosing(true);
-    }
+    setShowUserProfileDialog(false);
   };
-
-  // 处理关闭动画完成后的清理
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (isUserDialogClosing) {
-      timer = setTimeout(() => {
-        setShowUserProfileDialog(false);
-        setIsUserDialogClosing(false);
-      }, 300);
-    }
-    
-    return () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-  }, [isUserDialogClosing]);
 
   const handleMoreClick = (e: React.MouseEvent, conversation: Conversation) => {
     e.stopPropagation();
@@ -458,41 +443,36 @@ export function Sidebar({
       </div>
 
       {showUserProfileDialog && (
-      <div 
-        className={`dialog-overlay user-settings-overlay ${isUserDialogClosing ? 'closing' : ''}`} 
-        onClick={handleCloseUserDialog}
-      >
-        <div 
-          className={`dialog user-settings-dialog ${isUserDialogClosing ? 'closing' : ''}`} 
-          onClick={e => e.stopPropagation()}
+        <md-dialog 
+          open={showUserProfileDialog}
+          onClose={handleCloseUserDialog}
         >
-          <h3 className="dialog-title">用户设置</h3>
-          
-          <div className="user-settings-content">
+          <div slot="headline">用户设置</div>
+          <form slot="content" method="dialog" className="user-settings-content">
             <div className="nickname-section">
-              <label className="nickname-label">修改昵称</label>
-              <div className="nickname-input-container">
-                <input 
-                  type="text" 
-                  className="nickname-input"
-                  value={userNickname}
-                  onChange={e => setUserNickname(e.target.value)}
-                  placeholder="请输入新昵称"
-                />
+              <md-outlined-text-field
+                label="修改昵称"
+                value={userNickname}
+                onInput={(e: any) => setUserNickname(e.target.value)}
+                placeholder="请输入新昵称"
+                style={{ width: '100%' }}
+              >
                 {userNickname !== originalNickname && userNickname.trim() && (
-                  <div className="nickname-actions">
-                    <button 
-                      className="nickname-action-btn cancel-btn"
-                      onClick={() => setUserNickname(originalNickname)}
+                  <div slot="trailing-icon" className="nickname-actions">
+                    <md-icon-button
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        setUserNickname(originalNickname);
+                      }}
                       title="取消"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
                         <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
                       </svg>
-                    </button>
-                    <button 
-                      className="nickname-action-btn confirm-btn"
-                      onClick={async () => {
+                    </md-icon-button>
+                    <md-icon-button
+                      onClick={async (e: React.MouseEvent) => {
+                        e.stopPropagation();
                         try {
                           await apiClient.updateProfile({ nickname: userNickname });
                           const userStr = localStorage.getItem('user');
@@ -512,27 +492,30 @@ export function Sidebar({
                       <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
                         <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
                       </svg>
-                    </button>
+                    </md-icon-button>
                   </div>
                 )}
-              </div>
+              </md-outlined-text-field>
             </div>
             
             <div className="logout-section">
-              <button 
+              <md-filled-button
                 className="logout-btn"
                 onClick={() => {
                   localStorage.removeItem('token');
                   localStorage.removeItem('user');
                   window.location.href = '/welcome';
                 }}
+                style={{ width: '100%' }}
               >
                 退出登录
-              </button>
+              </md-filled-button>
             </div>
+          </form>
+          <div slot="actions">
+            <md-text-button onClick={handleCloseUserDialog}>关闭</md-text-button>
           </div>
-        </div>
-      </div>
+        </md-dialog>
       )}
     </>
   );
