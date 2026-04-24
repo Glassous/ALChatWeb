@@ -81,6 +81,8 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
     );
   };
 
+  const isPureImage = msg.content.trim().startsWith('<image') && msg.content.replace(/<image src="[^"]+">/g, '').trim() === '';
+
   return (
     <div className={`message-wrapper ${msg.role}`}>
       <div className="message-container">
@@ -111,28 +113,32 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                 msg.content
               )}
             </div>
-            <button 
-              className={`copy-button ${copied ? 'copied' : ''}`} 
-              onClick={handleCopy}
-              title="复制消息"
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </button>
+            {!isPureImage && (
+              <button 
+                className={`copy-button ${copied ? 'copied' : ''}`} 
+                onClick={handleCopy}
+                title="复制消息"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            )}
           </>
         ) : (
           <div className="assistant-message-content">
             <div className="message-text assistant-text">
               {renderContent()}
             </div>
-            <div className="assistant-actions">
-              <button 
-                className={`action-button copy-action ${copied ? 'copied' : ''}`} 
-                onClick={handleCopy}
-                title="复制消息"
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-              </button>
-            </div>
+            {!isPureImage && (
+              <div className="assistant-actions">
+                <button 
+                  className={`action-button copy-action ${copied ? 'copied' : ''}`} 
+                  onClick={handleCopy}
+                  title="复制消息"
+                >
+                  {copied ? <CheckIcon /> : <CopyIcon />}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
