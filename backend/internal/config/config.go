@@ -15,6 +15,9 @@ type Config struct {
 	OpenAIAPIKey       string
 	OpenAIBaseURL      string
 	OpenAIModel        string
+	ExpertAPIKey       string
+	ExpertBaseURL      string
+	ExpertModel        string
 	JWTSecret          string
 	TitleAIModel       string
 	TitleAIBaseURL     string
@@ -44,6 +47,9 @@ func Load() *Config {
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:      getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:        getEnv("OPENAI_MODEL", "gpt-3.5-turbo"),
+		ExpertAPIKey:       getEnv("EXPERT_API_KEY", ""),
+		ExpertBaseURL:      getEnv("EXPERT_BASE_URL", "https://api.openai.com/v1"),
+		ExpertModel:        getEnv("EXPERT_MODEL", "gpt-4"),
 		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key"),
 		TitleAIModel:       getEnv("TITLE_AI_MODEL", ""),
 		TitleAIBaseURL:     getEnv("TITLE_AI_BASE_URL", ""),

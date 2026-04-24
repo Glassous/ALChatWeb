@@ -164,6 +164,18 @@ func (s *ConversationService) SaveMessage(ctx context.Context, conversationID, r
 	return message, nil
 }
 
+func (s *ConversationService) UpdateMessage(ctx context.Context, message *models.Message) error {
+	_, err := s.db.Messages().UpdateOne(
+		ctx,
+		bson.M{"_id": message.ID},
+		bson.M{"$set": bson.M{
+			"content":   message.Content,
+			"reasoning": message.Reasoning,
+		}},
+	)
+	return err
+}
+
 func (s *ConversationService) DeleteConversation(ctx context.Context, conversationID string, userIDStr string) error {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {

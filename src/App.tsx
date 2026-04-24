@@ -64,10 +64,11 @@ function ChatApp() {
     }
   };
 
-  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string }) => {
+  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
+    const currentMode = options?.mode || 'daily';
 
     // Create new conversation if needed
     let isFirstMessage = false;
@@ -172,6 +173,7 @@ function ChatApp() {
       conversation_id: conversationId,
       role: 'assistant',
       content: '',
+      reasoning: '',
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), assistantMsg]);
@@ -181,12 +183,23 @@ function ChatApp() {
       await apiClient.sendMessage(
         conversationId,
         text,
+        currentMode,
         (token) => {
           // Update assistant message with new token
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
                 ? { ...msg, content: msg.content + token }
+                : msg
+            )
+          );
+        },
+        (reasoning) => {
+          // Update assistant message with reasoning token
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg) =>
+              msg.id === assistantMsgId
+                ? { ...msg, reasoning: (msg.reasoning || '') + reasoning }
                 : msg
             )
           );
@@ -208,13 +221,12 @@ function ChatApp() {
           loadConversations();
         },
         (error) => {
-          // Error
-          console.error('Chat error:', error);
+          console.error('SSE Error:', error);
           setIsLoading(false);
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, content: `Error: ${error}` }
+                ? { ...msg, content: msg.content + `\n\n[Error: ${error}]` }
                 : msg
             )
           );
@@ -223,6 +235,13 @@ function ChatApp() {
     } catch (error) {
       console.error('Failed to send message:', error);
       setIsLoading(false);
+      setMessages((prev) =>
+        (Array.isArray(prev) ? prev : []).map((msg) =>
+          msg.id === assistantMsgId
+            ? { ...msg, content: msg.content + `\n\n[Failed to send message: ${error}]` }
+            : msg
+        )
+      );
     }
   };
 

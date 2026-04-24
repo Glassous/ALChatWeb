@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './ChatArea.css';
@@ -8,6 +8,7 @@ export interface Message {
   conversation_id: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: string;
   created_at: string;
   status?: 'pending' | 'loading' | 'completed' | 'error';
   metadata?: {
@@ -29,6 +30,19 @@ const CheckIcon = () => (
 
 function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
   const [copied, setCopied] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isManual, setIsManual] = useState(false);
+
+  // Auto-collapse logic
+  useEffect(() => {
+    if (isManual) return;
+
+    if (msg.reasoning && !msg.content) {
+      setIsCollapsed(false); // Expand while reasoning
+    } else if (msg.reasoning && msg.content) {
+      setIsCollapsed(true); // Collapse when main content starts
+    }
+  }, [msg.reasoning, !!msg.content, isManual]);
 
   const handleCopy = async () => {
     try {
@@ -61,23 +75,57 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
     const processedContent = msg.content.replace(/<image src="([^"]+)">/g, '![generated-image]($1)');
 
     return (
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        components={{
-          img: ({ src, alt }) => (
-                  <span className="image-container-msg">
-                    <img 
-                      src={src} 
-                      alt={alt || "Generated"} 
-                      className="generated-image" 
-                      onClick={() => onImageClick(src!)}
-                    />
-                  </span>
-                )
-        }}
-      >
-        {processedContent}
-      </ReactMarkdown>
+      <>
+        {msg.reasoning && (
+          <div className={`reasoning-container ${isCollapsed ? 'collapsed' : ''}`}>
+            <div 
+              className="reasoning-header" 
+              onClick={() => {
+                setIsCollapsed(!isCollapsed);
+                setIsManual(true);
+              }}
+            >
+              <div className="reasoning-label">
+                <svg 
+                  className={`collapse-icon ${isCollapsed ? '' : 'expanded'}`} 
+                  viewBox="0 0 24 24" 
+                  width="14" 
+                  height="14" 
+                  fill="currentColor"
+                >
+                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+                </svg>
+                深度思考
+              </div>
+              {isCollapsed && msg.reasoning && (
+                <div className="reasoning-preview">{msg.reasoning.substring(0, 50)}...</div>
+              )}
+            </div>
+            {!isCollapsed && (
+              <div className="reasoning-content">
+                <div className="reasoning-text">{msg.reasoning}</div>
+              </div>
+            )}
+          </div>
+        )}
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            img: ({ src, alt }) => (
+                    <span className="image-container-msg">
+                      <img 
+                        src={src} 
+                        alt={alt || "Generated"} 
+                        className="generated-image" 
+                        onClick={() => onImageClick(src!)}
+                      />
+                    </span>
+                  )
+          }}
+        >
+          {processedContent}
+        </ReactMarkdown>
+      </>
     );
   };
 

@@ -12,6 +12,7 @@ export interface Message {
   conversation_id: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: string;
   created_at: string;
 }
 
@@ -20,7 +21,7 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'done' | 'error';
+  type: 'token' | 'reasoning' | 'done' | 'error';
   content?: string;
 }
 
@@ -261,7 +262,9 @@ class APIClient {
   async sendMessage(
     conversationId: string,
     message: string,
+    mode: 'daily' | 'expert',
     onToken: (token: string) => void,
+    onReasoning: (reasoning: string) => void,
     onDone: () => void,
     onError: (error: string) => void
   ): Promise<void> {
@@ -271,6 +274,7 @@ class APIClient {
       body: JSON.stringify({
         conversation_id: conversationId,
         message,
+        mode,
       }),
     });
 
@@ -301,6 +305,8 @@ class APIClient {
               
               if (parsed.type === 'token' && parsed.content) {
                 onToken(parsed.content);
+              } else if (parsed.type === 'reasoning' && parsed.content) {
+                onReasoning(parsed.content);
               } else if (parsed.type === 'done') {
                 onDone();
               } else if (parsed.type === 'error') {

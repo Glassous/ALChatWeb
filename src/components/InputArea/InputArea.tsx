@@ -3,7 +3,7 @@ import './InputArea.css';
 import { apiClient } from '../../services/api';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => void;
   disabled?: boolean;
 }
 
@@ -18,6 +18,7 @@ const RESOLUTIONS = [
 export function InputArea({ onSend, disabled = false }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
+  const [mode, setMode] = useState<'daily' | 'expert'>('daily');
   const [resolution, setResolution] = useState(RESOLUTIONS[0]);
   const [showResolutions, setShowResolutions] = useState(false);
   const [refImageUrl, setRefImageUrl] = useState<string | null>(null);
@@ -42,7 +43,8 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
       onSend(text.trim(), { 
         isImageMode, 
         resolution, 
-        refImageUrl: refImageUrl || undefined 
+        refImageUrl: refImageUrl || undefined,
+        mode: isImageMode ? 'daily' : mode
       });
       setText('');
       setRefImageUrl(null);
@@ -135,6 +137,13 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
         </div>
         <div className="input-bottom-row">
           <div className="tools-left">
+            <button 
+              className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
+              onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+              title={mode === 'daily' ? '日常模式' : '专家模式'}
+            >
+              {mode === 'daily' ? '日常' : '专家'}
+            </button>
             <button 
               className={`tool-btn ${isImageMode ? 'active' : ''}`}
               onClick={() => setIsImageMode(!isImageMode)}

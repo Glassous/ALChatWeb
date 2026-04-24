@@ -178,22 +178,36 @@
 }
 
 .tool-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+}
+
+.mode-toggle-btn {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  min-width: 50px;
+}
+
+.mode-toggle-btn.expert {
+  color: #10a37f;
+  border-color: rgba(16, 163, 127, 0.3);
+  background-color: rgba(16, 163, 127, 0.1);
 }
 
 .tool-btn:hover {
-  background-color: rgba(0, 0, 0, 0.05);
   color: var(--text-color);
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .tool-btn.active {

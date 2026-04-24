@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -78,20 +79,35 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	// Stream AI response
 	var fullResponse strings.Builder
+	var fullReasoning strings.Builder
 	err = h.aiService.GenerateStream(
 		c.Request.Context(),
 		services.ConvertToGenkitMessages(genkitMessages),
-		func(token string) error {
-			fullResponse.WriteString(token)
-
-			// Send token as SSE
-			response := models.ChatStreamResponse{
-				Type:    "token",
-				Content: token,
+		req.Mode,
+		func(token string, reasoning string) error {
+			if reasoning != "" {
+				fullReasoning.WriteString(reasoning)
+				// Send reasoning token as SSE
+				response := models.ChatStreamResponse{
+					Type:    "reasoning",
+					Content: reasoning,
+				}
+				data, _ := json.Marshal(response)
+				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+				c.Writer.Flush()
 			}
-			data, _ := json.Marshal(response)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
+
+			if token != "" {
+				fullResponse.WriteString(token)
+				// Send token as SSE
+				response := models.ChatStreamResponse{
+					Type:    "token",
+					Content: token,
+				}
+				data, _ := json.Marshal(response)
+				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+				c.Writer.Flush()
+			}
 
 			return nil
 		},
@@ -109,7 +125,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	// Save assistant message
-	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID)
+	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID)
 	if err != nil {
 		errorResponse := models.ChatStreamResponse{
 			Type:    "error",
@@ -119,6 +135,15 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 		c.Writer.Flush()
 		return
+	}
+
+	// Update assistant message with reasoning if present
+	if fullReasoning.Len() > 0 {
+		assistantMsg.Reasoning = fullReasoning.String()
+		err = h.conversationService.UpdateMessage(c.Request.Context(), assistantMsg)
+		if err != nil {
+			log.Printf("Failed to update message with reasoning: %v", err)
+		}
 	}
 
 	// Send done signal
