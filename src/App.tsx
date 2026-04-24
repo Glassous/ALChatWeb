@@ -64,7 +64,7 @@ function ChatApp() {
     }
   };
 
-  const handleSend = async (text: string) => {
+  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
@@ -103,6 +103,61 @@ function ChatApp() {
     
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), newUserMsg]);
     setIsLoading(true);
+
+    if (options?.isImageMode) {
+      // Handle image generation
+      const assistantMsgId = (Date.now() + 1).toString();
+      const loadingMsg: Message = {
+        id: assistantMsgId,
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: '',
+        created_at: new Date().toISOString(),
+        status: 'loading',
+        metadata: {
+          resolution: options.resolution
+        }
+      };
+      setMessages((prev) => [...(Array.isArray(prev) ? prev : []), loadingMsg]);
+      setIsLoading(true);
+
+      try {
+        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution);
+        
+        // Update loading message with image tag and completed status
+        setMessages((prev) =>
+          (Array.isArray(prev) ? prev : []).map((msg) =>
+            msg.id === assistantMsgId
+              ? { ...msg, content: `<image src="${imageUrl}">`, status: 'completed' }
+              : msg
+          )
+        );
+        setIsLoading(false);
+
+        // If this was the first message, generate a title using AI
+        if (isFirstMessage && conversationId) {
+          try {
+            const generatedTitle = await apiClient.generateTitle(conversationId);
+            handleUpdateConversation(conversationId, generatedTitle);
+          } catch (error) {
+            console.error('Failed to auto-generate title:', error);
+          }
+        }
+
+        loadConversations();
+      } catch (error) {
+        console.error('Failed to generate image:', error);
+        setMessages((prev) =>
+          (Array.isArray(prev) ? prev : []).map((msg) =>
+            msg.id === assistantMsgId
+              ? { ...msg, content: `Error generating image: ${error}`, status: 'error' }
+              : msg
+          )
+        );
+        setIsLoading(false);
+      }
+      return;
+    }
 
     // Create placeholder for assistant message
     const assistantMsgId = (Date.now() + 1).toString();

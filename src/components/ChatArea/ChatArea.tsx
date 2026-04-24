@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './ChatArea.css';
@@ -9,6 +9,10 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+  status?: 'pending' | 'loading' | 'completed' | 'error';
+  metadata?: {
+    resolution?: string;
+  };
 }
 
 interface ChatAreaProps {
@@ -23,7 +27,7 @@ const CheckIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
 );
 
-function MessageItem({ msg }: { msg: Message }) {
+function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -34,6 +38,47 @@ function MessageItem({ msg }: { msg: Message }) {
     } catch (err) {
       console.error('Failed to copy: ', err);
     }
+  };
+
+  const renderContent = () => {
+    if (msg.status === 'loading' && msg.metadata?.resolution) {
+      const [width, height] = msg.metadata.resolution.split('x').map(Number);
+      const aspectRatio = width / height;
+      
+      return (
+        <div 
+          className="image-loading-placeholder" 
+          style={{ aspectRatio: `${aspectRatio}` }}
+        >
+          <div className="loading-spinner-container">
+            <div className="loading-spinner"></div>
+            <span>正在生成图片...</span>
+          </div>
+        </div>
+      );
+    }
+
+    const processedContent = msg.content.replace(/<image src="([^"]+)">/g, '![generated-image]($1)');
+
+    return (
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        components={{
+          img: ({ src, alt }) => (
+                  <span className="image-container-msg">
+                    <img 
+                      src={src} 
+                      alt={alt || "Generated"} 
+                      className="generated-image" 
+                      onClick={() => onImageClick(src!)}
+                    />
+                  </span>
+                )
+        }}
+      >
+        {processedContent}
+      </ReactMarkdown>
+    );
   };
 
   return (
@@ -55,9 +100,7 @@ function MessageItem({ msg }: { msg: Message }) {
         ) : (
           <div className="assistant-message-content">
             <div className="message-text assistant-text">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {msg.content}
-              </ReactMarkdown>
+              {renderContent()}
             </div>
             <div className="assistant-actions">
               <button 
@@ -76,13 +119,49 @@ function MessageItem({ msg }: { msg: Message }) {
 }
 
 export function ChatArea({ messages }: ChatAreaProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const handleDownload = async () => {
+    if (!previewUrl) return;
+    try {
+      const response = await fetch(previewUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `generated-image-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Failed to download image:', err);
+    }
+  };
+
   return (
     <div className="chat-area">
       <div className="chat-content">
         {messages.map((msg) => (
-          <MessageItem key={msg.id} msg={msg} />
+          <MessageItem key={msg.id} msg={msg} onImageClick={setPreviewUrl} />
         ))}
       </div>
+
+      {previewUrl && (
+        <div className="image-preview-overlay" onClick={() => setPreviewUrl(null)}>
+          <div className="preview-header" onClick={e => e.stopPropagation()}>
+            <button className="preview-action-btn download-btn" onClick={handleDownload} title="下载图片">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
+            </button>
+            <button className="preview-action-btn close-btn" onClick={() => setPreviewUrl(null)} title="关闭预览">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>
+            </button>
+          </div>
+          <div className="preview-content" onClick={e => e.stopPropagation()}>
+            <img src={previewUrl} alt="Preview" className="preview-image" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

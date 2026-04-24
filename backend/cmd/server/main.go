@@ -46,10 +46,16 @@ func main() {
 		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)
 	}
 
+	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Image service: %v. Image generation will be disabled.", err)
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -85,6 +91,7 @@ func main() {
 
 			// Chat route
 			protected.POST("/chat", chatHandler.Chat)
+			protected.POST("/chat/image", imageHandler.GenerateImage)
 		}
 	}
 

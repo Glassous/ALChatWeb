@@ -206,6 +206,20 @@ class APIClient {
     return data.title;
   }
 
+  async generateImage(conversationId: string, prompt: string, resolution: string): Promise<string> {
+    const response = await fetch(`${this.baseURL}/api/chat/image`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ conversation_id: conversationId, prompt, resolution }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate image');
+    }
+    const data = await response.json();
+    return data.url;
+  }
+
   // Chat API with SSE streaming
   async sendMessage(
     conversationId: string,

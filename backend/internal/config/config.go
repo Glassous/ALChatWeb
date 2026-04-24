@@ -23,6 +23,8 @@ type Config struct {
 	OSSAccessKeyID     string
 	OSSAccessKeySecret string
 	OSSBucketName      string
+	VolcengineAPIKey   string
+	VolcengineImageEP  string
 }
 
 func Load() *Config {
@@ -50,6 +52,8 @@ func Load() *Config {
 		OSSAccessKeyID:     getEnv("OSS_ACCESS_KEY_ID", ""),
 		OSSAccessKeySecret: getEnv("OSS_ACCESS_KEY_SECRET", ""),
 		OSSBucketName:      getEnv("OSS_BUCKET_NAME", ""),
+		VolcengineAPIKey:   getEnv("VOLCENGINE_API_KEY", ""),
+		VolcengineImageEP:  getEnv("VOLCENGINE_IMAGE_EP", ""),
 	}
 
 	// Enhanced Debug Logging for OSS
