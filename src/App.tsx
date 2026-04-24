@@ -176,6 +176,9 @@ function App() {
     });
   };
 
+  const currentConversation = conversations.find(c => c.id === currentConversationId);
+  const conversationTitle = currentConversation?.title;
+
   return (
     <div className="app-container">
       <Sidebar 
@@ -188,7 +191,7 @@ function App() {
         isLoading={isLoadingConversations}
       />
       <div className="main-content">
-        <TopBar />
+        <TopBar conversationTitle={conversationTitle} />
         <div className="chat-container">
           {!hasMessages ? (
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>

@@ -5,6 +5,7 @@
   padding: 0 24px;
   background-color: var(--bg-color);
   flex-shrink: 0;
+  position: relative;
 }
 
 .topbar-logo-container {
@@ -18,4 +19,24 @@
   font-weight: 400;
   margin: 0;
   color: var(--text-color);
+}
+
+.topbar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 60%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.current-conversation-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-color);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
