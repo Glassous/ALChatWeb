@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="logo-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 110" width="220" height="220" class="transition-transform duration-500 ease-out group-hover:scale-105">
+                
+                <!-- ==========================================
+                     Logo 核心主体 (纯净连续线条，透明背景)
+                     ========================================== -->
+                <g id="logo-body">
+                    <!-- A-L 连体主路径：通过 M (移动) 和 L (连线) 将外部轮廓与内部横杠无缝融合在一条路径中 -->
+                    <path d="M 20 80 L 70 20 L 80 80 L 105 80 M 45 50 L 75 50" fill="none" stroke="#09090b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+                </g>
+                
+            </svg>
