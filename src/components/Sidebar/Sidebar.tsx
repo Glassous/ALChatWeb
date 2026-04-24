@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import Cropper from 'react-easy-crop';
+import type { Point, Area } from 'react-easy-crop';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/fab/fab.js';
 import '@material/web/list/list.js';
@@ -12,6 +14,7 @@ import '@material/web/button/text-button.js';
 import '@material/web/progress/circular-progress.js';
 import './Sidebar.css';
 import { apiClient } from '../../services/api';
+import getCroppedImg from '../../utils/cropImage';
 
 interface Conversation {
   id: string;
@@ -71,6 +74,14 @@ export function Sidebar({
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
   const [userNickname, setUserNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
+  const [userAvatar, setUserAvatar] = useState('');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -132,6 +143,59 @@ export function Sidebar({
 
   const handleCloseUserDialog = () => {
     setShowUserProfileDialog(false);
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      setImageToCrop(reader.result as string);
+      setIsCropping(true);
+    });
+    reader.readAsDataURL(file);
+  };
+
+  const onCropComplete = useCallback((_: Area, _croppedAreaPixels: Area) => {
+    setCroppedAreaPixels(_croppedAreaPixels);
+  }, []);
+
+  const handleConfirmCrop = async () => {
+    if (!imageToCrop || !croppedAreaPixels) return;
+
+    setIsUploadingAvatar(true);
+    setIsCropping(false);
+    
+    try {
+      const croppedBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      if (!croppedBlob) throw new Error('Failed to crop image');
+
+      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+      const response = await apiClient.updateAvatar(croppedFile);
+      const newAvatarUrl = response.avatar;
+      setUserAvatar(newAvatarUrl);
+      
+      // Update local storage
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        user.avatar = newAvatarUrl;
+        localStorage.setItem('user', JSON.stringify(user));
+      }
+    } catch (error) {
+      console.error('Failed to upload avatar', error);
+      alert('上传头像失败，请稍后重试');
+    } finally {
+      setIsUploadingAvatar(false);
+      setImageToCrop(null);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleMoreClick = (e: React.MouseEvent, conversation: Conversation) => {
@@ -337,13 +401,31 @@ export function Sidebar({
                       const nickname = user.nickname || user.username || '';
                       setUserNickname(nickname);
                       setOriginalNickname(nickname);
+                      setUserAvatar(user.avatar || '');
                     }
                   } catch (e) { }
                   setShowUserProfileDialog(true);
                 }}
               >
-                <span className="settings-label user-label">用户</span>
-                <div className="user-actions">
+                <div className="user-profile-preview">
+                  {(() => {
+                    try {
+                      const userStr = localStorage.getItem('user');
+                      if (userStr) {
+                        const user = JSON.parse(userStr);
+                        if (user.avatar) {
+                          return <img src={user.avatar} alt="Avatar" className="user-mini-avatar" />;
+                        }
+                      }
+                    } catch (e) { }
+                    return (
+                      <div className="user-mini-avatar-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                          <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
+                        </svg>
+                      </div>
+                    );
+                  })()}
                   <span className="username-text">
                     {(() => {
                       try {
@@ -474,6 +556,38 @@ export function Sidebar({
         >
           <div slot="headline">用户设置</div>
           <form slot="content" method="dialog" className="user-settings-content">
+            <div className="avatar-section">
+              <div className="avatar-container" onClick={handleAvatarClick}>
+                {userAvatar ? (
+                  <img src={userAvatar} alt="User Avatar" className="user-avatar-preview" />
+                ) : (
+                  <div className="user-avatar-placeholder">
+                    <svg xmlns="http://www.w3.org/2000/svg" height="40px" viewBox="0 -960 960 960" width="40px" fill="currentColor">
+                      <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
+                    </svg>
+                  </div>
+                )}
+                {isUploadingAvatar && (
+                  <div className="avatar-loading">
+                    <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '32px' }} />
+                  </div>
+                )}
+                <div className="avatar-overlay">
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                    <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
+                  </svg>
+                </div>
+              </div>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                accept="image/*" 
+                style={{ display: 'none' }} 
+              />
+              <span className="avatar-hint">点击更换头像</span>
+            </div>
+
             <div className="nickname-section">
               <md-outlined-text-field
                 label="修改昵称"
@@ -539,6 +653,38 @@ export function Sidebar({
           </form>
           <div slot="actions">
             <md-text-button onClick={handleCloseUserDialog}>关闭</md-text-button>
+          </div>
+        </md-dialog>
+      )}
+
+      {isCropping && imageToCrop && (
+        <md-dialog 
+          open={isCropping}
+          onClose={() => setIsCropping(false)}
+          className="crop-dialog"
+        >
+          <div slot="headline">裁剪头像</div>
+          <div slot="content" className="crop-container">
+            <Cropper
+              image={imageToCrop}
+              crop={crop}
+              zoom={zoom}
+              aspect={1}
+              onCropChange={setCrop}
+              onCropComplete={onCropComplete}
+              onZoomChange={setZoom}
+            />
+          </div>
+          <div slot="actions">
+            <md-text-button onClick={() => {
+              setIsCropping(false);
+              setImageToCrop(null);
+            }}>
+              取消
+            </md-text-button>
+            <md-filled-button onClick={handleConfirmCrop}>
+              确定
+            </md-filled-button>
           </div>
         </md-dialog>
       )}

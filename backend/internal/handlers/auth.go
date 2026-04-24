@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
+	"alchat-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -17,14 +19,16 @@ import (
 )
 
 type AuthHandler struct {
-	db        *database.MongoDB
-	jwtSecret string
+	db         *database.MongoDB
+	jwtSecret  string
+	ossService *services.OSSService
 }
 
-func NewAuthHandler(db *database.MongoDB, jwtSecret string) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService) *AuthHandler {
 	return &AuthHandler{
-		db:        db,
-		jwtSecret: jwtSecret,
+		db:         db,
+		jwtSecret:  jwtSecret,
+		ossService: ossService,
 	}
 }
 
@@ -252,4 +256,56 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Profile updated successfully"})
+}
+
+func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	if h.ossService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OSS service not configured"})
+		return
+	}
+
+	file, header, err := c.Request.FormFile("avatar")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get avatar file"})
+		return
+	}
+	defer file.Close()
+
+	// Upload to OSS
+	avatarURL, err := h.ossService.UploadFile(file, header.Filename, "avatars")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload avatar: %v", err)})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Update database
+	_, err = h.db.Users().UpdateOne(
+		ctx,
+		bson.M{"_id": userID},
+		bson.M{"$set": bson.M{"avatar": avatarURL, "updated_at": time.Now()}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user avatar in database"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Avatar updated successfully",
+		"avatar":  avatarURL,
+	})
 }

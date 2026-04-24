@@ -105,6 +105,25 @@ class APIClient {
     return response.json();
   }
 
+  async updateAvatar(file: File) {
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const headers = { ...this.getHeaders() } as any;
+    delete headers['Content-Type']; // Let browser set it for FormData
+
+    const response = await fetch(`${this.baseURL}/api/auth/avatar`, {
+      method: 'POST',
+      headers: headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update avatar');
+    }
+    return response.json();
+  }
+
   // Conversation APIs
   async getConversations(): Promise<Conversation[]> {
     try {

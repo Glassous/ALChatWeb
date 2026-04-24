@@ -13,6 +13,7 @@ type User struct {
 	Password         string             `bson:"password" json:"-"` // Omit password from JSON
 	SecurityQuestion string             `bson:"security_question" json:"security_question"`
 	SecurityAnswer   string             `bson:"security_answer" json:"-"` // Omit from JSON
+	Avatar           string             `bson:"avatar" json:"avatar"`
 	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
 	UpdatedAt        time.Time          `bson:"updated_at" json:"updated_at"`
 }

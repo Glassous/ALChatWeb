@@ -41,9 +41,13 @@ func main() {
 	}
 
 	conversationService := services.NewConversationService(db)
+	ossService, err := services.NewOSSService(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)
+	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret)
+	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService)
 
@@ -69,6 +73,7 @@ func main() {
 		{
 			// Auth protected routes
 			protected.PUT("/auth/profile", authHandler.UpdateProfile)
+			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
 
 			// Conversation routes
 			protected.GET("/conversations", conversationHandler.GetAllConversations)
