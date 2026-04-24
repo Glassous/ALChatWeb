@@ -32,6 +32,87 @@
   margin-left: 4px;
 }
 
+.settings-button-container {
+  display: inline-block;
+}
+
+.settings-card {
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 240px;
+  z-index: 9999;
+  animation: slide-up 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.theme-toggle-group {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.theme-button {
+  background: transparent;
+  border: none;
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: var(--text-color);
+  border-right: 1px solid var(--border-color);
+}
+
+.theme-button:last-child {
+  border-right: none;
+}
+
+.theme-button:hover {
+  background-color: var(--surface-hover);
+}
+
+.theme-button.active {
+  background-color: var(--surface-hover);
+  color: var(--button-bg);
+}
+
+.theme-button.active .icon {
+  background-color: var(--button-bg);
+}
+
+.theme-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
 .icon {
   width: 24px;
   height: 24px;

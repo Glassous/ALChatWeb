@@ -36,19 +36,36 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+[data-theme="dark"] {
+  /* Dark Theme Variables - Monochrome (Black/White/Gray) */
+  --bg-color: #000000;
+  --text-color: #ffffff;
+  --text-muted: #888888;
+  --surface-color: #1a1a1a;
+  --surface-hover: #2a2a2a;
+  --border-color: #333333;
+  --button-bg: #ffffff;
+  --button-text: #000000;
+  --button-bg-hover: #e0e0e0;
+  --button-disabled-bg: #444444;
+  --logo-invert: 1;
+
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Dark Theme Variables */
-    --bg-color: #111827;
-    --text-color: #f9fafb;
-    --text-muted: #6b7280;
-    --surface-color: #1f2937;
-    --surface-hover: #374151;
-    --border-color: #374151;
-    --button-bg: #f9fafb;
-    --button-text: #111827;
-    --button-bg-hover: #d1d5db;
-    --button-disabled-bg: #4b5563;
+  :root:not([data-theme="light"]) {
+    /* Dark Theme Variables - Monochrome (Black/White/Gray) */
+    --bg-color: #000000;
+    --text-color: #ffffff;
+    --text-muted: #888888;
+    --surface-color: #1a1a1a;
+    --surface-hover: #2a2a2a;
+    --border-color: #333333;
+    --button-bg: #ffffff;
+    --button-text: #000000;
+    --button-bg-hover: #e0e0e0;
+    --button-disabled-bg: #444444;
     --logo-invert: 1;
 
     color-scheme: dark;
