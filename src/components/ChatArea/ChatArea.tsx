@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './ChatArea.css';
@@ -28,6 +28,10 @@ export interface Message {
 
 interface ChatAreaProps {
   messages: Message[];
+}
+
+export interface ChatAreaHandle {
+  scrollToBottom: () => void;
 }
 
 const CopyIcon = () => (
@@ -268,8 +272,27 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
   );
 }
 
-export function ChatArea({ messages }: ChatAreaProps) {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    scrollToBottom
+  }));
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
 
   const handleDownload = async () => {
     if (!previewUrl) return;
@@ -290,7 +313,7 @@ export function ChatArea({ messages }: ChatAreaProps) {
   };
 
   return (
-    <div className="chat-area">
+    <div className="chat-area" ref={scrollRef}>
       <div className="chat-content">
         {messages.map((msg) => (
           <MessageItem key={msg.id} msg={msg} onImageClick={setPreviewUrl} />
@@ -314,4 +337,4 @@ export function ChatArea({ messages }: ChatAreaProps) {
       )}
     </div>
   );
-}
+});

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
-import { ChatArea, type Message } from './components/ChatArea/ChatArea';
+import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
 import { InputArea } from './components/InputArea/InputArea';
 import { apiClient, type Conversation } from './services/api';
 import { Welcome } from './pages/Welcome';
@@ -30,6 +30,7 @@ function ChatApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
   useEffect(() => {
@@ -326,10 +327,14 @@ function ChatApp() {
             </div>
           ) : (
             <div key="chat-content" className="chat-area-wrapper">
-              <ChatArea messages={messages} />
+              <ChatArea messages={messages} ref={chatAreaRef} />
             </div>
           )}
-          <InputArea onSend={handleSend} disabled={isLoading} />
+          <InputArea 
+            onSend={handleSend} 
+            disabled={isLoading} 
+            onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
+          />
         </div>
       </div>
     </div>

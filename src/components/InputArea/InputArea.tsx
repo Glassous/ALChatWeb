@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
 
 interface InputAreaProps {
   onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
   disabled?: boolean;
+  onScrollToBottom?: () => void;
 }
 
 const RESOLUTIONS = [
@@ -15,7 +17,7 @@ const RESOLUTIONS = [
   '1440x2560'
 ];
 
-export function InputArea({ onSend, disabled = false }: InputAreaProps) {
+export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -180,45 +182,45 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
 
   return (
     <div className="input-area-wrapper">
+      {(refImageUrl || attachments.length > 0 || isUploading) && (
+        <div className="previews-container">
+          {refImageUrl && (
+            <div className="ref-image-preview-card">
+              <img src={refImageUrl} alt="Reference" />
+              <button className="remove-ref-image" onClick={removeRefImage}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                </svg>
+              </button>
+            </div>
+          )}
+          {attachments.map((att, index) => (
+            <div key={index} className="ref-image-preview-card">
+              {att.type === 'image' ? (
+                <img src={att.url} alt={`Attachment ${index}`} />
+              ) : (
+                <div className="video-preview-placeholder">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                    <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09s-.03 1.29-.1 2.09c-.06.8-.15 1.43-.28 1.9-.13.47-.4.83-.8 1.08-.4.25-.97.43-1.7.54-1 .16-2.23.23-3.69.23-1.47 0-2.7-.07-3.69-.23-.74-.11-1.3-.29-1.7-.54-.4-.25-.67-.61-.8-1.08-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09s.03-1.29.1-2.09c.06-.8.15-1.43.28-1.9.13-.46.4-.82.8-1.07.4-.25.97-.43 1.7-.54 1-.16 2.23-.23 3.69-.23 1.47 0 2.7.07 3.69.23.74.11 1.3.29 1.7.54.4.25.67.61.8 1.07z" />
+                  </svg>
+                </div>
+              )}
+              <button className="remove-ref-image" onClick={() => removeAttachment(index)}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                </svg>
+              </button>
+            </div>
+          ))}
+          {isUploading && (
+            <div className="ref-image-preview-card uploading">
+              <div className="upload-spinner"></div>
+              <span>上传中...</span>
+            </div>
+          )}
+        </div>
+      )}
       <div className="input-container-square">
-        {(refImageUrl || attachments.length > 0 || isUploading) && (
-          <div className="previews-container">
-            {refImageUrl && (
-              <div className="ref-image-preview-card">
-                <img src={refImageUrl} alt="Reference" />
-                <button className="remove-ref-image" onClick={removeRefImage}>
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                  </svg>
-                </button>
-              </div>
-            )}
-            {attachments.map((att, index) => (
-              <div key={index} className="ref-image-preview-card">
-                {att.type === 'image' ? (
-                  <img src={att.url} alt={`Attachment ${index}`} />
-                ) : (
-                  <div className="video-preview-placeholder">
-                    <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
-                      <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09s-.03 1.29-.1 2.09c-.06.8-.15 1.43-.28 1.9-.13.47-.4.83-.8 1.08-.4.25-.97.43-1.7.54-1 .16-2.23.23-3.69.23-1.47 0-2.7-.07-3.69-.23-.74-.11-1.3-.29-1.7-.54-.4-.25-.67-.61-.8-1.08-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09s.03-1.29.1-2.09c.06-.8.15-1.43.28-1.9.13-.46.4-.82.8-1.07.4-.25.97-.43 1.7-.54 1-.16 2.23-.23 3.69-.23 1.47 0 2.7.07 3.69.23.74.11 1.3.29 1.7.54.4.25.67.61.8 1.07z" />
-                    </svg>
-                  </div>
-                )}
-                <button className="remove-ref-image" onClick={() => removeAttachment(index)}>
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                  </svg>
-                </button>
-              </div>
-            ))}
-            {isUploading && (
-              <div className="ref-image-preview-card uploading">
-                <div className="upload-spinner"></div>
-                <span>上传中...</span>
-              </div>
-            )}
-          </div>
-        )}
         <div className="input-top-row">
           <textarea
             className="chat-textarea"
@@ -242,40 +244,58 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
         </div>
         <div className="input-bottom-row">
           <div className="tools-left">
-            {!isImageMode && (
-              <button 
-                className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
-                onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
-                title={mode === 'daily' ? '日常模式' : '专家模式'}
-                disabled={isSearchMode}
-              >
-                {mode === 'daily' ? '日常' : '专家'}
-              </button>
-            )}
-            {!isImageMode && (
-              <button 
-                className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
-                onClick={() => setIsSearchMode(!isSearchMode)}
-                title="联网搜索"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                  <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-120q50 0 85-35t35-85q0-50-35-85t-85-35q-50 0-85 35t-35 85q0 50 35 85t85 35ZM240-320h480v-40H240v40Z"/>
-                </svg>
-                <span>联网搜索</span>
-              </button>
-            )}
-            <button 
-              className={`tool-btn ${isImageMode ? 'active' : ''}`}
-              onClick={() => {
-                setIsImageMode(!isImageMode);
-                if (!isImageMode) setIsSearchMode(false);
-              }}
-              title="图片生成"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3">
-                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-              </svg>
-            </button>
+            <AnimatePresence mode="popLayout">
+              {!isImageMode && !isSearchMode && attachments.length === 0 && (
+                <motion.button 
+                  key="mode-toggle"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  transition={{ duration: 0.2 }}
+                  className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
+                  onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+                  title={mode === 'daily' ? '日常模式' : '专家模式'}
+                >
+                  {mode === 'daily' ? '日常' : '专家'}
+                </motion.button>
+              )}
+              {!isImageMode && attachments.length === 0 && (
+                <motion.button 
+                  key="search-toggle"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  transition={{ duration: 0.2 }}
+                  className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
+                  onClick={() => setIsSearchMode(!isSearchMode)}
+                  title="联网搜索"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                    <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
+                  </svg>
+                  <span>联网搜索</span>
+                </motion.button>
+              )}
+              {!isSearchMode && attachments.length === 0 && (
+                <motion.button 
+                  key="image-mode"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  transition={{ duration: 0.2 }}
+                  className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsImageMode(!isImageMode);
+                    if (!isImageMode) setIsSearchMode(false);
+                  }}
+                  title="图片生成"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                    <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+                  </svg>
+                </motion.button>
+              )}
+            </AnimatePresence>
             {isImageMode && (
               <>
                 <div className="resolution-selector" ref={popupRef}>
@@ -327,10 +347,10 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
             )}
           </div>
           <div className="tools-right">
-            {!isImageMode && (
+            {!isImageMode && !isSearchMode && (
               <div className="attachment-selector" ref={attachmentMenuRef}>
                 <button 
-                  className={`tool-btn attachment-btn ${selectedAttachmentType ? 'active' : ''}`}
+                  className="tool-btn attachment-btn"
                   onClick={handleAttachmentClick}
                   title="添加附件"
                 >
@@ -364,6 +384,15 @@ export function InputArea({ onSend, disabled = false }: InputAreaProps) {
                 />
               </div>
             )}
+            <button 
+              className="tool-btn scroll-bottom-btn"
+              onClick={onScrollToBottom}
+              title="回到底部"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                <path d="M480-240 280-440l56-58 104 104v-326h80v326l104-104 56 58-200 200Z"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>

@@ -1,11 +1,32 @@
 .input-area-wrapper {
-  position: sticky;
+  position: absolute;
   bottom: 0;
+  left: 0;
+  right: 0;
   padding: 0 24px 24px 24px;
-  background: linear-gradient(to top, var(--bg-color) 80%, transparent);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
   flex-shrink: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.input-area-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px; /* Cover the area below and slightly behind the input box */
+  background: linear-gradient(to bottom, transparent, var(--bg-color));
+  z-index: -1;
+  pointer-events: none;
+}
+
+.previews-container,
+.input-container-square {
+  pointer-events: auto; /* Re-enable pointer events for the actual input elements */
 }
 
 .input-container-square {
@@ -13,21 +34,28 @@
   flex-direction: column;
   width: 100%;
   max-width: 800px;
-  background-color: var(--surface-color);
-  border-radius: 16px;
-  padding: 12px 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background-color: var(--bg-color);
+  border-radius: 28px;
+  padding: 12px 20px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--border-color);
   position: relative;
+  transition: box-shadow 0.3s ease;
+}
+
+.input-container-square:focus-within {
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.16), 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .previews-container {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  padding-bottom: 12px;
+  padding: 8px;
+  width: 100%;
+  max-width: 800px;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
+  justify-content: flex-start;
 }
 
 .ref-image-preview-card {
@@ -123,7 +151,7 @@
 
 .input-top-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   width: 100%;
   gap: 12px;
 }
@@ -137,14 +165,12 @@
   outline: none;
   font-family: inherit;
   resize: none;
-  padding: 8px 0;
-  min-height: 24px;
+  padding: 10px 0;
+  min-height: 20px;
   max-height: 150px;
   line-height: 1.5;
-}
-
-.chat-textarea::placeholder {
-  color: var(--text-muted);
+  display: flex;
+  align-items: center;
 }
 
 .send-button {
@@ -155,20 +181,20 @@
   height: 40px;
   border-radius: 8px;
   border: none;
-  background-color: var(--button-bg);
-  color: var(--button-text);
+  background-color: transparent;
+  color: var(--button-bg);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
   flex-shrink: 0;
-  margin-bottom: 4px;
 }
 
 .send-button:hover:not(:disabled) {
-  background-color: var(--button-bg-hover);
+  background-color: var(--surface-hover);
+  color: var(--button-bg-hover);
 }
 
 .send-button:disabled {
-  background-color: var(--button-disabled-bg);
+  background-color: transparent;
   color: var(--text-muted);
   cursor: not-allowed;
 }
@@ -182,19 +208,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
+  padding-top: 0;
+  min-height: 38px;
 }
 
 .tools-left, .tools-right {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 38px;
 }
 
 .attachment-selector {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .attachment-menu {
@@ -202,7 +231,7 @@
   bottom: 100%;
   right: 0;
   margin-bottom: 8px;
-  background: var(--surface-color);
+  background: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 6px;
@@ -228,15 +257,11 @@
 }
 
 .attachment-menu-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
 }
 
 .attachment-menu-item svg {
   color: var(--text-muted);
-}
-
-.tool-btn.attachment-btn.active {
-  color: #10a37f;
 }
 
 .tool-btn {
@@ -250,21 +275,23 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  height: 36px;
+  box-sizing: border-box;
 }
 
 .mode-toggle-btn {
   font-size: 13px;
   font-weight: 500;
   padding: 4px 10px;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: transparent;
   border: 1px solid var(--border-color);
   min-width: 50px;
+  color: var(--text-color);
 }
 
 .mode-toggle-btn.expert {
-  color: #10a37f;
-  border-color: rgba(16, 163, 127, 0.3);
-  background-color: rgba(16, 163, 127, 0.1);
+  border-color: var(--border-color);
+  background-color: transparent;
 }
 
 .search-toggle-btn {
@@ -274,15 +301,23 @@
   font-size: 13px;
   font-weight: 500;
   padding: 4px 10px;
-  border: 1px solid var(--border-color);
-  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  background-color: transparent;
   transition: all 0.2s ease;
 }
 
 .search-toggle-btn.active {
-  color: #10a37f;
-  border-color: rgba(16, 163, 127, 0.3);
-  background-color: rgba(16, 163, 127, 0.1);
+  color: #007bff;
+  background-color: transparent;
+}
+
+.tool-btn.image-mode-btn.active {
+  color: #ffc107;
+  background-color: transparent;
+}
+
+.tool-btn.image-mode-btn.active svg {
+  fill: #ffc107;
 }
 
 .search-toggle-btn svg {
@@ -292,12 +327,12 @@
 
 .tool-btn:hover {
   color: var(--text-color);
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
 }
 
 .tool-btn.active {
-  background-color: var(--button-bg);
-  color: var(--button-text);
+  background-color: transparent;
+  color: var(--text-color);
 }
 
 .resolution-selector {
@@ -352,6 +387,18 @@
 .resolution-item.active {
   background-color: rgba(0, 0, 0, 0.05);
   font-weight: 500;
+}
+
+.tool-btn.scroll-bottom-btn {
+  margin-left: auto;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.tool-btn.scroll-bottom-btn:hover {
+  opacity: 1;
+  color: var(--text-color);
+  background-color: var(--surface-hover);
 }
 
 @media (max-width: 768px) {
