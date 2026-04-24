@@ -197,7 +197,7 @@ md-icon-button .icon {
   flex-grow: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  margin-top: 24px;
+  margin-top: 12px;
   margin-bottom: 24px;
   width: 100%;
 }
@@ -220,35 +220,57 @@ md-list.hidden {
 }
 
 .history-item {
-  --md-list-item-container-color: var(--bg-color);
-  --md-list-item-container-shape: 12px;
-  --md-list-item-label-text-color: var(--text-color);
-  --md-list-item-supporting-text-color: var(--text-muted);
-  --md-list-item-leading-icon-color: var(--text-muted);
-  --md-list-item-label-text-size: 13px;
-  --md-list-item-one-line-container-height: 40px;
-  --md-list-item-leading-space: 12px;
-  --md-list-item-trailing-space: 12px;
-  --md-list-item-top-space: 8px;
-  --md-list-item-bottom-space: 8px;
-  border: 1px solid var(--border-color);
   border-radius: 12px;
   transition: all 0.2s ease;
   cursor: pointer;
-  display: block;
-  overflow: hidden;
-  white-space: nowrap; /* Prevent text wrapping */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 6px 12px;
+  gap: 8px;
+  min-height: 32px;
+  position: relative;
 }
 
 .history-item:hover {
   background-color: var(--surface-hover);
-  border-color: var(--text-muted);
-  transform: translateY(-1px);
 }
 
 .history-item.active {
   background-color: var(--surface-hover);
-  border-color: var(--button-bg);
+}
+
+.history-item-content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-color);
+  line-height: 1.4;
+}
+
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.history-item:hover .history-item-actions {
+  opacity: 1;
+}
+
+.history-item-actions md-icon-button {
+  --md-icon-button-icon-size: 16px;
+  width: 24px;
+  height: 24px;
+}
+
+.history-item-actions .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .empty-history {
@@ -266,3 +288,182 @@ md-list.hidden {
   align-items: center;
 }
 
+
+/* Context Menu */
+.context-menu {
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 10000;
+  animation: slide-up 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 14px;
+  color: var(--text-color);
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  background-color: var(--surface-hover);
+}
+
+.context-menu-item.danger {
+  color: #d32f2f;
+}
+
+.context-menu-item.danger:hover {
+  background-color: rgba(211, 47, 47, 0.1);
+}
+
+.context-menu-item .icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.context-menu-item.danger .icon {
+  background-color: #d32f2f;
+}
+
+/* Dialog Overlay */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Dialog */
+.dialog {
+  background-color: var(--bg-color);
+  border-radius: 20px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 480px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: dialog-appear 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes dialog-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.dialog-title {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-color);
+  margin-bottom: 16px;
+}
+
+.dialog-content {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+  box-sizing: border-box;
+  margin-bottom: 24px;
+}
+
+.dialog-input:focus {
+  border-color: var(--button-bg);
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.dialog-button {
+  padding: 10px 24px;
+  border-radius: 20px;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.dialog-button.secondary {
+  background-color: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.dialog-button.secondary:hover {
+  background-color: var(--surface-hover);
+}
+
+.dialog-button.primary {
+  background-color: var(--button-bg);
+  color: var(--button-text);
+}
+
+.dialog-button.primary:hover {
+  opacity: 0.9;
+}
+
+.dialog-button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dialog-button.danger {
+  background-color: #d32f2f;
+  color: white;
+}
+
+.dialog-button.danger:hover {
+  background-color: #b71c1c;
+}

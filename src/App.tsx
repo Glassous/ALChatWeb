@@ -150,17 +150,18 @@ function App() {
   };
 
   const handleDeleteConversation = async (conversationId: string) => {
-    try {
-      await apiClient.deleteConversation(conversationId);
-      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-      
-      // If deleted conversation is current, reset
-      if (conversationId === currentConversationId) {
-        handleNewChat();
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    
+    // If deleted conversation is current, reset
+    if (conversationId === currentConversationId) {
+      handleNewChat();
     }
+  };
+
+  const handleUpdateConversation = (conversationId: string, newTitle: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === conversationId ? { ...c, title: newTitle } : c))
+    );
   };
 
   return (
@@ -171,6 +172,7 @@ function App() {
         onNewChat={handleNewChat}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
+        onUpdateConversation={handleUpdateConversation}
         isLoading={isLoadingConversations}
       />
       <div className="main-content">
