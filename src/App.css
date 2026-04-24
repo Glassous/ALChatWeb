@@ -6,6 +6,13 @@
   background-color: var(--bg-color);
 }
 
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+}
+
 .main-content {
   flex-grow: 1;
   display: flex;
@@ -80,4 +87,21 @@
   font-weight: 500;
   margin: 0;
   color: var(--text-color);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .empty-greeting {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .empty-logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  .empty-greeting h2 {
+    font-size: 20px;
+  }
 }

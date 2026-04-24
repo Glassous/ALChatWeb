@@ -1,11 +1,35 @@
 .topbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   height: 64px;
   padding: 0 24px;
   background-color: var(--bg-color);
   flex-shrink: 0;
   position: relative;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.mobile-menu-button {
+  display: none;
+}
+
+.mobile-new-chat-button {
+  display: none;
+}
+
+.mobile-conversation-title {
+  display: none;
 }
 
 .topbar-logo-container {
@@ -39,4 +63,72 @@
   overflow: hidden;
   text-overflow: ellipsis;
   display: block;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+    height: auto;
+    min-height: 56px;
+  }
+
+  .topbar-left {
+    flex: 1;
+    gap: 4px;
+  }
+
+  .mobile-menu-button {
+    display: flex;
+  }
+
+  .mobile-new-chat-button {
+    display: flex;
+  }
+
+  .topbar-logo-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .topbar-title {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+
+  .mobile-conversation-title {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    line-height: 1.2;
+  }
+
+  /* Hide desktop conversation title on mobile */
+  .topbar-center {
+    display: none;
+  }
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  background-color: var(--text-color);
+  display: inline-block;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-position: center;
+  mask-size: contain;
+  -webkit-mask-size: contain;
+  vertical-align: middle;
+  transition: background-color 0.2s ease;
+}
+
+md-icon-button .icon {
+  background-color: var(--text-color);
 }

@@ -226,3 +226,44 @@
 .assistant-text a:hover {
   text-decoration: underline;
 }
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .chat-area {
+    padding: 16px;
+  }
+
+  .chat-content {
+    gap: 16px;
+    padding-bottom: 16px;
+  }
+
+  .message-wrapper.user .message-container {
+    max-width: 90%;
+  }
+
+  .user-bubble {
+    padding: 10px 14px;
+    font-size: 15px;
+    border-radius: 20px;
+    border-bottom-right-radius: 4px;
+  }
+
+  .assistant-text {
+    font-size: 15px;
+  }
+
+  .assistant-text pre {
+    padding: 12px;
+    font-size: 13px;
+    overflow-x: auto;
+  }
+
+  .assistant-text pre code {
+    font-size: 13px;
+  }
+
+  .assistant-text h1 { font-size: 1.5em; }
+  .assistant-text h2 { font-size: 1.3em; }
+  .assistant-text h3 { font-size: 1.1em; }
+}

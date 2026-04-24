@@ -62,3 +62,19 @@
   width: 20px;
   height: 20px;
 }
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .input-area-wrapper {
+    padding: 0 16px 16px 16px;
+  }
+
+  .input-container {
+    padding: 8px 8px 8px 16px;
+    border-radius: 24px;
+  }
+
+  .chat-input {
+    font-size: 16px; /* Prevent zoom on iOS */
+  }
+}

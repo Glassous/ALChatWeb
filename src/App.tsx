@@ -14,6 +14,7 @@ function App() {
   const [isExiting, setIsExiting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   // Load conversations on mount
   useEffect(() => {
@@ -40,6 +41,7 @@ function App() {
       setMessages(messages);
       setCurrentConversationId(conversationId);
       setHasMessages(messages.length > 0);
+      setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
     } catch (error) {
       console.error('Failed to load conversation:', error);
       setMessages([]);
@@ -143,10 +145,12 @@ function App() {
     setMessages([]);
     setHasMessages(false);
     setCurrentConversationId(null);
+    setIsMobileDrawerOpen(false); // Close drawer on mobile
   };
 
   const handleSelectConversation = (conversationId: string) => {
     loadConversation(conversationId);
+    setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -189,9 +193,15 @@ function App() {
         onDeleteConversation={handleDeleteConversation}
         onUpdateConversation={handleUpdateConversation}
         isLoading={isLoadingConversations}
+        isMobileDrawerOpen={isMobileDrawerOpen}
+        onMobileDrawerClose={() => setIsMobileDrawerOpen(false)}
       />
       <div className="main-content">
-        <TopBar conversationTitle={conversationTitle} />
+        <TopBar 
+          conversationTitle={conversationTitle}
+          onMenuClick={() => setIsMobileDrawerOpen(true)}
+          onNewChat={handleNewChat}
+        />
         <div className="chat-container">
           {!hasMessages ? (
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>
