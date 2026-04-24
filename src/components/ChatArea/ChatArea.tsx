@@ -155,7 +155,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
           </div>
         )}
         {msg.reasoning && (
-          <div className={`reasoning-container ${isCollapsed ? 'collapsed' : ''}`}>
+          <div className="reasoning-container">
             <div 
               className="reasoning-header" 
               onClick={() => {
@@ -173,17 +173,34 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                 >
                   <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
                 </svg>
-                深度思考
+                思考内容
               </div>
-              {isCollapsed && msg.reasoning && (
-                <div className="reasoning-preview">{msg.reasoning.substring(0, 50)}...</div>
-              )}
             </div>
-            {!isCollapsed && (
-              <div className="reasoning-content">
-                <div className="reasoning-text">{msg.reasoning}</div>
+            <div className={`reasoning-content-wrapper ${!isCollapsed ? 'expanded' : ''}`}>
+              <div className="reasoning-content-inner">
+                <div className="reasoning-content">
+                  <div className="reasoning-text">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        img: ({ src, alt }) => (
+                                <span className="image-container-msg">
+                                  <img 
+                                    src={src} 
+                                    alt={alt || "Generated"} 
+                                    className="generated-image" 
+                                    onClick={() => onImageClick(src!)}
+                                  />
+                                </span>
+                              )
+                      }}
+                    >
+                      {msg.reasoning}
+                    </ReactMarkdown>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         )}
         <ReactMarkdown 
@@ -215,24 +232,37 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
         {msg.role === 'user' ? (
           <>
             <div className="message-bubble user-bubble">
-              {msg.content.includes('<image') ? (
+              {(msg.content.includes('<image') || msg.content.includes('<file')) ? (
                 <div className="user-message-with-image">
                   {(() => {
-                    const re = /<image src="([^"]+)">/;
-                    const match = msg.content.match(re);
-                    if (match) {
-                      const imageUrl = match[1];
-                      const textContent = msg.content.replace(re, '').trim();
-                      return (
-                        <>
-                          <div className="user-ref-image-card" onClick={() => onImageClick(imageUrl)}>
-                            <img src={imageUrl} alt="Reference" />
-                          </div>
-                          {textContent && <div className="user-message-text">{textContent}</div>}
-                        </>
-                      );
+                    const imageRegex = /<(?:image|file) src="([^"]+)">/g;
+                    const images: string[] = [];
+                    let match;
+                    while ((match = imageRegex.exec(msg.content)) !== null) {
+                      const url = match[1];
+                      // Simple image extension check or just assume it's an image for now as requested
+                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(?:\?.*)?$/i.test(url) || url.includes('image');
+                      if (isImage) {
+                        images.push(url);
+                      }
                     }
-                    return msg.content;
+                    
+                    const textContent = msg.content.replace(/<(?:image|file) src="([^"]+)">/g, '').trim();
+                    
+                    return (
+                      <>
+                        {images.length > 0 && (
+                          <div className="user-images-grid">
+                            {images.map((url, idx) => (
+                              <div key={idx} className="user-ref-image-card" onClick={() => onImageClick(url)}>
+                                <img src={url} alt={`Reference ${idx}`} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {textContent && <div className="user-message-text">{textContent}</div>}
+                      </>
+                    );
                   })()}
                 </div>
               ) : (
