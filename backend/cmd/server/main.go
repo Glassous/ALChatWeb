@@ -60,6 +60,9 @@ func main() {
 		protected := api.Group("/")
 		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
+			// Auth protected routes
+			protected.PUT("/auth/profile", authHandler.UpdateProfile)
+
 			// Conversation routes
 			protected.GET("/conversations", conversationHandler.GetAllConversations)
 			protected.POST("/conversations", conversationHandler.CreateConversation)

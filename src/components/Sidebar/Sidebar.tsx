@@ -55,6 +55,8 @@ export function Sidebar({
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
+  const [userNickname, setUserNickname] = useState('');
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -250,34 +252,6 @@ export function Sidebar({
                 left: `${cardPosition.left}px`
               }}
             >
-              <div className="settings-row user-info-row">
-                <span className="settings-label user-label">用户</span>
-                <div className="user-actions">
-                  <span className="username-text">
-                    {(() => {
-                      try {
-                        const userStr = localStorage.getItem('user');
-                        if (userStr) {
-                          const user = JSON.parse(userStr);
-                          return user.nickname || user.username || '用户';
-                        }
-                      } catch (e) { }
-                      return '用户';
-                    })()}
-                  </span>
-                  <button 
-                    className="logout-button"
-                    onClick={() => {
-                      localStorage.removeItem('token');
-                      localStorage.removeItem('user');
-                      window.location.href = '/welcome';
-                    }}
-                  >
-                    退出登录
-                  </button>
-                </div>
-              </div>
-              <div className="settings-divider"></div>
               <div className="settings-row">
                 <span className="settings-label">主题</span>
                 <div className="theme-toggle-group">
@@ -302,6 +276,37 @@ export function Sidebar({
                   >
                     <span className="icon" style={{ maskImage: 'url(/icons/dark_mode.svg)', WebkitMaskImage: 'url(/icons/dark_mode.svg)' }} />
                   </button>
+                </div>
+              </div>
+              <div className="settings-divider"></div>
+              <div 
+                className="settings-row user-info-row clickable"
+                onClick={() => {
+                  setShowSettings(false);
+                  try {
+                    const userStr = localStorage.getItem('user');
+                    if (userStr) {
+                      const user = JSON.parse(userStr);
+                      setUserNickname(user.nickname || user.username || '');
+                    }
+                  } catch (e) { }
+                  setShowUserProfileDialog(true);
+                }}
+              >
+                <span className="settings-label user-label">用户</span>
+                <div className="user-actions">
+                  <span className="username-text">
+                    {(() => {
+                      try {
+                        const userStr = localStorage.getItem('user');
+                        if (userStr) {
+                          const user = JSON.parse(userStr);
+                          return user.nickname || user.username || '用户';
+                        }
+                      } catch (e) { }
+                      return '用户';
+                    })()}
+                  </span>
                 </div>
               </div>
             </div>,
@@ -406,6 +411,58 @@ export function Sidebar({
           )}
         </div>
       </div>
+
+      {showUserProfileDialog && (
+      <div className="dialog-overlay" onClick={() => setShowUserProfileDialog(false)}>
+        <div className="dialog" onClick={e => e.stopPropagation()}>
+          <h3 className="dialog-title">用户设置</h3>
+          <div className="dialog-input-group" style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', color: 'var(--text-color)' }}>修改昵称</label>
+            <input 
+              type="text" 
+              className="dialog-input"
+              value={userNickname}
+              onChange={e => setUserNickname(e.target.value)}
+              placeholder="请输入新昵称"
+            />
+          </div>
+          <div className="dialog-actions" style={{ justifyContent: 'space-between' }}>
+            <button 
+              className="dialog-button danger" 
+              style={{ color: 'var(--danger-color)', backgroundColor: 'transparent', border: '1px solid var(--danger-color)' }}
+              onClick={() => {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '/welcome';
+              }}
+            >
+              退出登录
+            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="dialog-button cancel" onClick={() => setShowUserProfileDialog(false)}>取消</button>
+              <button className="dialog-button confirm" onClick={async () => {
+                try {
+                  // Call API to update user profile
+                  await apiClient.updateProfile({ nickname: userNickname });
+                  
+                  // Update local storage
+                  const userStr = localStorage.getItem('user');
+                  if (userStr) {
+                    const user = JSON.parse(userStr);
+                    user.nickname = userNickname;
+                    localStorage.setItem('user', JSON.stringify(user));
+                  }
+                  setShowUserProfileDialog(false);
+                } catch (error) {
+                  console.error('Failed to update profile', error);
+                  alert('修改昵称失败，请稍后重试');
+                }
+              }}>保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
     </>
   );
 }

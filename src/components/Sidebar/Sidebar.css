@@ -118,6 +118,18 @@
   align-items: center;
 }
 
+.settings-row.clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  transition: background-color 0.2s ease;
+}
+
+.settings-row.clickable:hover {
+  background-color: var(--surface-hover);
+}
+
 .user-label {
   font-weight: 500;
   color: var(--text-color);
@@ -437,7 +449,7 @@ md-list.hidden {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -502,7 +514,6 @@ md-list.hidden {
   outline: none;
   transition: border-color 0.2s ease;
   box-sizing: border-box;
-  margin-bottom: 24px;
 }
 
 .dialog-input:focus {

@@ -91,6 +91,20 @@ class APIClient {
     return response.json();
   }
 
+  // Profile APIs
+  async updateProfile(data: { nickname: string }) {
+    const response = await fetch(`${this.baseURL}/api/auth/profile`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update profile');
+    }
+    return response.json();
+  }
+
   // Conversation APIs
   async getConversations(): Promise<Conversation[]> {
     try {
