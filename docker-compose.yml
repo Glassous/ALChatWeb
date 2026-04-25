@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: ./backend       # 指定构建上下文为 backend 目录
+      dockerfile: Dockerfile
+    container_name: alchat-backend
+    ports:
+      - "8080:8080"            # 映射主机端口到容器端口
+    env_file:
+      - ./backend/.env         # 引入刚才修改的环境变量文件
+    depends_on:
+      - mongodb                # 确保数据库容器先启动
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:latest
+    container_name: alchat-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db  # 挂载数据卷，防止容器重启后数据库数据丢失
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:                # 声明数据卷
