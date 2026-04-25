@@ -29,6 +29,7 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
   const [attachments, setAttachments] = useState<Array<{url: string, type: 'image' | 'video'}>>([]);
   const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const popupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
@@ -76,8 +77,11 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
       setRefImageUrl(null);
       setAttachments([]);
       setSelectedAttachmentType(null);
+      setIsExpanded(false);
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        // For smooth shrinking after send, we set a small height
+        // The CSS transition will handle the animation
+        textareaRef.current.style.height = '44px'; // Base height for 1 row
       }
     }
   };
@@ -91,8 +95,36 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+    if (!isExpanded) {
+      e.target.style.height = 'auto';
+      e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+    }
+  };
+
+  const toggleExpand = () => {
+    const nextState = !isExpanded;
+    setIsExpanded(nextState);
+    if (textareaRef.current) {
+      if (nextState) {
+        textareaRef.current.style.height = '400px';
+      } else {
+        // Calculate the height needed for content (clamped to default max 150px)
+        // We temporarily set height to 'auto' to get an accurate scrollHeight measurement
+        const currentHeight = textareaRef.current.style.height;
+        textareaRef.current.style.height = 'auto';
+        const targetHeight = Math.min(textareaRef.current.scrollHeight, 150);
+        // Restore current height immediately to allow transition to start from there
+        textareaRef.current.style.height = currentHeight;
+        
+        // Use requestAnimationFrame to ensure the browser registers the current height
+        // before we set the target height for the transition
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            textareaRef.current.style.height = `${targetHeight}px`;
+          }
+        });
+      }
+    }
   };
 
   const handleUploadClick = () => {
@@ -220,7 +252,8 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
           )}
         </div>
       )}
-      <div className="input-container-square">
+      <div className={`input-container-square ${isExpanded ? 'expanded' : ''}`}>
+
         <div className="input-top-row">
           <textarea
             className="chat-textarea"
@@ -384,6 +417,18 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
                 />
               </div>
             )}
+            <button 
+              type="button"
+              className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
+              onClick={toggleExpand}
+              title={isExpanded ? "缩小输入框" : "放大输入框"}
+            >
+              {isExpanded ? (
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#e3e3e3"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
+              )}
+            </button>
             <button 
               type="button"
               className="tool-btn scroll-bottom-btn"
