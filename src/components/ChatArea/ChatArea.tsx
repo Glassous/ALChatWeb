@@ -305,23 +305,48 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
 export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabledRef = useRef(true);
+  const prevMessagesLengthRef = useRef(messages.length);
 
-  const scrollToBottom = useCallback(() => {
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    // We consider it near bottom if within 150px
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    isAutoScrollEnabledRef.current = isNearBottom;
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
-        behavior: 'smooth'
+        behavior
       });
     }
   }, []);
 
   useImperativeHandle(ref, () => ({
-    scrollToBottom
+    scrollToBottom: () => {
+      isAutoScrollEnabledRef.current = true;
+      scrollToBottom('smooth');
+    }
   }));
 
   // Auto-scroll on new messages
   useEffect(() => {
-    scrollToBottom();
+    const isNewMessage = messages.length > prevMessagesLengthRef.current;
+    prevMessagesLengthRef.current = messages.length;
+
+    // If it's a completely new message (user sent it or assistant just replied),
+    // we should force auto-scroll
+    if (isNewMessage) {
+      isAutoScrollEnabledRef.current = true;
+      // Use smooth for new messages
+      scrollToBottom('smooth');
+    } else if (isAutoScrollEnabledRef.current) {
+      // Use auto (instant) for streaming to avoid jitter and interrupted smooth scrolling
+      scrollToBottom('auto');
+    }
   }, [messages, scrollToBottom]);
 
   const handleDownload = async () => {
@@ -343,7 +368,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages },
   };
 
   return (
-    <div className="chat-area" ref={scrollRef}>
+    <div className="chat-area" ref={scrollRef} onScroll={handleScroll}>
       <div className="chat-content">
         {messages.map((msg) => (
           <MessageItem key={msg.id} msg={msg} onImageClick={setPreviewUrl} />

@@ -385,6 +385,7 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom }: InputA
               </div>
             )}
             <button 
+              type="button"
               className="tool-btn scroll-bottom-btn"
               onClick={onScrollToBottom}
               title="回到底部"
