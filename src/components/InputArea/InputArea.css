@@ -287,17 +287,16 @@
   min-height: 38px;
 }
 
-.tools-left {
-  display: flex;
-  align-items: center;
-  min-height: 38px;
-}
-
+.tools-left,
 .tools-right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   min-height: 38px;
+  gap: 0;
+}
+
+.tools-right {
+  justify-content: flex-end;
 }
 
 .attachment-selector {
@@ -310,18 +309,18 @@
   position: absolute;
   bottom: 100%;
   right: 0;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   background: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-  min-width: 100px;
-  z-index: 30;
+  border-radius: 16px;
+  padding: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 0 1px rgba(0, 0, 0, 0.1);
+  min-width: 120px;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  animation: slide-up 0.2s cubic-bezier(0.2, 0, 0, 1);
+  transform-origin: bottom right;
 }
 
 .attachment-menu-item {
@@ -426,51 +425,133 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-color);
+  padding: 0 10px;
+  border-radius: 12px;
+  border: none;
+  background-color: var(--surface-color);
   color: var(--text-color);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  height: 32px;
 }
 
 .resolution-btn:hover {
-  background-color: rgba(0, 0, 0, 0.02);
+  background-color: var(--surface-hover);
 }
 
 .resolution-popup {
   position: absolute;
   bottom: 100%;
   left: 0;
-  margin-bottom: 8px;
-  background: var(--surface-color);
+  margin-bottom: 12px;
+  background: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 4px;
-  min-width: 120px;
-  z-index: 10;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  min-width: 280px;
+  z-index: 1000;
+  transform-origin: bottom left;
 }
 
-.resolution-item {
-  padding: 8px 12px;
-  font-size: 14px;
+.resolution-header {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--text-color);
+}
+
+.resolution-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.resolution-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 8px 4px;
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.resolution-card:hover {
+  background-color: var(--surface-color);
+}
+
+.resolution-illustration-box {
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.resolution-rect {
+  border: 2px solid var(--text-muted);
+  border-radius: 6px;
+  transition: all 0.2s;
+  opacity: 0.6;
+}
+
+.resolution-card.active .resolution-rect {
+  border-color: #007bff;
+  background: rgba(0, 123, 255, 0.1);
+  opacity: 1;
+}
+
+.resolution-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.resolution-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-color);
+  white-space: nowrap;
+}
+
+.resolution-ratio-hint {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.resolution-card.active .resolution-value,
+.resolution-card.active .resolution-ratio-hint {
+  color: #007bff;
+}
+
+.resolution-select-tag {
+  width: 100%;
+  padding: 4px 0;
+  font-size: 10px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface-color);
   color: var(--text-color);
   cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
 }
 
-.resolution-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+.resolution-card.active .resolution-select-tag {
+  background: #007bff;
+  color: white;
 }
 
-.resolution-item.active {
-  background-color: rgba(0, 0, 0, 0.05);
-  font-weight: 500;
+.resolution-card:hover .resolution-select-tag:not(.active) {
+  background-color: var(--surface-hover);
 }
 
 .tool-btn.scroll-bottom-btn {

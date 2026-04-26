@@ -3,14 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
 
-const toolVariants = {
-  initial: { opacity: 0, width: 0, scale: 0.8 },
+const leftToolVariants = {
+  initial: { opacity: 0, width: 0, scale: 0.8, marginRight: 0 },
   animate: { 
     opacity: 1, 
     width: 'auto', 
     scale: 1,
+    marginRight: 4,
     transition: {
       width: { type: 'spring', stiffness: 300, damping: 30 },
+      marginRight: { type: 'spring', stiffness: 300, damping: 30 },
       opacity: { duration: 0.2 },
       scale: { duration: 0.2 },
       layout: { type: 'spring', stiffness: 300, damping: 30 }
@@ -20,8 +22,39 @@ const toolVariants = {
     opacity: 0, 
     width: 0, 
     scale: 0.8,
+    marginRight: 0,
     transition: {
       width: { type: 'spring', stiffness: 300, damping: 30 },
+      marginRight: { type: 'spring', stiffness: 300, damping: 30 },
+      opacity: { duration: 0.15 },
+      scale: { duration: 0.15 }
+    }
+  }
+};
+
+const rightToolVariants = {
+  initial: { opacity: 0, width: 0, scale: 0.8, marginLeft: 0 },
+  animate: { 
+    opacity: 1, 
+    width: 'auto', 
+    scale: 1,
+    marginLeft: 4,
+    transition: {
+      width: { type: 'spring', stiffness: 300, damping: 30 },
+      marginLeft: { type: 'spring', stiffness: 300, damping: 30 },
+      opacity: { duration: 0.2 },
+      scale: { duration: 0.2 },
+      layout: { type: 'spring', stiffness: 300, damping: 30 }
+    }
+  },
+  exit: { 
+    opacity: 0, 
+    width: 0, 
+    scale: 0.8,
+    marginLeft: 0,
+    transition: {
+      width: { type: 'spring', stiffness: 300, damping: 30 },
+      marginLeft: { type: 'spring', stiffness: 300, damping: 30 },
       opacity: { duration: 0.15 },
       scale: { duration: 0.15 }
     }
@@ -38,11 +71,11 @@ interface InputAreaProps {
 }
 
 const RESOLUTIONS = [
-  '2048x2048',
-  '2304x1728',
-  '1728x2304',
-  '2560x1440',
-  '1440x2560'
+  { label: '1:1', value: '2048x2048', ratio: 1 },
+  { label: '4:3', value: '2304x1728', ratio: 4/3 },
+  { label: '3:4', value: '1728x2304', ratio: 3/4 },
+  { label: '16:9', value: '2560x1440', ratio: 16/9 },
+  { label: '9:16', value: '1440x2560', ratio: 9/16 }
 ];
 
 export function InputArea({ 
@@ -57,7 +90,7 @@ export function InputArea({
   const [isImageMode, setIsImageMode] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
-  const [resolution, setResolution] = useState(RESOLUTIONS[0]);
+  const [resolution, setResolution] = useState(RESOLUTIONS[0].value);
   const [showResolutions, setShowResolutions] = useState(false);
   const [refImageUrl, setRefImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -439,17 +472,17 @@ export function InputArea({
           )}
         </div>
         <div className="input-bottom-row">
-          <div className="tools-left">
+          <motion.div className="tools-left" layout>
             <AnimatePresence initial={false}>
               {!isImageMode && !isSearchMode && attachments.length === 0 && (
                 <motion.div
                   key="mode-toggle"
                   layout
-                  variants={toolVariants}
+                  variants={leftToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                  style={{ overflow: 'hidden', display: 'flex' }}
                 >
                   <button 
                     className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
@@ -464,11 +497,11 @@ export function InputArea({
                 <motion.div
                   key="image-mode"
                   layout
-                  variants={toolVariants}
+                  variants={leftToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                  style={{ overflow: 'hidden', display: 'flex' }}
                 >
                   <button 
                     className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
@@ -488,11 +521,11 @@ export function InputArea({
                 <motion.div
                   key="search-mode"
                   layout
-                  variants={toolVariants}
+                  variants={leftToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                  style={{ overflow: 'hidden', display: 'flex' }}
                 >
                   <button 
                     className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
@@ -509,11 +542,11 @@ export function InputArea({
                 <motion.div
                   key="image-tools"
                   layout
-                  variants={toolVariants}
+                  variants={leftToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', marginRight: 4 }}
+                  style={{ display: 'flex', alignItems: 'center' }}
                 >
                   <div className="resolution-selector" ref={popupRef}>
                     <button 
@@ -525,22 +558,55 @@ export function InputArea({
                         <path d="M7 10l5 5 5-5z" />
                       </svg>
                     </button>
-                    {showResolutions && (
-                      <div className="resolution-popup">
-                        {RESOLUTIONS.map(res => (
-                          <div 
-                            key={res} 
-                            className={`resolution-item ${res === resolution ? 'active' : ''}`}
-                            onClick={() => {
-                              setResolution(res);
-                              setShowResolutions(false);
-                            }}
-                          >
-                            {res}
+                    <AnimatePresence>
+                      {showResolutions && (
+                        <motion.div 
+                          className="resolution-popup"
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                        >
+                          <div className="resolution-header">选择图片比例</div>
+                          <div className="resolution-grid">
+                            {RESOLUTIONS.map(res => {
+                              const boxSize = 36;
+                              const boxWidth = res.ratio >= 1 ? boxSize : boxSize * res.ratio;
+                              const boxHeight = res.ratio <= 1 ? boxSize : boxSize / res.ratio;
+                              const isActive = res.value === resolution;
+
+                              return (
+                                <div 
+                                  key={res.value} 
+                                  className={`resolution-card ${isActive ? 'active' : ''}`}
+                                  onClick={() => {
+                                    setResolution(res.value);
+                                    setShowResolutions(false);
+                                  }}
+                                >
+                                  <div className="resolution-illustration-box">
+                                     <div 
+                                       className="resolution-rect"
+                                       style={{ 
+                                         width: `${boxWidth}px`, 
+                                         height: `${boxHeight}px` 
+                                       }}
+                                     />
+                                   </div>
+                                   <div className="resolution-info">
+                                     <span className="resolution-value">{res.value}</span>
+                                     <span className="resolution-ratio-hint">{res.label}</span>
+                                   </div>
+                                   <button className="resolution-select-tag">
+                                     {isActive ? '已选' : '选择'}
+                                   </button>
+                                </div>
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                    )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                   {!refImageUrl && !isUploading && (
                     <button 
@@ -564,18 +630,18 @@ export function InputArea({
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
-          <div className="tools-right">
+          </motion.div>
+          <motion.div className="tools-right" layout>
             <AnimatePresence initial={false}>
               {!isEmpty && !isAtBottom && (
                 <motion.div
                   key="scroll-bottom"
                   layout
-                  variants={toolVariants}
+                  variants={rightToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
+                  style={{ overflow: 'hidden', display: 'flex' }}
                 >
                   <button 
                     type="button"
@@ -593,11 +659,11 @@ export function InputArea({
                 <motion.div
                   key="attachment"
                   layout
-                  variants={toolVariants}
+                  variants={rightToolVariants}
                   initial="initial"
                   animate="animate"
                   exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
+                  style={{ display: 'flex' }}
                 >
                   <div className="attachment-selector" ref={attachmentMenuRef}>
                     <button 
@@ -609,22 +675,30 @@ export function InputArea({
                         <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
                       </svg>
                     </button>
-                    {showAttachmentMenu && (
-                      <div className="attachment-menu">
-                        <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
-                          <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                            <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-                          </svg>
-                          <span>图片</span>
-                        </div>
-                        <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
-                          <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                            <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
-                          </svg>
-                          <span>视频</span>
-                        </div>
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {showAttachmentMenu && (
+                        <motion.div 
+                          className="attachment-menu"
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                        >
+                          <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
+                            <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                              <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+                            </svg>
+                            <span>图片</span>
+                          </div>
+                          <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
+                            <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                              <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
+                            </svg>
+                            <span>视频</span>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     <input 
                       type="file"
                       ref={attachmentInputRef}
@@ -639,11 +713,11 @@ export function InputArea({
               <motion.div
                 key="expand"
                 layout
-                variants={toolVariants}
+                variants={rightToolVariants}
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
+                style={{ overflow: 'hidden', display: 'flex' }}
               >
                 <button 
                   type="button"
@@ -659,7 +733,7 @@ export function InputArea({
                 </button>
               </motion.div>
             </AnimatePresence>
-          </div>
+          </motion.div>
         </div>
       </div>
     </div>
