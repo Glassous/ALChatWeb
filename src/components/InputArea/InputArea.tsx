@@ -105,7 +105,7 @@ export function InputArea({
         textareaRef.current.style.height = 'auto';
         textareaRef.current.style.height = `${Math.min(targetHeight, 150)}px`;
       }
-    } else if (!suggestion && text === '' && textareaRef.current) {
+    } else if (!suggestion && text === '' && textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = '44px';
     }
   }, [suggestion, text, isExpanded]);
