@@ -31,6 +31,7 @@ function ChatApp() {
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
@@ -262,11 +263,13 @@ function ChatApp() {
     setHasMessages(false);
     setCurrentConversationId(null);
     setIsMobileDrawerOpen(false); // Close drawer on mobile
+    setIsInitialLoad(false); // Disable animation for subsequent new chats
   };
 
   const handleSelectConversation = (conversationId: string) => {
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
+    setIsInitialLoad(false);
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -321,9 +324,11 @@ function ChatApp() {
         <div className="chat-container">
           {!hasMessages ? (
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>
-              <div className="empty-greeting">
+              <div className={`empty-greeting ${isInitialLoad ? 'initial-animate' : ''}`}>
                 <img src="/AL_Logo.svg" alt="AL Logo" className="empty-logo" />
-                <h2>你好，今天我能帮你什么？</h2>
+                <div className="empty-greeting-text-wrapper">
+                  <h2>你好，今天我能帮你什么？</h2>
+                </div>
               </div>
             </div>
           ) : (

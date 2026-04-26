@@ -81,9 +81,85 @@
   margin-bottom: 32px;
 }
 
+.empty-greeting.initial-animate {
+  gap: 0px;
+  /* 
+     Using a custom 'In-Out Expo' curve for a more mathematical, precision feel 
+     Duration increased to 1.6s for elegance
+  */
+  animation: logoSlide 1.6s cubic-bezier(0.85, 0, 0.15, 1) forwards;
+  animation-delay: 0.6s;
+}
+
+@keyframes logoSlide {
+  0% { 
+    gap: 0px;
+  }
+  100% { 
+    gap: 20px; 
+  }
+}
+
 .empty-logo {
   width: 56px;
   height: 56px;
+}
+
+.empty-greeting.initial-animate .empty-logo {
+  opacity: 0;
+  transform: scale(0.8) rotate(-5deg);
+  animation: logoReveal 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes logoReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) rotate(-5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.empty-greeting-text-wrapper {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.empty-greeting.initial-animate .empty-greeting-text-wrapper {
+  max-width: 0;
+  opacity: 0;
+  /* 
+     Staggered delay: wait for logo to settle slightly before unfolding 
+     Using 'Out Quint' for a smooth deceleration
+  */
+  animation: 
+    textUnfold 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    textFadeIn 1s ease-out forwards;
+  animation-delay: 1.1s;
+}
+
+@keyframes textUnfold {
+  0% {
+    max-width: 0;
+    letter-spacing: -0.2em;
+    transform: translateX(-10px);
+  }
+  100% {
+    max-width: 600px;
+    letter-spacing: normal;
+    transform: translateX(0);
+  }
+}
+
+@keyframes textFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .empty-greeting h2 {
@@ -91,6 +167,8 @@
   font-weight: 500;
   margin: 0;
   color: var(--text-color);
+  /* Sub-pixel rendering for smoother animation */
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Mobile responsive styles */
