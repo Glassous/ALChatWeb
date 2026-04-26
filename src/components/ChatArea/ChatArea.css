@@ -618,6 +618,59 @@
   animation: search-spin 0.8s linear infinite;
 }
 
+.ref-card {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: var(--surface-color) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  padding: 0 4px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  margin: 0 2px !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  transition: all 0.2s ease !important;
+  line-height: 14px !important;
+  vertical-align: baseline !important;
+  position: relative !important;
+  top: -1px !important;
+  user-select: none !important;
+}
+
+.ref-card:hover {
+  background-color: var(--surface-hover) !important;
+  color: var(--text-color) !important;
+  border-color: var(--text-muted) !important;
+}
+
+/* Custom Scrollbar for Chat Area */
+.chat-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.chat-area::-webkit-scrollbar {
+  width: 5px;
+}
+
+.chat-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-area::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+
+.chat-area::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
+}
+
 @keyframes search-spin {
   to { transform: rotate(360deg); }
 }

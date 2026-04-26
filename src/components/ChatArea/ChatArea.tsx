@@ -117,7 +117,8 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
     const processedContent = msg.content
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
       .replace(/\n?<search>[\s\S]*?<\/search>\n?/g, '') // Remove completed search tag and surrounding newlines
-      .replace(/\n?<search>[\s\S]*/g, ''); // Remove partial search tag during streaming and leading newline
+      .replace(/\n?<search>[\s\S]*/g, '') // Remove partial search tag during streaming and leading newline
+      .replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`);
 
     // Fallback search data if msg.search is missing but exists in content
     let displaySearch = msg.search;
@@ -148,6 +149,41 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
         }
       }
     }
+
+    const markdownComponents = {
+      img: ({ src, alt }: { src?: string, alt?: string }) => (
+        <span className="image-container-msg">
+          <img 
+            src={src} 
+            alt={alt || "Generated"} 
+            className="generated-image" 
+            onClick={() => onImageClick(src!)}
+          />
+        </span>
+      ),
+      a: ({ href, children }: { href?: string, children: React.ReactNode }) => {
+        const isRef = href?.startsWith('ref:');
+        const childrenText = typeof children === 'string' ? children : '';
+        const isNumericLink = /^\d+$/.test(childrenText);
+        
+        if (isRef || isNumericLink) {
+          const indexStr = isRef ? href.split(':')[1] : childrenText;
+          const index = parseInt(indexStr) - 1;
+          const result = displaySearch?.results?.[index];
+          
+          return (
+            <span 
+              className="ref-card" 
+              onClick={() => result && window.open(result.url, '_blank')}
+              title={result?.title || `引用 ${index + 1}`}
+            >
+              {index + 1}
+            </span>
+          );
+        }
+        return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+      }
+    };
 
     return (
       <>
@@ -232,20 +268,9 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                   <div className="reasoning-text">
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
-                      components={{
-                        img: ({ src, alt }) => (
-                                <span className="image-container-msg">
-                                  <img 
-                                    src={src} 
-                                    alt={alt || "Generated"} 
-                                    className="generated-image" 
-                                    onClick={() => onImageClick(src!)}
-                                  />
-                                </span>
-                              )
-                      }}
+                      components={markdownComponents}
                     >
-                      {msg.reasoning}
+                      {msg.reasoning.replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`)}
                     </ReactMarkdown>
                   </div>
                 </div>
@@ -255,18 +280,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
         )}
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}
-          components={{
-            img: ({ src, alt }) => (
-                    <span className="image-container-msg">
-                      <img 
-                        src={src} 
-                        alt={alt || "Generated"} 
-                        className="generated-image" 
-                        onClick={() => onImageClick(src!)}
-                      />
-                    </span>
-                  )
-          }}
+          components={markdownComponents}
         >
           {processedContent}
         </ReactMarkdown>
