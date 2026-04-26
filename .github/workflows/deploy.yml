@@ -37,7 +37,7 @@ jobs:
             
             # 2. 部署后端 (Docker)
             echo "🐳 正在构建并重启后端服务..."
-            docker-compose up -d --build backend
+            sudo docker-compose up -d --build backend
             
             # 3. 部署前端 (静态编译)
             echo "⚛️ 正在打包前端静态文件..."
@@ -47,7 +47,7 @@ jobs:
             
             # 4. 发布前端到 1Panel 网站目录
             echo "📂 正在覆盖前端页面..."
-            mkdir -p $SITE_DIR
-            cp -r dist/* $SITE_DIR
+            sudo mkdir -p $SITE_DIR
+            sudo cp -r dist/* $SITE_DIR
             
             echo "✅ 部署全部完成！起飞！"
