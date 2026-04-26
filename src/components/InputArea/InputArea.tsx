@@ -1,6 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
+
+const toolVariants = {
+  initial: { opacity: 0, width: 0, scale: 0.8 },
+  animate: { 
+    opacity: 1, 
+    width: 'auto', 
+    scale: 1,
+    transition: {
+      width: { type: 'spring', stiffness: 300, damping: 30 },
+      opacity: { duration: 0.2 },
+      scale: { duration: 0.2 },
+      layout: { type: 'spring', stiffness: 300, damping: 30 }
+    }
+  },
+  exit: { 
+    opacity: 0, 
+    width: 0, 
+    scale: 0.8,
+    transition: {
+      width: { type: 'spring', stiffness: 300, damping: 30 },
+      opacity: { duration: 0.15 },
+      scale: { duration: 0.15 }
+    }
+  }
+};
 
 interface InputAreaProps {
   onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
@@ -414,152 +440,225 @@ export function InputArea({
         </div>
         <div className="input-bottom-row">
           <div className="tools-left">
-            {!isImageMode && !isSearchMode && attachments.length === 0 && (
-              <button 
-                className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
-                onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
-                title={mode === 'daily' ? '日常模式' : '专家模式'}
-              >
-                {mode === 'daily' ? '日常' : '专家'}
-              </button>
-            )}
-            {!isSearchMode && attachments.length === 0 && (
-              <button 
-                className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
-                onClick={() => {
-                  setIsImageMode(!isImageMode);
-                  if (!isImageMode) setIsSearchMode(false);
-                }}
-                title="图片生成"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-                </svg>
-              </button>
-            )}
-            {!isImageMode && attachments.length === 0 && (
-              <button 
-                className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
-                onClick={() => setIsSearchMode(!isSearchMode)}
-                title="联网搜索"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
-                </svg>
-              </button>
-            )}
-            {isImageMode && (
-              <>
-                <div className="resolution-selector" ref={popupRef}>
+            <AnimatePresence initial={false}>
+              {!isImageMode && !isSearchMode && attachments.length === 0 && (
+                <motion.div
+                  key="mode-toggle"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                >
                   <button 
-                    className="resolution-btn"
-                    onClick={() => setShowResolutions(!showResolutions)}
+                    className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
+                    onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+                    title={mode === 'daily' ? '日常模式' : '专家模式'}
                   >
-                    {resolution}
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                      <path d="M7 10l5 5 5-5z" />
-                    </svg>
+                    {mode === 'daily' ? '日常' : '专家'}
                   </button>
-                  {showResolutions && (
-                    <div className="resolution-popup">
-                      {RESOLUTIONS.map(res => (
-                        <div 
-                          key={res} 
-                          className={`resolution-item ${res === resolution ? 'active' : ''}`}
-                          onClick={() => {
-                            setResolution(res);
-                            setShowResolutions(false);
-                          }}
-                        >
-                          {res}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {!refImageUrl && !isUploading && (
+                </motion.div>
+              )}
+              {!isSearchMode && attachments.length === 0 && (
+                <motion.div
+                  key="image-mode"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                >
                   <button 
-                    className="tool-btn upload-btn"
-                    onClick={handleUploadClick}
-                    title="上传参考图"
+                    className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
+                    onClick={() => {
+                      setIsImageMode(!isImageMode);
+                      if (!isImageMode) setIsSearchMode(false);
+                    }}
+                    title="图片生成"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                      <path d="M440-440ZM120-120q-33 0-56.5-23.5T40-200v-480q0-33 23.5-56.5T120-760h126l74-80h240v80H355l-73 80H120v480h640v-360h80v360q0 33-23.5 56.5T760-120H120Zm640-560v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80ZM440-260q75 0 127.5-52.5T620-440q0-75-52.5-127.5T440-620q-75 0-127.5 52.5T260-440q0 75 52.5 127.5T440-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Z"/>
+                      <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                     </svg>
                   </button>
-                )}
-                <input 
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                />
-              </>
-            )}
+                </motion.div>
+              )}
+              {!isImageMode && attachments.length === 0 && (
+                <motion.div
+                  key="search-mode"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', marginRight: 4 }}
+                >
+                  <button 
+                    className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
+                    onClick={() => setIsSearchMode(!isSearchMode)}
+                    title="联网搜索"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                      <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
+                    </svg>
+                  </button>
+                </motion.div>
+              )}
+              {isImageMode && (
+                <motion.div
+                  key="image-tools"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', marginRight: 4 }}
+                >
+                  <div className="resolution-selector" ref={popupRef}>
+                    <button 
+                      className="resolution-btn"
+                      onClick={() => setShowResolutions(!showResolutions)}
+                    >
+                      {resolution}
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M7 10l5 5 5-5z" />
+                      </svg>
+                    </button>
+                    {showResolutions && (
+                      <div className="resolution-popup">
+                        {RESOLUTIONS.map(res => (
+                          <div 
+                            key={res} 
+                            className={`resolution-item ${res === resolution ? 'active' : ''}`}
+                            onClick={() => {
+                              setResolution(res);
+                              setShowResolutions(false);
+                            }}
+                          >
+                            {res}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {!refImageUrl && !isUploading && (
+                    <button 
+                      className="tool-btn upload-btn"
+                      onClick={handleUploadClick}
+                      title="上传参考图"
+                      style={{ marginLeft: 4 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M440-440ZM120-120q-33 0-56.5-23.5T40-200v-480q0-33 23.5-56.5T120-760h126l74-80h240v80H355l-73 80H120v480h640v-360h80v360q0 33-23.5 56.5T760-120H120Zm640-560v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80ZM440-260q75 0 127.5-52.5T620-440q0-75-52.5-127.5T440-620q-75 0-127.5 52.5T260-440q0 75 52.5 127.5T440-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Z"/>
+                      </svg>
+                    </button>
+                  )}
+                  <input 
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <div className="tools-right">
-            {!isEmpty && !isAtBottom && (
-              <button 
-                type="button"
-                className="tool-btn scroll-bottom-btn"
-                onClick={onScrollToBottom}
-                title="回到底部"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
-                </svg>
-              </button>
-            )}
-            {!isImageMode && !isSearchMode && (
-              <div className="attachment-selector" ref={attachmentMenuRef}>
-                <button 
-                  className="tool-btn attachment-btn"
-                  onClick={handleAttachmentClick}
-                  title="添加附件"
+            <AnimatePresence initial={false}>
+              {!isEmpty && !isAtBottom && (
+                <motion.div
+                  key="scroll-bottom"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                    <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
-                  </svg>
-                </button>
-                {showAttachmentMenu && (
-                  <div className="attachment-menu">
-                    <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
-                      <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-                      </svg>
-                      <span>图片</span>
-                    </div>
-                    <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
-                      <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                        <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
-                      </svg>
-                      <span>视频</span>
-                    </div>
-                  </div>
-                )}
-                <input 
-                  type="file"
-                  ref={attachmentInputRef}
-                  onChange={handleAttachmentFileChange}
-                  accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
-                  multiple
-                  style={{ display: 'none' }}
-                />
-              </div>
-            )}
-            <button 
-              type="button"
-              className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
-              onClick={toggleExpand}
-              title={isExpanded ? "缩小输入框" : "放大输入框"}
-            >
-              {isExpanded ? (
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
+                  <button 
+                    type="button"
+                    className="tool-btn scroll-bottom-btn"
+                    onClick={onScrollToBottom}
+                    title="回到底部"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                      <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
+                    </svg>
+                  </button>
+                </motion.div>
               )}
-            </button>
+              {!isImageMode && !isSearchMode && (
+                <motion.div
+                  key="attachment"
+                  layout
+                  variants={toolVariants}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
+                >
+                  <div className="attachment-selector" ref={attachmentMenuRef}>
+                    <button 
+                      className="tool-btn attachment-btn"
+                      onClick={handleAttachmentClick}
+                      title="添加附件"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
+                      </svg>
+                    </button>
+                    {showAttachmentMenu && (
+                      <div className="attachment-menu">
+                        <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
+                          <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                            <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+                          </svg>
+                          <span>图片</span>
+                        </div>
+                        <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
+                          <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                            <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
+                          </svg>
+                          <span>视频</span>
+                        </div>
+                      </div>
+                    )}
+                    <input 
+                      type="file"
+                      ref={attachmentInputRef}
+                      onChange={handleAttachmentFileChange}
+                      accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
+                      multiple
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                </motion.div>
+              )}
+              <motion.div
+                key="expand"
+                layout
+                variants={toolVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                style={{ overflow: 'hidden', display: 'flex', marginLeft: 4 }}
+              >
+                <button 
+                  type="button"
+                  className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
+                  onClick={toggleExpand}
+                  title={isExpanded ? "缩小输入框" : "放大输入框"}
+                >
+                  {isExpanded ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
+                  )}
+                </button>
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </div>
