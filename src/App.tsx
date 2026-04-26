@@ -180,6 +180,7 @@ function ChatApp() {
       role: 'assistant',
       content: '',
       reasoning: '',
+      status: 'loading',
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), assistantMsg]);
@@ -195,7 +196,7 @@ function ChatApp() {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, content: msg.content + token }
+                ? { ...msg, content: msg.content + token, status: 'completed' }
                 : msg
             )
           );
@@ -205,7 +206,7 @@ function ChatApp() {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, reasoning: (msg.reasoning || '') + reasoning }
+                ? { ...msg, reasoning: (msg.reasoning || '') + reasoning, status: 'completed' }
                 : msg
             )
           );
@@ -242,7 +243,7 @@ function ChatApp() {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, content: msg.content + `\n\n[Error: ${error}]` }
+                ? { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error' }
                 : msg
             )
           );
@@ -254,7 +255,7 @@ function ChatApp() {
       setMessages((prev) =>
         (Array.isArray(prev) ? prev : []).map((msg) =>
           msg.id === assistantMsgId
-            ? { ...msg, content: msg.content + `\n\n[Failed to send message: ${error}]` }
+            ? { ...msg, content: msg.content + `\n\n[Failed to send message: ${error}]`, status: 'error' }
             : msg
         )
       );
@@ -307,6 +308,59 @@ function ChatApp() {
     setIsSearchSidebarOpen(true);
   };
 
+  const handleResend = async (msg: Message) => {
+    if (isLoading || !currentConversationId) return;
+
+    const msgIndex = messages.findIndex(m => m.id === msg.id);
+    if (msgIndex === -1) return;
+
+    let textToResend = '';
+    let truncateId = '';
+
+    if (msg.role === 'user') {
+      textToResend = msg.content;
+      truncateId = msg.id;
+    } else {
+      // If assistant, we resend the previous user message
+      const prevMsg = messages[msgIndex - 1];
+      if (prevMsg && prevMsg.role === 'user') {
+        textToResend = prevMsg.content;
+        truncateId = prevMsg.id;
+      } else {
+        return; // Should not happen in normal flow
+      }
+    }
+
+    try {
+      // 1. Truncate in backend
+      await apiClient.truncateMessages(currentConversationId, truncateId);
+
+      // 2. Truncate in frontend state
+      const truncateIndex = messages.findIndex(m => m.id === truncateId);
+      setMessages(prev => prev.slice(0, truncateIndex));
+
+      // 3. Resend
+      // handleSend expects clean text, but user message might have <image> tags
+      // We need to extract the text part if it has images
+      let textOnly = textToResend;
+      let refImageUrl = undefined;
+      
+      const imageMatch = textToResend.match(/<image src="([^"]+)">/);
+      if (imageMatch) {
+        refImageUrl = imageMatch[1];
+        textOnly = textToResend.replace(/<image src="[^"]+">\n?/, '');
+      }
+
+      handleSend(textOnly, { 
+        isImageMode: false, 
+        resolution: '1024x1024', 
+        refImageUrl 
+      });
+    } catch (error) {
+      console.error('Failed to resend:', error);
+    }
+  };
+
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const conversationTitle = currentConversation?.title;
 
@@ -346,6 +400,7 @@ function ChatApp() {
                 ref={chatAreaRef} 
                 onScrollStateChange={setIsAtBottom}
                 onShowSearch={handleShowSearch}
+                onResend={handleResend}
               />
             </div>
           )}

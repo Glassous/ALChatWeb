@@ -195,6 +195,16 @@ class APIClient {
     }
   }
 
+  async truncateMessages(conversationId: string, messageId: string): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/conversations/${conversationId}/messages/after/${messageId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to truncate messages');
+    }
+  }
+
   async updateConversationTitle(id: string, title: string): Promise<void> {
     const response = await fetch(`${this.baseURL}/api/conversations/${id}/title`, {
       method: 'PUT',

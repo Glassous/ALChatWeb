@@ -209,6 +209,53 @@ func (s *ConversationService) DeleteConversation(ctx context.Context, conversati
 	return nil
 }
 
+func (s *ConversationService) DeleteMessagesAfter(ctx context.Context, conversationID, messageID, userIDStr string) error {
+	convID, err := primitive.ObjectIDFromHex(conversationID)
+	if err != nil {
+		return fmt.Errorf("invalid conversation ID: %w", err)
+	}
+	msgID, err := primitive.ObjectIDFromHex(messageID)
+	if err != nil {
+		return fmt.Errorf("invalid message ID: %w", err)
+	}
+	userID, err := primitive.ObjectIDFromHex(userIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	// Verify conversation ownership
+	var conversation models.Conversation
+	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": convID, "user_id": userID}).Decode(&conversation)
+	if err != nil {
+		return fmt.Errorf("conversation not found or access denied: %w", err)
+	}
+
+	// Get the reference message to find its CreatedAt
+	var refMessage models.Message
+	err = s.db.Messages().FindOne(ctx, bson.M{"_id": msgID, "conversation_id": convID}).Decode(&refMessage)
+	if err != nil {
+		return fmt.Errorf("reference message not found: %w", err)
+	}
+
+	// Delete all messages in this conversation created at or after this message's timestamp
+	_, err = s.db.Messages().DeleteMany(ctx, bson.M{
+		"conversation_id": convID,
+		"created_at":      bson.M{"$gte": refMessage.CreatedAt},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete messages: %w", err)
+	}
+
+	// Update conversation's updated_at
+	_, err = s.db.Conversations().UpdateOne(
+		ctx,
+		bson.M{"_id": convID},
+		bson.M{"$set": bson.M{"updated_at": time.Now()}},
+	)
+
+	return err
+}
+
 func (s *ConversationService) UpdateConversationTitle(ctx context.Context, conversationID, title string, userIDStr string) error {
 	objID, err := primitive.ObjectIDFromHex(conversationID)
 	if err != nil {

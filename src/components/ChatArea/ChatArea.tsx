@@ -31,6 +31,7 @@ interface ChatAreaProps {
   messages: Message[];
   onScrollStateChange?: (isAtBottom: boolean) => void;
   onShowSearch?: (data: SearchData) => void;
+  onResend?: (msg: Message) => void;
 }
 
 export interface ChatAreaHandle {
@@ -45,14 +46,20 @@ const CheckIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
 );
 
+const ResendIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
+);
+
 function MessageItem({ 
   msg, 
   onImageClick, 
-  onShowSearch 
+  onShowSearch,
+  onResend
 }: { 
   msg: Message; 
   onImageClick: (url: string) => void;
   onShowSearch?: (data: SearchData) => void;
+  onResend?: (msg: Message) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -119,6 +126,15 @@ function MessageItem({
             <div className="loading-spinner"></div>
             <span>正在生成图片...</span>
           </div>
+        </div>
+      );
+    }
+
+    if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search) {
+      return (
+        <div className="thinking-container">
+          <div className="thinking-spinner"></div>
+          <span className="thinking-text">正在思考...</span>
         </div>
       );
     }
@@ -331,13 +347,22 @@ function MessageItem({
               )}
             </div>
             {!isPureImage && (
-              <button 
-                className={`copy-button ${copied ? 'copied' : ''}`} 
-                onClick={handleCopy}
-                title="复制消息"
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-              </button>
+              <div className="user-actions">
+                <button 
+                  className={`copy-button ${copied ? 'copied' : ''}`} 
+                  onClick={handleCopy}
+                  title="复制消息"
+                >
+                  {copied ? <CheckIcon /> : <CopyIcon />}
+                </button>
+                <button 
+                  className="action-button resend-action" 
+                  onClick={() => onResend?.(msg)}
+                  title="重新发送"
+                >
+                  <ResendIcon />
+                </button>
+              </div>
             )}
           </>
         ) : (
@@ -354,6 +379,13 @@ function MessageItem({
                 >
                   {copied ? <CheckIcon /> : <CopyIcon />}
                 </button>
+                <button 
+                  className="action-button resend-action" 
+                  onClick={() => onResend?.(msg)}
+                  title="重新发送"
+                >
+                  <ResendIcon />
+                </button>
               </div>
             )}
           </div>
@@ -363,7 +395,7 @@ function MessageItem({
   );
 }
 
-export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch }, ref) => {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch, onResend }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabledRef = useRef(true);
@@ -438,6 +470,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, o
             msg={msg} 
             onImageClick={setPreviewUrl} 
             onShowSearch={onShowSearch}
+            onResend={onResend}
           />
         ))}
       </div>

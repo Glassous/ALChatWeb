@@ -106,6 +106,7 @@ func main() {
 			protected.PUT("/conversations/:id/title", conversationHandler.UpdateConversationTitle)
 			protected.POST("/conversations/:id/generate-title", conversationHandler.GenerateTitle)
 			protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
+			protected.DELETE("/conversations/:id/messages/after/:messageId", conversationHandler.DeleteMessagesAfter)
 
 			// Chat route
 			chat := protected.Group("/chat")

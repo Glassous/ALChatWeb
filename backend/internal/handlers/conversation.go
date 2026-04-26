@@ -154,3 +154,17 @@ func (h *ConversationHandler) UpdateConversationTitle(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Title updated successfully"})
 }
+
+func (h *ConversationHandler) DeleteMessagesAfter(c *gin.Context) {
+	userID := c.GetString("user_id")
+	conversationID := c.Param("id")
+	messageID := c.Param("messageId")
+
+	err := h.service.DeleteMessagesAfter(c.Request.Context(), conversationID, messageID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Messages deleted successfully"})
+}
