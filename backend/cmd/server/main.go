@@ -72,7 +72,7 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, db)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService)
 
 	// Setup Gin router
@@ -98,6 +98,8 @@ func main() {
 			// Auth protected routes
 			protected.PUT("/auth/profile", authHandler.UpdateProfile)
 			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
+			protected.GET("/auth/system-prompt", authHandler.GetSystemPrompt)
+			protected.PUT("/auth/system-prompt", authHandler.UpdateSystemPrompt)
 
 			// Conversation routes
 			protected.GET("/conversations", conversationHandler.GetAllConversations)

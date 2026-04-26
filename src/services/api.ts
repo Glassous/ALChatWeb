@@ -136,6 +136,30 @@ class APIClient {
     return response.json();
   }
 
+  async getSystemPrompt() {
+    const response = await fetch(`${this.baseURL}/api/auth/system-prompt`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch system prompt');
+    }
+    return response.json();
+  }
+
+  async updateSystemPrompt(data: { system_prompt: string; include_datetime: boolean; include_location: boolean }) {
+    const response = await fetch(`${this.baseURL}/api/auth/system-prompt`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update system prompt');
+    }
+    return response.json();
+  }
+
   // Conversation APIs
   async getConversations(): Promise<Conversation[]> {
     try {
@@ -289,7 +313,8 @@ class APIClient {
     onReasoning: (reasoning: string) => void,
     onSearch: (data: any) => void,
     onDone: () => void,
-    onError: (error: string) => void
+    onError: (error: string) => void,
+    location?: string
   ): Promise<void> {
     const response = await fetch(`${this.baseURL}/api/chat`, {
       method: 'POST',
@@ -298,6 +323,7 @@ class APIClient {
         conversation_id: conversationId,
         message,
         mode,
+        location,
       }),
     });
 

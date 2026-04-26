@@ -87,7 +87,17 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 type SearchCallback func(data models.SearchData) error
 
 // GenerateStream generates AI response with streaming
-func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+	// Prepend user system prompt if provided
+	if userSystemPrompt != "" {
+		messages = append([]*ai.Message{
+			{
+				Role:    ai.RoleSystem,
+				Content: []*ai.Part{ai.NewTextPart(userSystemPrompt)},
+			},
+		}, messages...)
+	}
+
 	// Check if any message contains multimodal content (<file> or <image> tags)
 	hasMultimodal := false
 	for _, m := range messages {
@@ -154,9 +164,9 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	// and convert them to the format the API expects (image_url or file_url).
 
 	type oaiContent struct {
-		Type     string                 `json:"type"`
-		Text     string                 `json:"text,omitempty"`
-		ImageURL map[string]interface{} `json:"image_url,omitempty"`
+		Type     string         `json:"type"`
+		Text     string         `json:"text,omitempty"`
+		ImageURL map[string]any `json:"image_url,omitempty"`
 		// Some providers might support video/file differently, but many use the same structure
 		// For now, let's treat both image and file as image_url as most vision models expect that.
 	}
@@ -169,9 +179,10 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	var oaiMessages []oaiMessage
 	for _, m := range messages {
 		role := "user"
-		if m.Role == ai.RoleModel {
+		switch m.Role {
+		case ai.RoleModel:
 			role = "assistant"
-		} else if m.Role == ai.RoleSystem {
+		case ai.RoleSystem:
 			role = "system"
 		}
 
@@ -201,7 +212,7 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 					// Add image/file URL
 					contents = append(contents, oaiContent{
 						Type: "image_url",
-						ImageURL: map[string]interface{}{
+						ImageURL: map[string]any{
 							"url": url,
 						},
 					})
@@ -228,7 +239,7 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 		})
 	}
 
-	requestBody, err := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]any{
 		"model":    s.multimodalModel,
 		"messages": oaiMessages,
 		"stream":   true,
@@ -289,13 +300,13 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 					} `json:"choices"`
 				}
 
-				if err := json.Unmarshal([]byte(data), &streamResp); err == nil {
+				if unmarshalErr := json.Unmarshal([]byte(data), &streamResp); unmarshalErr == nil {
 					if len(streamResp.Choices) > 0 {
 						content := streamResp.Choices[0].Delta.Content
 						reasoning := streamResp.Choices[0].Delta.ReasoningContent
 						if content != "" || reasoning != "" {
-							if err := callback(content, reasoning); err != nil {
-								return err
+							if callbackErr := callback(content, reasoning); callbackErr != nil {
+								return callbackErr
 							}
 						}
 					}
@@ -317,12 +328,13 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
 	// 1. Get search query from the last user message
 	lastMsg := messages[len(messages)-1]
-	query := ""
+	var queryBuilder strings.Builder
 	for _, p := range lastMsg.Content {
 		if p.IsText() {
-			query += p.Text
+			queryBuilder.WriteString(p.Text)
 		}
 	}
+	query := queryBuilder.String()
 
 	// 2. Notify frontend that we are searching
 	if searchCallback != nil {
@@ -352,7 +364,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	// 5. Format search results into <search> tag
 	var searchTag strings.Builder
 	searchTag.WriteString("\n<search>\n")
-	searchData := map[string]interface{}{
+	searchData := map[string]any{
 		"query":   query,
 		"results": results,
 	}
@@ -366,14 +378,16 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	}
 
 	// 6. Generate final response using search results as context
-	searchContext := "以下是联网搜索到的相关信息：\n"
+	var searchContextBuilder strings.Builder
+	searchContextBuilder.WriteString("以下是联网搜索到的相关信息：\n")
 	if len(results) > 0 {
 		for i, r := range results {
-			searchContext += fmt.Sprintf("[%d] 标题: %s\n    链接: %s\n    内容: %s\n\n", i+1, r.Title, r.URL, r.Snippet)
+			fmt.Fprintf(&searchContextBuilder, "[%d] 标题: %s\n    链接: %s\n    内容: %s\n\n", i+1, r.Title, r.URL, r.Snippet)
 		}
 	} else {
-		searchContext += "未找到相关搜索结果。\n"
+		searchContextBuilder.WriteString("未找到相关搜索结果。\n")
 	}
+	searchContext := searchContextBuilder.String()
 
 	augmentedMessages := make([]*ai.Message, 0, len(messages)+2)
 	// Add system prompt for search
@@ -411,17 +425,19 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 
 	var oaiMessages []oaiMessage
 	for _, m := range messages {
-		content := ""
+		var contentBuilder strings.Builder
 		for _, p := range m.Content {
 			if p.IsText() {
-				content += p.Text
+				contentBuilder.WriteString(p.Text)
 			}
 		}
+		content := contentBuilder.String()
 
 		role := "user"
-		if m.Role == ai.RoleModel {
+		switch m.Role {
+		case ai.RoleModel:
 			role = "assistant"
-		} else if m.Role == ai.RoleSystem {
+		case ai.RoleSystem:
 			role = "system"
 		}
 
@@ -431,7 +447,7 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 		})
 	}
 
-	requestBody, err := json.Marshal(map[string]interface{}{
+	requestBody, err := json.Marshal(map[string]any{
 		"model":    model,
 		"messages": oaiMessages,
 		"stream":   true,
@@ -493,13 +509,13 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 					} `json:"choices"`
 				}
 
-				if err := json.Unmarshal([]byte(data), &streamResp); err == nil {
+				if unmarshalErr := json.Unmarshal([]byte(data), &streamResp); unmarshalErr == nil {
 					if len(streamResp.Choices) > 0 {
 						content := streamResp.Choices[0].Delta.Content
 						reasoning := streamResp.Choices[0].Delta.ReasoningContent
 						if content != "" || reasoning != "" {
-							if err := callback(content, reasoning); err != nil {
-								return err
+							if callbackErr := callback(content, reasoning); callbackErr != nil {
+								return callbackErr
 							}
 						}
 					}

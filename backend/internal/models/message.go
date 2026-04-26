@@ -20,6 +20,7 @@ type ChatRequest struct {
 	ConversationID string `json:"conversation_id"`
 	Message        string `json:"message"`
 	Mode           string `json:"mode"` // "daily", "expert", or "search"
+	Location       string `json:"location,omitempty"`
 }
 
 type SearchResult struct {

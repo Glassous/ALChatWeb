@@ -30,6 +30,7 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
   onUpdateConversation: (id: string, title: string) => void;
+  onSystemPromptUpdated?: () => void;
   isLoading?: boolean;
   isMobileDrawerOpen?: boolean;
   onMobileDrawerClose?: () => void;
@@ -55,6 +56,7 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
+  onSystemPromptUpdated,
   isLoading = false,
   isMobileDrawerOpen = false,
   onMobileDrawerClose
@@ -68,6 +70,12 @@ export function Sidebar({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showSystemPromptDialog, setShowSystemPromptDialog] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [includeDateTime, setIncludeDateTime] = useState(false);
+  const [includeLocation, setIncludeLocation] = useState(false);
+  const [isSavingSystemPrompt, setIsSavingSystemPrompt] = useState(false);
+  const [isLoadingSystemPrompt, setIsLoadingSystemPrompt] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
@@ -257,6 +265,24 @@ export function Sidebar({
     }
   };
 
+  const handleSaveSystemPrompt = async () => {
+    setIsSavingSystemPrompt(true);
+    try {
+      await apiClient.updateSystemPrompt({
+        system_prompt: systemPrompt,
+        include_datetime: includeDateTime,
+        include_location: includeLocation
+      });
+      setShowSystemPromptDialog(false);
+      onSystemPromptUpdated?.();
+    } catch (error) {
+      console.error('Failed to save system prompt', error);
+      alert('保存失败，请重试');
+    } finally {
+      setIsSavingSystemPrompt(false);
+    }
+  };
+
   const handleAIGenerateTitle = async () => {
     if (!selectedConversation || isGeneratingTitle) return;
 
@@ -387,6 +413,32 @@ export function Sidebar({
                       <path d="M480-120q-150 0-255-105T120-480q0-150 105-255t255-105q14 0 27.5 1t26.5 3q-41 29-65.5 75.5T444-660q0 90 63 153t153 63q55 0 101-24.5t75-65.5q2 13 3 26.5t1 27.5q0 150-105 255T480-120Zm0-80q88 0 158-48.5T740-375q-20 5-40 8t-40 3q-123 0-209.5-86.5T364-660q0-20 3-40t8-40q-78 32-126.5 102T200-480q0 116 82 198t198 82Zm-10-270Z"/>
                     </svg>
                   </button>
+                </div>
+              </div>
+              <div className="settings-divider"></div>
+              <div 
+                className="settings-row clickable"
+                onClick={async () => {
+                  setShowSettings(false);
+                  setIsLoadingSystemPrompt(true);
+                  setShowSystemPromptDialog(true);
+                  try {
+                    const data = await apiClient.getSystemPrompt();
+                    setSystemPrompt(data.system_prompt || '');
+                    setIncludeDateTime(data.include_datetime || false);
+                    setIncludeLocation(data.include_location || false);
+                  } catch (error) {
+                    console.error('Failed to fetch system prompt', error);
+                  } finally {
+                    setIsLoadingSystemPrompt(false);
+                  }
+                }}
+              >
+                <div className="settings-row-content">
+                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                    <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
+                  </svg>
+                  <span className="settings-label">系统提示词</span>
                 </div>
               </div>
               <div className="settings-divider"></div>
@@ -542,6 +594,78 @@ export function Sidebar({
                   disabled={!editTitle.trim()}
                 >
                   保存
+                </md-filled-button>
+              </div>
+            </md-dialog>
+          )}
+
+          {showSystemPromptDialog && (
+            <md-dialog 
+              open={showSystemPromptDialog}
+              onClose={() => setShowSystemPromptDialog(false)}
+            >
+              <div slot="headline">前置提示词</div>
+              <div slot="content" className="system-prompt-content">
+                {isLoadingSystemPrompt ? (
+                  <div className="dialog-loading">
+                    <md-circular-progress indeterminate></md-circular-progress>
+                  </div>
+                ) : (
+                  <>
+                    <div className="system-prompt-field">
+                      <md-outlined-text-field
+                        type="textarea"
+                        label="输入前置提示词..."
+                        rows={10}
+                        value={systemPrompt}
+                        onInput={(e: any) => setSystemPrompt(e.target.value)}
+                      ></md-outlined-text-field>
+                    </div>
+                    
+                    <div className="insert-options-section">
+                      <div className="insert-options-title">插入选项</div>
+                      <div className="insert-options-grid">
+                        <div 
+                          className={`insert-option-card ${includeDateTime ? 'active' : ''}`}
+                          onClick={() => setIncludeDateTime(!includeDateTime)}
+                        >
+                          <svg className="option-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                            <path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z"/>
+                          </svg>
+                          <span className="option-label">日期+时间</span>
+                          {includeDateTime && (
+                            <svg className="active-check" xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                              <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
+                            </svg>
+                          )}
+                        </div>
+                        
+                        <div 
+                          className={`insert-option-card ${includeLocation ? 'active' : ''}`}
+                          onClick={() => setIncludeLocation(!includeLocation)}
+                        >
+                          <svg className="option-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                            <path d="M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 115-79.5 232.5T480-80Z"/>
+                          </svg>
+                          <span className="option-label">地点</span>
+                          {includeLocation && (
+                            <svg className="active-check" xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                              <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div slot="actions">
+                <md-text-button onClick={() => setShowSystemPromptDialog(false)}>取消</md-text-button>
+                <md-filled-button 
+                  onClick={handleSaveSystemPrompt}
+                  disabled={isSavingSystemPrompt || isLoadingSystemPrompt}
+                >
+                  {isSavingSystemPrompt ? '保存中...' : '保存'}
                 </md-filled-button>
               </div>
             </md-dialog>

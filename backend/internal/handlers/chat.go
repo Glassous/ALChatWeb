@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
 	"encoding/json"
@@ -9,19 +10,24 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type ChatHandler struct {
 	aiService           *services.AIService
 	conversationService *services.ConversationService
+	db                  *database.MongoDB
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, db *database.MongoDB) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
+		db:                  db,
 	}
 }
 
@@ -77,6 +83,32 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	// Flush headers
 	c.Writer.Flush()
 
+	// Get user settings for system prompt
+	userIDObj, _ := primitive.ObjectIDFromHex(userID)
+	var user models.User
+	h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
+
+	// Construct system prompt
+	var systemPromptBuilder strings.Builder
+	if user.SystemPrompt != "" {
+		systemPromptBuilder.WriteString(user.SystemPrompt)
+	}
+
+	if user.IncludeDateTime {
+		currentTime := time.Now().Format("2006-01-02 15:04:05")
+		if systemPromptBuilder.Len() > 0 {
+			systemPromptBuilder.WriteString("\n\n")
+		}
+		fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
+	}
+
+	if user.IncludeLocation && req.Location != "" {
+		if systemPromptBuilder.Len() > 0 {
+			systemPromptBuilder.WriteString("\n\n")
+		}
+		fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", req.Location)
+	}
+
 	// Stream AI response
 	var fullResponse strings.Builder
 	var fullReasoning strings.Builder
@@ -86,6 +118,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		c.Request.Context(),
 		services.ConvertToGenkitMessages(genkitMessages),
 		req.Mode,
+		systemPromptBuilder.String(),
 		func(token string, reasoning string) error {
 			if reasoning != "" {
 				fullReasoning.WriteString(reasoning)

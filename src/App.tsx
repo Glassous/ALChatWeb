@@ -38,12 +38,23 @@ function ChatApp() {
   const [isSearchSidebarOpen, setIsSearchSidebarOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+    loadSystemPromptSettings();
   }, []);
+
+  const loadSystemPromptSettings = async () => {
+    try {
+      const data = await apiClient.getSystemPrompt();
+      setSystemPromptSettings(data);
+    } catch (error) {
+      console.error('Failed to load system prompt settings:', error);
+    }
+  };
 
   const loadConversations = async () => {
     setIsLoadingConversations(true);
@@ -190,6 +201,18 @@ function ChatApp() {
 
     // Stream AI response
     try {
+      let location = undefined;
+      if (systemPromptSettings?.include_location) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          location = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+        } catch (e) {
+          console.warn('Failed to get location:', e);
+        }
+      }
+
       await apiClient.sendMessage(
         conversationId,
         text,
@@ -250,7 +273,8 @@ function ChatApp() {
                 : msg
             )
           );
-        }
+        },
+        location
       );
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -423,6 +447,7 @@ function ChatApp() {
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onUpdateConversation={handleUpdateConversation}
+        onSystemPromptUpdated={loadSystemPromptSettings}
         isLoading={isLoadingConversations}
         isMobileDrawerOpen={isMobileDrawerOpen}
         onMobileDrawerClose={() => setIsMobileDrawerOpen(false)}

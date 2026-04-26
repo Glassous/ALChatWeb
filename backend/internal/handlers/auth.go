@@ -343,3 +343,77 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		"avatar":  avatarURL,
 	})
 }
+
+func (h *AuthHandler) GetSystemPrompt(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	var user models.User
+	err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"system_prompt":    user.SystemPrompt,
+		"include_datetime": user.IncludeDateTime,
+		"include_location": user.IncludeLocation,
+	})
+}
+
+func (h *AuthHandler) UpdateSystemPrompt(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var req struct {
+		SystemPrompt    string `json:"system_prompt"`
+		IncludeDateTime bool   `json:"include_datetime"`
+		IncludeLocation bool   `json:"include_location"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	_, err = h.db.Users().UpdateOne(
+		ctx,
+		bson.M{"_id": userID},
+		bson.M{"$set": bson.M{
+			"system_prompt":    req.SystemPrompt,
+			"include_datetime": req.IncludeDateTime,
+			"include_location": req.IncludeLocation,
+			"updated_at":       time.Now(),
+		}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update system prompt"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "System prompt updated successfully"})
+}
