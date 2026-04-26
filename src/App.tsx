@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
+import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
 import { apiClient, type Conversation } from './services/api';
@@ -35,6 +36,8 @@ function ChatApp() {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [searchData, setSearchData] = useState<SearchData | null>(null);
   const [isSearchSidebarOpen, setIsSearchSidebarOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
@@ -361,6 +364,53 @@ function ChatApp() {
     }
   };
 
+  const handleEdit = (msg: Message) => {
+    if (isLoading) return;
+    
+    let messageToEdit = msg;
+    if (msg.role === 'assistant') {
+      const msgIndex = messages.findIndex(m => m.id === msg.id);
+      const prevMsg = messages[msgIndex - 1];
+      if (prevMsg && prevMsg.role === 'user') {
+        messageToEdit = prevMsg;
+      } else {
+        return;
+      }
+    }
+    
+    setEditingMessage(messageToEdit);
+    setIsEditOpen(true);
+  };
+
+  const handleConfirmEdit = async (newText: string) => {
+    if (!editingMessage || !currentConversationId) return;
+    
+    try {
+      // 1. Truncate in backend
+      await apiClient.truncateMessages(currentConversationId, editingMessage.id);
+
+      // 2. Truncate in frontend state
+      const truncateIndex = messages.findIndex(m => m.id === editingMessage.id);
+      setMessages(prev => prev.slice(0, truncateIndex));
+
+      // 3. Send with new text
+      // Extract original image if any
+      let refImageUrl = undefined;
+      const imageMatch = editingMessage.content.match(/<image src="([^"]+)">/);
+      if (imageMatch) {
+        refImageUrl = imageMatch[1];
+      }
+
+      handleSend(newText, { 
+        isImageMode: false, 
+        resolution: '1024x1024', 
+        refImageUrl 
+      });
+    } catch (error) {
+      console.error('Failed to edit and send:', error);
+    }
+  };
+
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const conversationTitle = currentConversation?.title;
 
@@ -401,6 +451,7 @@ function ChatApp() {
                 onScrollStateChange={setIsAtBottom}
                 onShowSearch={handleShowSearch}
                 onResend={handleResend}
+                onEdit={handleEdit}
               />
             </div>
           )}
@@ -418,6 +469,12 @@ function ChatApp() {
         isOpen={isSearchSidebarOpen} 
         searchData={searchData} 
         onClose={() => setIsSearchSidebarOpen(false)} 
+      />
+      <EditMessageDialog 
+        open={isEditOpen}
+        initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
+        onClose={() => setIsEditOpen(false)}
+        onConfirm={handleConfirmEdit}
       />
     </div>
   );

@@ -32,6 +32,7 @@ interface ChatAreaProps {
   onScrollStateChange?: (isAtBottom: boolean) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
+  onEdit?: (msg: Message) => void;
 }
 
 export interface ChatAreaHandle {
@@ -50,16 +51,22 @@ const ResendIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
 );
 
+const EditIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/></svg>
+);
+
 function MessageItem({ 
   msg, 
   onImageClick, 
   onShowSearch,
-  onResend
+  onResend,
+  onEdit
 }: { 
   msg: Message; 
   onImageClick: (url: string) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
+  onEdit?: (msg: Message) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -356,11 +363,11 @@ function MessageItem({
                   {copied ? <CheckIcon /> : <CopyIcon />}
                 </button>
                 <button 
-                  className="action-button resend-action" 
-                  onClick={() => onResend?.(msg)}
-                  title="重新发送"
+                  className="action-button edit-action" 
+                  onClick={() => onEdit?.(msg)}
+                  title="编辑并发送"
                 >
-                  <ResendIcon />
+                  <EditIcon />
                 </button>
               </div>
             )}
@@ -395,7 +402,7 @@ function MessageItem({
   );
 }
 
-export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch, onResend }, ref) => {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch, onResend, onEdit }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabledRef = useRef(true);
@@ -471,6 +478,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, o
             onImageClick={setPreviewUrl} 
             onShowSearch={onShowSearch}
             onResend={onResend}
+            onEdit={onEdit}
           />
         ))}
       </div>
