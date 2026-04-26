@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { type SearchData } from '../SearchSidebar/SearchSidebar';
 import './ChatArea.css';
 
 export interface Message {
@@ -29,6 +30,7 @@ export interface Message {
 interface ChatAreaProps {
   messages: Message[];
   onScrollStateChange?: (isAtBottom: boolean) => void;
+  onShowSearch?: (data: SearchData) => void;
 }
 
 export interface ChatAreaHandle {
@@ -43,11 +45,18 @@ const CheckIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
 );
 
-function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
+function MessageItem({ 
+  msg, 
+  onImageClick, 
+  onShowSearch 
+}: { 
+  msg: Message; 
+  onImageClick: (url: string) => void;
+  onShowSearch?: (data: SearchData) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isManual, setIsManual] = useState(false);
-  const [showSearchModal, setShowSearchModal] = useState(false);
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
   const [showExpandButton, setShowExpandButton] = useState(false);
   const userBubbleRef = useRef<HTMLDivElement>(null);
@@ -190,7 +199,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
         {displaySearch && (
           <div 
             className={`search-container ${displaySearch.status === 'completed' ? 'completed' : ''}`}
-            onClick={() => displaySearch?.status === 'completed' && setShowSearchModal(true)}
+            onClick={() => displaySearch?.status === 'completed' && onShowSearch?.(displaySearch as SearchData)}
           >
             <div className="search-header">
               <div className="search-label">
@@ -204,38 +213,6 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                 <span className="search-text">
                   {displaySearch.status === 'searching' ? `正在搜索: ${displaySearch.query}` : `已找到 ${displaySearch.results?.length || 0} 条搜索结果`}
                 </span>
-              </div>
-            </div>
-          </div>
-        )}
-        {showSearchModal && displaySearch?.results && (
-          <div className="search-modal-overlay" onClick={() => setShowSearchModal(false)}>
-            <div className="search-modal" onClick={e => e.stopPropagation()}>
-              <div className="search-modal-header">
-                <h3>搜索结果: {displaySearch.query}</h3>
-                <button className="close-modal-btn" onClick={() => setShowSearchModal(false)}>
-                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                  </svg>
-                </button>
-              </div>
-              <div className="search-results-list">
-                {displaySearch.results.map((result, idx) => (
-                  <a 
-                    key={idx} 
-                    href={result.url} 
-                    target="_blank" 
-                    rel="noopener noreferrer" 
-                    className="search-result-item"
-                  >
-                    <div className="result-index">{idx + 1}</div>
-                    <div className="result-content">
-                      <div className="result-title">{result.title}</div>
-                      <div className="result-url">{result.url}</div>
-                      <div className="result-snippet">{result.snippet}</div>
-                    </div>
-                  </a>
-                ))}
               </div>
             </div>
           </div>
@@ -386,7 +363,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
   );
 }
 
-export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange }, ref) => {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabledRef = useRef(true);
@@ -456,7 +433,12 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, o
     <div className="chat-area" ref={scrollRef} onScroll={handleScroll}>
       <div className="chat-content">
         {messages.map((msg) => (
-          <MessageItem key={msg.id} msg={msg} onImageClick={setPreviewUrl} />
+          <MessageItem 
+            key={msg.id} 
+            msg={msg} 
+            onImageClick={setPreviewUrl} 
+            onShowSearch={onShowSearch}
+          />
         ))}
       </div>
 

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
+import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
 import { apiClient, type Conversation } from './services/api';
 import { Welcome } from './pages/Welcome';
@@ -32,6 +33,8 @@ function ChatApp() {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [searchData, setSearchData] = useState<SearchData | null>(null);
+  const [isSearchSidebarOpen, setIsSearchSidebarOpen] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
@@ -299,6 +302,11 @@ function ChatApp() {
     });
   };
 
+  const handleShowSearch = (data: SearchData) => {
+    setSearchData(data);
+    setIsSearchSidebarOpen(true);
+  };
+
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const conversationTitle = currentConversation?.title;
 
@@ -315,7 +323,7 @@ function ChatApp() {
         isMobileDrawerOpen={isMobileDrawerOpen}
         onMobileDrawerClose={() => setIsMobileDrawerOpen(false)}
       />
-      <div className="main-content">
+      <div className={`main-content ${isSearchSidebarOpen ? 'sidebar-open' : ''}`}>
         <TopBar 
           conversationTitle={conversationTitle}
           onMenuClick={() => setIsMobileDrawerOpen(true)}
@@ -337,6 +345,7 @@ function ChatApp() {
                 messages={messages} 
                 ref={chatAreaRef} 
                 onScrollStateChange={setIsAtBottom}
+                onShowSearch={handleShowSearch}
               />
             </div>
           )}
@@ -350,6 +359,11 @@ function ChatApp() {
           />
         </div>
       </div>
+      <SearchSidebar 
+        isOpen={isSearchSidebarOpen} 
+        searchData={searchData} 
+        onClose={() => setIsSearchSidebarOpen(false)} 
+      />
     </div>
   );
 }
