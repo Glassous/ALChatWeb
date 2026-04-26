@@ -13,6 +13,15 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
+  search?: {
+    query: string;
+    status: 'searching' | 'completed';
+    results?: Array<{
+      title: string;
+      url: string;
+      snippet: string;
+    }>;
+  };
   created_at: string;
 }
 

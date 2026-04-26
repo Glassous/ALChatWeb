@@ -171,6 +171,7 @@ func (s *ConversationService) UpdateMessage(ctx context.Context, message *models
 		bson.M{"$set": bson.M{
 			"content":   message.Content,
 			"reasoning": message.Reasoning,
+			"search":    message.Search,
 		}},
 	)
 	return err

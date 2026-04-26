@@ -80,6 +80,8 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	// Stream AI response
 	var fullResponse strings.Builder
 	var fullReasoning strings.Builder
+	var lastSearchData *models.SearchData
+
 	err = h.aiService.GenerateStream(
 		c.Request.Context(),
 		services.ConvertToGenkitMessages(genkitMessages),
@@ -112,6 +114,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			return nil
 		},
 		func(searchData models.SearchData) error {
+			lastSearchData = &searchData
 			// Send search progress as SSE
 			response := models.ChatStreamResponse{
 				Type: "search",
@@ -148,12 +151,17 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	// Update assistant message with reasoning if present
-	if fullReasoning.Len() > 0 {
-		assistantMsg.Reasoning = fullReasoning.String()
+	// Update assistant message with reasoning and search if present
+	if fullReasoning.Len() > 0 || lastSearchData != nil {
+		if fullReasoning.Len() > 0 {
+			assistantMsg.Reasoning = fullReasoning.String()
+		}
+		if lastSearchData != nil {
+			assistantMsg.Search = lastSearchData
+		}
 		err = h.conversationService.UpdateMessage(c.Request.Context(), assistantMsg)
 		if err != nil {
-			log.Printf("Failed to update message with reasoning: %v", err)
+			log.Printf("Failed to update message with extra fields: %v", err)
 		}
 	}
 

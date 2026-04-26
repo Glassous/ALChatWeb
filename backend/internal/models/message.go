@@ -12,6 +12,7 @@ type Message struct {
 	Role           string             `bson:"role" json:"role"` // "user" or "assistant"
 	Content        string             `bson:"content" json:"content"`
 	Reasoning      string             `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
+	Search         *SearchData        `bson:"search,omitempty" json:"search,omitempty"`
 	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
 }
 

@@ -45,7 +45,7 @@ const CheckIcon = () => (
 
 function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
   const [copied, setCopied] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [isManual, setIsManual] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
@@ -116,44 +116,67 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
 
     const processedContent = msg.content
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
-      .replace(/<search>[\s\S]*?<\/search>/g, ''); // Remove search tag from markdown content
+      .replace(/\n?<search>[\s\S]*?<\/search>\n?/g, '') // Remove completed search tag and surrounding newlines
+      .replace(/\n?<search>[\s\S]*/g, ''); // Remove partial search tag during streaming and leading newline
+
+    // Fallback search data if msg.search is missing but exists in content
+    let displaySearch = msg.search;
+    if (!displaySearch && msg.content.includes('<search>')) {
+      const match = msg.content.match(/<search>([\s\S]*?)<\/search>/);
+      if (match && match[1]) {
+        try {
+          const content = match[1].trim();
+          if (content) {
+            const parsed = JSON.parse(content);
+            displaySearch = {
+              query: parsed.query || '',
+              status: 'completed',
+              results: parsed.results || []
+            };
+          }
+        } catch (e) {
+          console.error('Failed to parse search data from content:', e);
+        }
+      } else if (msg.content.includes('<search>')) {
+        // Partial search tag during streaming, try to extract query if possible
+        const queryMatch = msg.content.match(/"query"\s*:\s*"([^"]*)"/);
+        if (queryMatch && queryMatch[1]) {
+          displaySearch = {
+            query: queryMatch[1],
+            status: 'searching'
+          };
+        }
+      }
+    }
 
     return (
       <>
-        {msg.search && (
+        {displaySearch && (
           <div 
-            className={`search-container ${msg.search.status === 'completed' ? 'completed' : ''}`}
-            onClick={() => msg.search?.status === 'completed' && setShowSearchModal(true)}
+            className={`search-container ${displaySearch.status === 'completed' ? 'completed' : ''}`}
+            onClick={() => displaySearch?.status === 'completed' && setShowSearchModal(true)}
           >
-            <div className="search-status-icon">
-              {msg.search.status === 'searching' ? (
-                <div className="search-spinner"></div>
-              ) : (
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-                </svg>
-              )}
-            </div>
-            <div className="search-info">
-              <span className="search-text">
-                {msg.search.status === 'searching' ? `正在搜索: ${msg.search.query}` : `已找到 ${msg.search.results?.length || 0} 条相关结果`}
-              </span>
-            </div>
-            {msg.search.status === 'completed' && (
-              <div className="search-view-more">
-                查看来源
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                  <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-                </svg>
+            <div className="search-header">
+              <div className="search-label">
+                {displaySearch.status === 'searching' ? (
+                  <div className="search-spinner"></div>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" className="search-icon">
+                    <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+                  </svg>
+                )}
+                <span className="search-text">
+                  {displaySearch.status === 'searching' ? `正在搜索: ${displaySearch.query}` : `已找到 ${displaySearch.results?.length || 0} 条搜索结果`}
+                </span>
               </div>
-            )}
+            </div>
           </div>
         )}
-        {showSearchModal && msg.search?.results && (
+        {showSearchModal && displaySearch?.results && (
           <div className="search-modal-overlay" onClick={() => setShowSearchModal(false)}>
             <div className="search-modal" onClick={e => e.stopPropagation()}>
               <div className="search-modal-header">
-                <h3>搜索结果: {msg.search.query}</h3>
+                <h3>搜索结果: {displaySearch.query}</h3>
                 <button className="close-modal-btn" onClick={() => setShowSearchModal(false)}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
                     <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -161,7 +184,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                 </button>
               </div>
               <div className="search-results-list">
-                {msg.search.results.map((result, idx) => (
+                {displaySearch.results.map((result, idx) => (
                   <a 
                     key={idx} 
                     href={result.url} 
