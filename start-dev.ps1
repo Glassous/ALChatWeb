@@ -49,6 +49,12 @@ Write-Host ""
 # 检查依赖
 Write-Host "📦 检查依赖..." -ForegroundColor Yellow
 
+# 检查 Air
+if (-not (Get-Command air -ErrorAction SilentlyContinue)) {
+    Write-Host "   安装 Air (Go 热重载工具)..." -ForegroundColor Gray
+    go install github.com/air-verse/air@latest
+}
+
 # Go 依赖
 if (-not (Test-Path "backend\go.sum")) {
     Write-Host "   安装 Go 依赖..." -ForegroundColor Gray
@@ -70,14 +76,14 @@ Write-Host ""
 Write-Host "🚀 启动服务..." -ForegroundColor Yellow
 Write-Host ""
 
-# 启动后端（后台运行）
-Write-Host "   启动后端服务..." -ForegroundColor Gray
-Push-Location backend
+# 启动后端（使用 Air 实现热重载）
+Write-Host "   启动后端服务 (Air)..." -ForegroundColor Gray
+$backendDir = Join-Path $PSScriptRoot "backend"
 $backendJob = Start-Job -ScriptBlock {
-    Set-Location $using:PWD
-    go run cmd/server/main.go
-}
-Pop-Location
+    param($dir)
+    Set-Location $dir
+    air -c .air.toml
+} -ArgumentList $backendDir
 
 # 等待后端启动
 Start-Sleep -Seconds 3

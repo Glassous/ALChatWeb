@@ -69,6 +69,12 @@ echo ""
 # 检查依赖
 echo "📦 检查依赖..."
 
+# 检查 Air
+if ! command -v air &> /dev/null; then
+    echo "   安装 Air (Go 热重载工具)..."
+    go install github.com/air-verse/air@latest
+fi
+
 # Go 依赖
 if [ ! -d "backend/vendor" ] && [ ! -f "backend/go.sum" ]; then
     echo "   安装 Go 依赖..."
@@ -90,10 +96,10 @@ echo ""
 echo "🚀 启动服务..."
 echo ""
 
-# 启动后端（后台运行）
-echo "   启动后端服务..."
+# 启动后端（使用 Air 实现热重载）
+echo "   启动后端服务 (Air)..."
 cd backend
-go run cmd/server/main.go > ../backend.log 2>&1 &
+air -c .air.toml > ../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
