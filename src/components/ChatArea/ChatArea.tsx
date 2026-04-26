@@ -28,6 +28,7 @@ export interface Message {
 
 interface ChatAreaProps {
   messages: Message[];
+  onScrollStateChange?: (isAtBottom: boolean) => void;
 }
 
 export interface ChatAreaHandle {
@@ -302,7 +303,7 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
   );
 }
 
-export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages }, ref) => {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabledRef = useRef(true);
@@ -314,7 +315,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages },
     // We consider it near bottom if within 150px
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
     isAutoScrollEnabledRef.current = isNearBottom;
-  }, []);
+    onScrollStateChange?.(isNearBottom);
+  }, [onScrollStateChange]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (scrollRef.current) {

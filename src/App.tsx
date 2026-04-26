@@ -30,6 +30,7 @@ function ChatApp() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
@@ -327,13 +328,19 @@ function ChatApp() {
             </div>
           ) : (
             <div key="chat-content" className="chat-area-wrapper">
-              <ChatArea messages={messages} ref={chatAreaRef} />
+              <ChatArea 
+                messages={messages} 
+                ref={chatAreaRef} 
+                onScrollStateChange={setIsAtBottom}
+              />
             </div>
           )}
           <InputArea 
             onSend={handleSend} 
             disabled={isLoading} 
             onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
+            isAtBottom={isAtBottom}
+            isEmpty={!hasMessages}
           />
         </div>
       </div>
