@@ -182,7 +182,7 @@ function MessageItem({
       }
     }
 
-    const markdownComponents = {
+    const markdownComponents: any = {
       img: ({ src, alt }: { src?: string, alt?: string }) => (
         <span className="image-container-msg">
           <img 
@@ -193,13 +193,13 @@ function MessageItem({
           />
         </span>
       ),
-      a: ({ href, children }: { href?: string, children: React.ReactNode }) => {
+      a: ({ href, children }: { href?: string, children?: React.ReactNode }) => {
         const isRef = href?.startsWith('ref:');
         const childrenText = typeof children === 'string' ? children : '';
         const isNumericLink = /^\d+$/.test(childrenText);
         
         if (isRef || isNumericLink) {
-          const indexStr = isRef ? href.split(':')[1] : childrenText;
+          const indexStr = isRef ? (href as string).split(':')[1] : childrenText;
           const index = parseInt(indexStr) - 1;
           const result = displaySearch?.results?.[index];
           
