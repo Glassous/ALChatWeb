@@ -48,8 +48,23 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isManual, setIsManual] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [isUserCollapsed, setIsUserCollapsed] = useState(true);
+  const [showExpandButton, setShowExpandButton] = useState(false);
+  const userBubbleRef = useRef<HTMLDivElement>(null);
 
-  // Auto-collapse logic
+  const toggleUserCollapse = () => {
+    const willExpand = isUserCollapsed;
+    setIsUserCollapsed(!isUserCollapsed);
+    
+    // If expanding, scroll to bottom of the bubble after state update
+    if (willExpand) {
+      setTimeout(() => {
+        userBubbleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 300); // Wait for transition animation (matching CSS 0.3s)
+    }
+  };
+
+  // Auto-collapse logic for assistant reasoning
   useEffect(() => {
     if (isManual) return;
 
@@ -59,6 +74,17 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
       setIsCollapsed(true); // Collapse when main content starts
     }
   }, [msg.reasoning, !!msg.content, isManual]);
+
+  // Check if user message is long enough to collapse
+  useEffect(() => {
+    if (msg.role === 'user' && userBubbleRef.current) {
+      const scrollHeight = userBubbleRef.current.scrollHeight;
+      // We use a threshold of 200px for "very long"
+      if (scrollHeight > 200) {
+        setShowExpandButton(true);
+      }
+    }
+  }, [msg.content, msg.role]);
 
   const handleCopy = async () => {
     try {
@@ -232,7 +258,10 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
       <div className="message-container">
         {msg.role === 'user' ? (
           <>
-            <div className="message-bubble user-bubble">
+            <div 
+              className={`message-bubble user-bubble ${showExpandButton && isUserCollapsed ? 'collapsed' : ''}`}
+              ref={userBubbleRef}
+            >
               {(msg.content.includes('<image') || msg.content.includes('<file')) ? (
                 <div className="user-message-with-image">
                   {(() => {
@@ -268,6 +297,23 @@ function MessageItem({ msg, onImageClick }: { msg: Message; onImageClick: (url: 
                 </div>
               ) : (
                 msg.content
+              )}
+              {showExpandButton && (
+                <button 
+                  className={`user-collapse-toggle ${isUserCollapsed ? 'collapsed' : 'expanded'}`}
+                  onClick={toggleUserCollapse}
+                  title={isUserCollapsed ? '展开全部' : '收起内容'}
+                >
+                  {isUserCollapsed ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" height="32px" viewBox="0 -960 960 960" width="32px" fill="#999999">
+                      <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" height="32px" viewBox="0 -960 960 960" width="32px" fill="#999999">
+                      <path d="M480-528 296-344l-56-56 240-240 240 240-56 56-184-184Z"/>
+                    </svg>
+                  )}
+                </button>
               )}
             </div>
             {!isPureImage && (
