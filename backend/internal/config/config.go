@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -32,9 +33,12 @@ type Config struct {
 	SearchAPIKey       string
 	SearchBaseURL      string
 	SearchModel        string
-	MultimodalAPIKey    string
-	MultimodalBaseURL   string
-	MultimodalModel     string
+	MultimodalAPIKey   string
+	MultimodalBaseURL  string
+	MultimodalModel    string
+	RedisAddr          string
+	RedisPassword      string
+	RedisDB            int
 }
 
 func Load() *Config {
@@ -50,7 +54,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:               getEnv("PORT", "8080"),
 		MongoDBURI:         getEnv("MONGODB_URI", "mongodb://localhost:27017"),
-		MongoDBDatabase:    getEnv("MONGODB_DATABASE", "alchat"),
+		MongoDBDatabase:    getEnv("MONGODB_DATABASE", getEnv("MONGODB_DB", "alchat")),
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:      getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:        getEnv("OPENAI_MODEL", "gpt-3.5-turbo"),
@@ -71,9 +75,12 @@ func Load() *Config {
 		SearchAPIKey:       getEnv("SEARCH_API_KEY", ""),
 		SearchBaseURL:      getEnv("SEARCH_BASE_URL", "https://api.openai.com/v1"),
 		SearchModel:        getEnv("SEARCH_MODEL", "gpt-4"),
-		MultimodalAPIKey:    getEnv("MULTIMODAL_API_KEY", ""),
-		MultimodalBaseURL:   getEnv("MULTIMODAL_BASE_URL", "https://api.openai.com/v1"),
-		MultimodalModel:     getEnv("MULTIMODAL_MODEL", "gpt-4o"),
+		MultimodalAPIKey:   getEnv("MULTIMODAL_API_KEY", ""),
+		MultimodalBaseURL:  getEnv("MULTIMODAL_BASE_URL", "https://api.openai.com/v1"),
+		MultimodalModel:    getEnv("MULTIMODAL_MODEL", "gpt-4o"),
+		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
+		RedisDB:            getEnvInt("REDIS_DB", 0),
 	}
 
 	// Enhanced Debug Logging for OSS
@@ -100,4 +107,16 @@ func getEnv(key, defaultValue string) string {
 		return strings.TrimSpace(value)
 	}
 	return defaultValue
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultValue
+	}
+	return value
 }

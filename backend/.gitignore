@@ -2,6 +2,7 @@
 .env
 
 # Go build artifacts
+tmp/
 *.exe
 *.exe~
 *.dll

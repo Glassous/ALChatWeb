@@ -34,7 +34,17 @@ if ! mongosh --eval "db.version()" --quiet &> /dev/null; then
     sleep 3
 fi
 
-echo "✅ MongoDB 运行中"
+# 检查 Redis
+echo "📊 检查 Redis..."
+if ! command -v redis-cli &> /dev/null; then
+    echo "⚠️  Redis 未安装或未在 PATH 中"
+else
+    if ! redis-cli ping &> /dev/null; then
+        echo "⚠️  Redis 未运行，请确保 Redis 已启动"
+    else
+        echo "✅ Redis 运行中"
+    fi
+fi
 echo ""
 
 # 检查后端配置

@@ -14,6 +14,16 @@ try {
     Write-Host "   请启动 MongoDB: net start MongoDB" -ForegroundColor Gray
     exit 1
 }
+
+# 检查 Redis
+Write-Host "📊 检查 Redis..." -ForegroundColor Yellow
+try {
+    $null = redis-cli ping 2>&1
+    Write-Host "✅ Redis 运行中" -ForegroundColor Green
+} catch {
+    Write-Host "⚠️  Redis 未运行或未安装" -ForegroundColor Yellow
+    Write-Host "   请启动 Redis: net start redis" -ForegroundColor Gray
+}
 Write-Host ""
 
 # 检查后端配置

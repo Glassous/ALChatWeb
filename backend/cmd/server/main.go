@@ -7,6 +7,7 @@ import (
 	"alchat-backend/internal/middleware"
 	"alchat-backend/internal/services"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,13 @@ func main() {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 	defer db.Close()
+
+	// Connect to Redis
+	rdb, err := database.NewRedis(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	defer rdb.Close()
 
 	// Initialize services
 	aiService, err := services.NewAIService(
@@ -100,8 +108,12 @@ func main() {
 			protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
 
 			// Chat route
-			protected.POST("/chat", chatHandler.Chat)
-			protected.POST("/chat/image", imageHandler.GenerateImage)
+			chat := protected.Group("/chat")
+			chat.Use(middleware.RateLimiter(rdb, 10, time.Minute))
+			{
+				chat.POST("", chatHandler.Chat)
+				chat.POST("/image", imageHandler.GenerateImage)
+			}
 			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
 			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
 		}
