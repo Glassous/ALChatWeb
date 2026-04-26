@@ -1,0 +1,53 @@
+name: Deploy to 1Panel Server
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 执行自动部署脚本
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # ================= 配置区 =================
+            TARGET_DIR="/opt/alchat/alchatweb"
+            REPO_URL="https://github.com/Glassous/ALChatWeb.git"
+            SITE_DIR="/opt/1panel/apps/openresty/openresty/www/sites/alchatweb/index/"
+            # ==========================================
+            
+            # 1. 智能拉取代码
+            if [ ! -d "$TARGET_DIR/.git" ]; then
+              echo "📦 首次部署：正在拉取全新仓库..."
+              mkdir -p /opt/alchat
+              cd /opt/alchat
+              git clone $REPO_URL alchatweb
+              cd alchatweb
+            else
+              echo "🔄 后续部署：正在同步最新代码..."
+              cd $TARGET_DIR
+              git fetch --all
+              git reset --hard origin/main
+            fi
+            
+            # 2. 部署后端 (Docker)
+            echo "🐳 正在构建并重启后端服务..."
+            docker-compose up -d --build backend
+            
+            # 3. 部署前端 (静态编译)
+            echo "⚛️ 正在打包前端静态文件..."
+            cd $TARGET_DIR
+            npm install
+            npm run build
+            
+            # 4. 发布前端到 1Panel 网站目录
+            echo "📂 正在覆盖前端页面..."
+            mkdir -p $SITE_DIR
+            cp -r dist/* $SITE_DIR
+            
+            echo "✅ 部署全部完成！起飞！"
