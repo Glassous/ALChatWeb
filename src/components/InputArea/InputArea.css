@@ -43,6 +43,53 @@
   transition: box-shadow 0.3s ease;
 }
 
+.textarea-wrapper {
+  position: relative;
+  flex-grow: 1;
+  display: flex;
+  min-height: 44px;
+}
+
+.input-suggestion-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  z-index: 1;
+  padding: 10px 0;
+  overflow-y: hidden; /* Scroll is synced via JS */
+}
+
+.tab-hint {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+  background: var(--surface-color);
+  padding: 1px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 10;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.input-container-square.expanded .tab-hint {
+  top: 11px;
+}
+
 .input-container-square:focus-within {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.12);
 }
@@ -151,7 +198,7 @@
 
 .input-top-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   width: 100%;
   gap: 12px;
 }
@@ -172,6 +219,13 @@
   display: flex;
   align-items: center;
   transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.chat-textarea::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 .input-container-square.expanded .chat-textarea {
@@ -206,6 +260,7 @@
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
+  margin-bottom: 2px;
 }
 
 .send-button:hover:not(:disabled) {

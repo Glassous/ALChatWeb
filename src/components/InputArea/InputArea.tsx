@@ -8,6 +8,7 @@ interface InputAreaProps {
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
   isEmpty?: boolean;
+  userMessages?: string[];
 }
 
 const RESOLUTIONS = [
@@ -18,7 +19,14 @@ const RESOLUTIONS = [
   '1440x2560'
 ];
 
-export function InputArea({ onSend, disabled = false, onScrollToBottom, isAtBottom = true, isEmpty = true }: InputAreaProps) {
+export function InputArea({ 
+  onSend, 
+  disabled = false, 
+  onScrollToBottom, 
+  isAtBottom = true, 
+  isEmpty = true,
+  userMessages = []
+}: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
@@ -31,11 +39,83 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom, isAtBott
   const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [suggestion, setSuggestion] = useState('');
+  const suggestionRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync history with userMessages from props
+  useEffect(() => {
+    // When userMessages changes (switching conversation or new message),
+    // we should reset the current input and suggestion state if it was from history
+    setSuggestion('');
+    setHistoryIndex(-1);
+    setText('');
+    setIsExpanded(false);
+    // CRITICAL: Clear memory history when conversation changes
+    setHistory([]);
+    
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '44px';
+    }
+
+    if (userMessages.length > 0) {
+      // Filter out media tags like <file src="..."> or <image src="..."> and trim
+      const filteredMessages = userMessages.map(msg => 
+        msg.replace(/<(file|image|video)\s+src="[^"]*">/g, '').trim()
+      ).filter(msg => msg.length > 0);
+
+      setHistory([...filteredMessages].reverse().slice(0, 50));
+    }
+  }, [userMessages]);
+
+  // Sync textarea height with suggestion when text is empty
+  useEffect(() => {
+    if (suggestion && text === '' && textareaRef.current) {
+      // Create a temporary hidden div to measure the suggestion height accurately
+      const tempDiv = document.createElement('div');
+      const styles = window.getComputedStyle(textareaRef.current);
+      
+      // Copy essential styles for measurement
+      tempDiv.style.width = styles.width;
+      tempDiv.style.fontFamily = styles.fontFamily;
+      tempDiv.style.fontSize = styles.fontSize;
+      tempDiv.style.lineHeight = styles.lineHeight;
+      tempDiv.style.padding = styles.padding;
+      tempDiv.style.border = styles.border;
+      tempDiv.style.boxSizing = styles.boxSizing;
+      tempDiv.style.whiteSpace = 'pre-wrap';
+      tempDiv.style.wordBreak = 'break-word';
+      tempDiv.style.position = 'absolute';
+      tempDiv.style.visibility = 'hidden';
+      tempDiv.style.height = 'auto';
+      
+      tempDiv.textContent = suggestion;
+      document.body.appendChild(tempDiv);
+      
+      const targetHeight = tempDiv.scrollHeight;
+      document.body.removeChild(tempDiv);
+
+      if (!isExpanded) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(targetHeight, 150)}px`;
+      }
+    } else if (!suggestion && text === '' && textareaRef.current) {
+      textareaRef.current.style.height = '44px';
+    }
+  }, [suggestion, text, isExpanded]);
+
+  // Sync scroll between textarea and suggestion overlay
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (suggestionRef.current) {
+      suggestionRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -74,6 +154,13 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom, isAtBott
         refImageUrl: refImageUrl || undefined,
         mode: finalMode
       });
+      
+      // Update history
+      const newHistory = [text.trim(), ...history.filter(h => h !== text.trim())].slice(0, 50);
+      setHistory(newHistory);
+      setHistoryIndex(-1);
+      setSuggestion('');
+      
       setText('');
       setRefImageUrl(null);
       setAttachments([]);
@@ -91,11 +178,44 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom, isAtBott
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    } else if (text.length === 0) {
+      if (e.key === 'ArrowUp') {
+        if (history.length > 0) {
+          e.preventDefault();
+          const nextIndex = Math.min(historyIndex + 1, history.length - 1);
+          setHistoryIndex(nextIndex);
+          setSuggestion(history[nextIndex]);
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (historyIndex >= 0) {
+          e.preventDefault();
+          const nextIndex = historyIndex - 1;
+          setHistoryIndex(nextIndex);
+          if (nextIndex === -1) {
+            setSuggestion('');
+          } else {
+            setSuggestion(history[nextIndex]);
+          }
+        }
+      } else if (e.key === 'Tab' && suggestion) {
+        e.preventDefault();
+        setText(suggestion);
+        setSuggestion('');
+        setHistoryIndex(-1);
+      }
     }
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value);
+    const newText = e.target.value;
+    setText(newText);
+    
+    // Always reset history navigation when typing or clearing
+    if (suggestion || historyIndex !== -1) {
+      setSuggestion('');
+      setHistoryIndex(-1);
+    }
+
     if (!isExpanded) {
       e.target.style.height = 'auto';
       e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
@@ -254,27 +374,43 @@ export function InputArea({ onSend, disabled = false, onScrollToBottom, isAtBott
         </div>
       )}
       <div className={`input-container-square ${isExpanded ? 'expanded' : ''}`}>
-
         <div className="input-top-row">
-          <textarea
-            className="chat-textarea"
-            placeholder={isImageMode ? "描述你想生成的图片..." : "输入消息..."}
-            value={text}
-            onChange={handleTextChange}
-            onKeyDown={handleKeyDown}
-            disabled={disabled || isUploading}
-            rows={1}
-            ref={textareaRef}
-          />
-          <button 
-            className="send-button" 
-            onClick={handleSend}
-            disabled={!text.trim() || disabled || isUploading}
-          >
-            <svg viewBox="0 0 24 24" className="send-icon">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
-            </svg>
-          </button>
+          <div className="textarea-wrapper">
+            {suggestion && (
+              <div ref={suggestionRef} className="input-suggestion-overlay">
+                {suggestion}
+              </div>
+            )}
+            <textarea
+              className="chat-textarea"
+              placeholder={suggestion ? "" : (isImageMode ? "描述你想生成的图片..." : "输入消息...")}
+              value={text}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              onScroll={handleScroll}
+              disabled={disabled || isUploading}
+              rows={1}
+              ref={textareaRef}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+          {suggestion && (
+            <div className="tab-hint">
+              按 Tab 插入
+            </div>
+          )}
+          {text.trim() && (
+            <button 
+              className="send-button" 
+              onClick={handleSend}
+              disabled={disabled || isUploading}
+            >
+              <svg viewBox="0 0 24 24" className="send-icon">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="input-bottom-row">
           <div className="tools-left">

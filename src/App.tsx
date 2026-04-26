@@ -346,6 +346,7 @@ function ChatApp() {
             onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
             isAtBottom={isAtBottom}
             isEmpty={!hasMessages}
+            userMessages={messages.filter(m => m.role === 'user').map(m => m.content)}
           />
         </div>
       </div>
