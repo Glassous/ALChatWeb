@@ -19,13 +19,13 @@ export function TopBar({ conversationTitle, onMenuClick, onNewChat }: TopBarProp
         <div className="topbar-logo-container">
           <h1 className="topbar-title">AL Chat</h1>
           {conversationTitle && (
-            <span className="mobile-conversation-title">{conversationTitle}</span>
+            <span key={conversationTitle} className="mobile-conversation-title">{conversationTitle}</span>
           )}
         </div>
       </div>
       {conversationTitle && (
         <div className="topbar-center">
-          <span className="current-conversation-title">{conversationTitle}</span>
+          <span key={conversationTitle} className="current-conversation-title">{conversationTitle}</span>
         </div>
       )}
       <div className="topbar-right">

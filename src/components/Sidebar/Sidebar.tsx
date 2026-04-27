@@ -348,7 +348,7 @@ export function Sidebar({
                   className={`history-item ${conv.id === currentConversationId ? 'active' : ''}`}
                   onClick={() => onSelectConversation(conv.id)}
                 >
-                  <div className="history-item-content">{conv.title}</div>
+                  <div key={`${conv.id}-${conv.title}`} className="history-item-content">{conv.title}</div>
                   <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
                     <md-icon-button onClick={(e: React.MouseEvent) => handleMoreClick(e, conv)}>
                       <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
@@ -455,7 +455,7 @@ export function Sidebar({
                       setOriginalNickname(nickname);
                       setUserAvatar(user.avatar || '');
                     }
-                  } catch (e) { }
+                  } catch { }
                   setShowUserProfileDialog(true);
                 }}
               >
@@ -469,7 +469,7 @@ export function Sidebar({
                           return <img src={user.avatar} alt="Avatar" className="user-mini-avatar" />;
                         }
                       }
-                    } catch (e) { }
+                    } catch { }
                     return (
                       <div className="user-mini-avatar-placeholder">
                         <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
@@ -486,7 +486,7 @@ export function Sidebar({
                           const user = JSON.parse(userStr);
                           return user.nickname || user.username || '用户';
                         }
-                      } catch (e) { }
+                      } catch { }
                       return '用户';
                     })()}
                   </span>
@@ -565,8 +565,8 @@ export function Sidebar({
                 <md-outlined-text-field
                   label="对话标题"
                   value={editTitle}
-                  onInput={(e: any) => setEditTitle(e.target.value)}
-                  onKeyDown={(e: any) => {
+                  onInput={(e: React.FormEvent) => setEditTitle((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === 'Enter') {
                       handleConfirmEdit();
                     }
@@ -618,7 +618,7 @@ export function Sidebar({
                         label="输入前置提示词..."
                         rows={10}
                         value={systemPrompt}
-                        onInput={(e: any) => setSystemPrompt(e.target.value)}
+                        onInput={(e: React.FormEvent) => setSystemPrompt((e.target as HTMLInputElement).value)}
                       ></md-outlined-text-field>
                     </div>
                     
@@ -716,7 +716,7 @@ export function Sidebar({
               <md-outlined-text-field
                 label="修改昵称"
                 value={userNickname}
-                onInput={(e: any) => setUserNickname(e.target.value)}
+                onInput={(e: React.FormEvent) => setUserNickname((e.target as HTMLInputElement).value)}
                 placeholder="请输入新昵称"
                 style={{ width: '100%' }}
               >
