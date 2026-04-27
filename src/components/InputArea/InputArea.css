@@ -86,6 +86,43 @@
   justify-content: center;
 }
 
+.drag-hint {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 11;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: slide-up 0.2s ease;
+}
+
+.drag-hint.supported {
+  background: #007bff;
+  color: white;
+}
+
+.drag-hint.unsupported {
+  background: #ff4d4f;
+  color: white;
+}
+
+.input-container-square.dragging.supported {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
+}
+
+.input-container-square.dragging.unsupported {
+  border-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
+}
+
 .input-container-square.expanded .tab-hint {
   top: 11px;
 }
@@ -113,21 +150,24 @@
   padding: 4px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
   animation: slide-up 0.2s cubic-bezier(0.2, 0, 0, 1);
   z-index: 20;
+  overflow: hidden;
 }
 
 .ref-image-preview-card img {
-  width: 56px;
-  height: 56px;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: 8px;
 }
 
 .video-preview-placeholder {
-  width: 56px;
-  height: 56px;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -137,7 +177,7 @@
 }
 
 .ref-image-preview-card.uploading {
-  min-width: 100px;
+  width: 64px;
   height: 64px;
   justify-content: center;
   flex-direction: column;
@@ -145,31 +185,38 @@
 }
 
 .ref-image-preview-card.uploading span {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .remove-ref-image {
   position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 20px;
-  height: 20px;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #ff4d4f;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   color: white;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s;
+  transition: all 0.2s;
+  z-index: 21;
 }
 
 .remove-ref-image:hover {
+  background: rgba(0, 0, 0, 0.7);
   transform: scale(1.1);
-  background: #ff7875;
+}
+
+.remove-ref-image svg {
+  width: 12px;
+  height: 12px;
 }
 
 .upload-spinner {

@@ -99,6 +99,8 @@ export function InputArea({
   const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [dragStatus, setDragStatus] = useState<'none' | 'supported' | 'unsupported'>('none');
+  const [dragMessage, setDragMessage] = useState<string>('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [suggestion, setSuggestion] = useState('');
@@ -321,6 +323,14 @@ export function InputArea({
   };
 
   const handleAttachmentTypeSelect = (type: 'image' | 'video') => {
+    if (isImageMode && type === 'video') {
+      alert('图片生成模式下只能上传图片');
+      return;
+    }
+    if (isImageMode && attachments.length >= 1) {
+      alert('图片生成模式下只能上传一张图片');
+      return;
+    }
     setSelectedAttachmentType(type);
     setShowAttachmentMenu(false);
     setTimeout(() => {
@@ -331,6 +341,12 @@ export function InputArea({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (isImageMode && refImageUrl) {
+      alert('图片生成模式下只能上传一张图片');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
     setIsUploading(true);
     try {
@@ -348,6 +364,12 @@ export function InputArea({
   const handleAttachmentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    if (isImageMode && (attachments.length + files.length > 1)) {
+      alert('图片生成模式下只能上传一张图片');
+      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
+      return;
+    }
 
     setIsUploading(true);
     try {
@@ -393,6 +415,124 @@ export function InputArea({
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (disabled || isUploading) return;
+
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      let hasImage = false;
+      let hasVideo = false;
+      let hasOther = false;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          if (item.type.startsWith('image/')) {
+            hasImage = true;
+          } else if (item.type.startsWith('video/')) {
+            hasVideo = true;
+          } else {
+            hasOther = true;
+          }
+        }
+      }
+
+      // Check support and mutual exclusion
+      if (hasOther) {
+        setDragStatus('unsupported');
+        setDragMessage('仅支持图片或视频');
+      } else if (hasImage && hasVideo) {
+        setDragStatus('unsupported');
+        setDragMessage('不能同时上传图片和视频');
+      } else if (isImageMode) {
+        if (hasVideo) {
+          setDragStatus('unsupported');
+          setDragMessage('图片生成模式下只能上传图片');
+        } else if (hasImage) {
+          if (refImageUrl || attachments.length >= 1 || items.length > 1) {
+            setDragStatus('unsupported');
+            setDragMessage('图片生成模式下只能上传一张图片');
+          } else {
+            setDragStatus('supported');
+            setDragMessage('松手上传图片');
+          }
+        }
+      } else if (hasImage) {
+        if (selectedAttachmentType === 'video') {
+          setDragStatus('unsupported');
+          setDragMessage('已有视频，请先移除');
+        } else {
+          setDragStatus('supported');
+          setDragMessage('松手上传图片');
+        }
+      } else if (hasVideo) {
+        if (selectedAttachmentType === 'image') {
+          setDragStatus('unsupported');
+          setDragMessage('已有图片，请先移除');
+        } else {
+          setDragStatus('supported');
+          setDragMessage('松手上传视频');
+        }
+      } else {
+        setDragStatus('unsupported');
+        setDragMessage('不支持的文件格式');
+      }
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragStatus('none');
+    setDragMessage('');
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const status = dragStatus;
+    setDragStatus('none');
+    setDragMessage('');
+
+    if (disabled || isUploading || status !== 'supported') return;
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    // Determine type from first file
+    const firstFile = files[0];
+    const type = firstFile.type.startsWith('video/') ? 'video' : 'image';
+
+    // If type changed or not set, update it
+    if (selectedAttachmentType === null) {
+      setSelectedAttachmentType(type);
+    }
+
+    setIsUploading(true);
+    try {
+      const newAttachments = [...attachments];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // Ensure file matches the determined type (mutual exclusion)
+        const fileType = file.type.startsWith('video/') ? 'video' : 'image';
+        if (fileType !== (selectedAttachmentType || type)) continue;
+
+        const url = await apiClient.uploadReferenceImage(file);
+        newAttachments.push({ url, type: fileType });
+      }
+      setAttachments(newAttachments);
+    } catch (error) {
+      console.error('Failed to upload dropped files:', error);
+      alert('上传文件失败，请重试');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="input-area-wrapper">
       {(refImageUrl || attachments.length > 0 || isUploading) && (
@@ -433,7 +573,12 @@ export function InputArea({
           )}
         </div>
       )}
-      <div className={`input-container-square ${isExpanded ? 'expanded' : ''}`}>
+      <div 
+        className={`input-container-square ${isExpanded ? 'expanded' : ''} ${dragStatus !== 'none' ? `dragging ${dragStatus}` : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="input-top-row">
           <div className="textarea-wrapper">
             {suggestion && (
@@ -458,6 +603,11 @@ export function InputArea({
           {suggestion && (
             <div className="tab-hint">
               按 Tab 插入
+            </div>
+          )}
+          {dragStatus !== 'none' && (
+            <div className={`drag-hint ${dragStatus}`}>
+              {dragMessage}
             </div>
           )}
           {text.trim() && (
