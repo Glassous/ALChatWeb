@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { Variants } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
 
-const leftToolVariants = {
+const leftToolVariants: Variants = {
   initial: { opacity: 0, width: 0, scale: 0.8, marginRight: 0 },
   animate: { 
     opacity: 1, 
@@ -32,7 +33,7 @@ const leftToolVariants = {
   }
 };
 
-const rightToolVariants = {
+const rightToolVariants: Variants = {
   initial: { opacity: 0, width: 0, scale: 0.8, marginLeft: 0 },
   animate: { 
     opacity: 1, 
