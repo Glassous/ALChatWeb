@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
 	"fmt"
 	"net/http"
@@ -24,10 +25,11 @@ func NewImageHandler(imageService *services.ImageService, conversationService *s
 }
 
 type GenerateImageRequest struct {
-	ConversationID string `json:"conversation_id" binding:"required"`
-	Prompt         string `json:"prompt" binding:"required"`
-	Resolution     string `json:"resolution"`
-	RefImageURL    string `json:"ref_image_url"`
+	ConversationID  string `json:"conversation_id" binding:"required"`
+	ParentMessageID string `json:"parent_message_id"`
+	Prompt          string `json:"prompt" binding:"required"`
+	Resolution      string `json:"resolution"`
+	RefImageURL     string `json:"ref_image_url"`
 }
 
 func (h *ImageHandler) GenerateImage(c *gin.Context) {
@@ -42,7 +44,15 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	refImageURL := req.RefImageURL
 	if refImageURL == "" {
 		// Fallback to multi-round dialogue logic if no user-uploaded ref image
-		messages, err := h.conversationService.GetMessages(c.Request.Context(), req.ConversationID)
+		// We use the branch if ParentMessageID is provided
+		var messages []models.Message
+		var err error
+		if req.ParentMessageID != "" {
+			messages, err = h.conversationService.GetMessageBranch(c.Request.Context(), req.ConversationID, req.ParentMessageID)
+		} else {
+			messages, err = h.conversationService.GetMessages(c.Request.Context(), req.ConversationID)
+		}
+
 		if err == nil && len(messages) > 0 {
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == "assistant" {
@@ -62,7 +72,7 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		userMsgContent = fmt.Sprintf(`<image src="%s">
 %s`, req.RefImageURL, req.Prompt)
 	}
-	_, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", userMsgContent, userID)
+	userMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", userMsgContent, userID, req.ParentMessageID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save user message"})
 		return
@@ -76,7 +86,7 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 
 	// Save assistant message with image tag
 	imageTag := fmt.Sprintf(`<image src="%s">`, url)
-	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", imageTag, userID)
+	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", imageTag, userID, userMsg.ID.Hex())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save assistant message"})
 		return

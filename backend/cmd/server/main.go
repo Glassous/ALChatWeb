@@ -58,7 +58,7 @@ func main() {
 		log.Fatalf("Failed to initialize AI service: %v", err)
 	}
 
-	conversationService := services.NewConversationService(db)
+	conversationService := services.NewConversationService(db, rdb)
 	ossService, err := services.NewOSSService(cfg)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)

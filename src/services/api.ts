@@ -10,6 +10,7 @@ export interface Conversation {
 export interface Message {
   id: string;
   conversation_id: string;
+  parent_id?: string;
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
@@ -284,13 +285,14 @@ class APIClient {
     return data.title;
   }
 
-  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string): Promise<string> {
+  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string, parentMessageId?: string | null): Promise<string> {
     this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/chat/image`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ 
         conversation_id: conversationId, 
+        parent_message_id: parentMessageId,
         prompt, 
         resolution,
         ref_image_url: refImageUrl
@@ -347,7 +349,8 @@ class APIClient {
     onSearch: (data: any) => void,
     onDone: () => void,
     onError: (error: string) => void,
-    location?: string
+    location?: string,
+    parentMessageId?: string | null
   ): Promise<void> {
     this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/chat`, {
@@ -355,6 +358,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify({
         conversation_id: conversationId,
+        parent_message_id: parentMessageId,
         message,
         mode,
         location,

@@ -45,15 +45,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	// Save user message
-	_, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Message, userID)
+	userMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "user", req.Message, userID, req.ParentMessageID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save user message"})
 		return
 	}
 
-	// Get conversation history
-	// Note: We've already verified ownership in SaveMessage
-	messages, err := h.conversationService.GetMessages(c.Request.Context(), req.ConversationID)
+	// Get conversation history (branch)
+	messages, err := h.conversationService.GetMessageBranch(c.Request.Context(), req.ConversationID, userMsg.ID.Hex())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch conversation history"})
 		return
@@ -172,7 +171,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	// Save assistant message
-	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID)
+	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID, userMsg.ID.Hex())
 	if err != nil {
 		errorResponse := models.ChatStreamResponse{
 			Type:    "error",

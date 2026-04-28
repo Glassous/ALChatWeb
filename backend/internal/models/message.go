@@ -7,20 +7,22 @@ import (
 )
 
 type Message struct {
-	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	ConversationID primitive.ObjectID `bson:"conversation_id" json:"conversation_id"`
-	Role           string             `bson:"role" json:"role"` // "user" or "assistant"
-	Content        string             `bson:"content" json:"content"`
-	Reasoning      string             `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
-	Search         *SearchData        `bson:"search,omitempty" json:"search,omitempty"`
-	CreatedAt      time.Time          `bson:"created_at" json:"created_at"`
+	ID             primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
+	ConversationID primitive.ObjectID  `bson:"conversation_id" json:"conversation_id"`
+	ParentID       *primitive.ObjectID `bson:"parent_id,omitempty" json:"parent_id,omitempty"`
+	Role           string              `bson:"role" json:"role"` // "user" or "assistant"
+	Content        string              `bson:"content" json:"content"`
+	Reasoning      string              `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
+	Search         *SearchData         `bson:"search,omitempty" json:"search,omitempty"`
+	CreatedAt      time.Time           `bson:"created_at" json:"created_at"`
 }
 
 type ChatRequest struct {
-	ConversationID string `json:"conversation_id"`
-	Message        string `json:"message"`
-	Mode           string `json:"mode"` // "daily", "expert", or "search"
-	Location       string `json:"location,omitempty"`
+	ConversationID  string `json:"conversation_id"`
+	ParentMessageID string `json:"parent_message_id"`
+	Message         string `json:"message"`
+	Mode            string `json:"mode"` // "daily", "expert", or "search"
+	Location        string `json:"location,omitempty"`
 }
 
 type SearchResult struct {

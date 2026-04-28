@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
@@ -25,6 +25,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // Chat Application component
 function ChatApp() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [hasMessages, setHasMessages] = useState(false);
@@ -78,7 +79,7 @@ function ChatApp() {
     }
   };
 
-  const loadConversation = async (conversationId: string) => {
+  const loadConversation = async (conversationId: string, targetNodeId?: string) => {
     setIsMessageLoading(true);
     try {
       const conv = await apiClient.getConversation(conversationId);
@@ -86,6 +87,20 @@ function ChatApp() {
       setMessages(messages);
       setCurrentConversationId(conversationId);
       setHasMessages(messages.length > 0);
+      
+      // If targetNodeId is provided, use it. Otherwise, if we don't have a currentNodeId, 
+      // or the current one is not in the new messages list, use the last message.
+      if (targetNodeId) {
+        setCurrentNodeId(targetNodeId);
+      } else if (messages.length > 0) {
+        const currentInNew = messages.some(m => m.id === currentNodeId);
+        if (!currentNodeId || !currentInNew) {
+          setCurrentNodeId(messages[messages.length - 1].id);
+        }
+      } else {
+        setCurrentNodeId(null);
+      }
+      
       setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
     } catch (error) {
       console.error('Failed to load conversation:', error);
@@ -96,11 +111,20 @@ function ChatApp() {
     }
   };
 
-  const handleSend = async (text: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => {
+  const handleSend = async (text: string, options?: { 
+    isImageMode: boolean; 
+    resolution: string; 
+    refImageUrl?: string; 
+    mode?: 'daily' | 'expert' | 'search';
+    overrideParentId?: string | null;
+  }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
     const currentMode = options?.mode || 'daily';
+    const effectiveParentId = options?.hasOwnProperty('overrideParentId') 
+      ? options.overrideParentId 
+      : currentNodeId;
 
     // Create new conversation if needed
     let isFirstMessage = false;
@@ -135,12 +159,14 @@ function ChatApp() {
     const newUserMsg: Message = {
       id: userMsgId,
       conversation_id: conversationId,
+      parent_id: (effectiveParentId as string) || undefined,
       role: 'user',
       content: userMsgContent,
       created_at: new Date().toISOString(),
     };
     
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), newUserMsg]);
+    setCurrentNodeId(userMsgId);
     setIsLoading(true);
 
     if (options?.isImageMode) {
@@ -149,6 +175,7 @@ function ChatApp() {
       const loadingMsg: Message = {
         id: assistantMsgId,
         conversation_id: conversationId,
+        parent_id: userMsgId,
         role: 'assistant',
         content: '',
         created_at: new Date().toISOString(),
@@ -161,7 +188,7 @@ function ChatApp() {
       setIsLoading(true);
 
       try {
-        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl);
+        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
         
         // Update loading message with image tag and completed status
         setMessages((prev) =>
@@ -181,10 +208,13 @@ function ChatApp() {
           } catch (error) {
             console.error('Failed to auto-generate title:', error);
           }
-        }
-
-        loadConversations();
-      } catch (error) {
+          }
+  
+          if (conversationId) {
+            loadConversation(conversationId, currentNodeId || undefined);
+          }
+          loadConversations();
+        } catch (error) {
         console.error('Failed to generate image:', error);
         setMessages((prev) =>
           (Array.isArray(prev) ? prev : []).map((msg) =>
@@ -203,6 +233,7 @@ function ChatApp() {
     const assistantMsg: Message = {
       id: assistantMsgId,
       conversation_id: conversationId,
+      parent_id: userMsgId,
       role: 'assistant',
       content: '',
       reasoning: '',
@@ -210,6 +241,7 @@ function ChatApp() {
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), assistantMsg]);
+    setCurrentNodeId(assistantMsgId);
 
     // Stream AI response
     try {
@@ -273,6 +305,11 @@ function ChatApp() {
             }
           }
           
+          // Sync with real database IDs to maintain correct tree structure
+          // After a send, we want to stay on the branch we just created
+          if (conversationId) {
+            loadConversation(conversationId, currentNodeId || undefined);
+          }
           loadConversations();
         },
         (error) => {
@@ -286,7 +323,8 @@ function ChatApp() {
             )
           );
         },
-        location
+        location,
+        effectiveParentId
       );
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -350,54 +388,41 @@ function ChatApp() {
   const handleResend = async (msg: Message) => {
     if (isLoading || !currentConversationId) return;
 
-    const msgIndex = messages.findIndex(m => m.id === msg.id);
-    if (msgIndex === -1) return;
-
     let textToResend = '';
-    let truncateId = '';
+    let parentId: string | null | undefined = null;
 
     if (msg.role === 'user') {
       textToResend = msg.content;
-      truncateId = msg.id;
+      parentId = msg.parent_id; // Resending user message: same parent as original
     } else {
-      // If assistant, we resend the previous user message
-      const prevMsg = messages[msgIndex - 1];
-      if (prevMsg && prevMsg.role === 'user') {
-        textToResend = prevMsg.content;
-        truncateId = prevMsg.id;
-      } else {
-        return; // Should not happen in normal flow
+      // Resending AI message: find the user message that triggered it
+      const userMsg = messages.find(m => m.id === msg.parent_id);
+      if (userMsg) {
+        textToResend = userMsg.content;
+        parentId = userMsg.parent_id; // New user message should be sibling of the original user message
       }
     }
 
-    try {
-      // 1. Truncate in backend
-      await apiClient.truncateMessages(currentConversationId, truncateId);
+    if (!textToResend) return;
 
-      // 2. Truncate in frontend state
-      const truncateIndex = messages.findIndex(m => m.id === truncateId);
-      setMessages(prev => prev.slice(0, truncateIndex));
-
-      // 3. Resend
-      // handleSend expects clean text, but user message might have <image> tags
-      // We need to extract the text part if it has images
-      let textOnly = textToResend;
-      let refImageUrl = undefined;
-      
-      const imageMatch = textToResend.match(/<image src="([^"]+)">/);
-      if (imageMatch) {
-        refImageUrl = imageMatch[1];
-        textOnly = textToResend.replace(/<image src="[^"]+">\n?/, '');
-      }
-
-      handleSend(textOnly, { 
-        isImageMode: false, 
-        resolution: '1024x1024', 
-        refImageUrl 
-      });
-    } catch (error) {
-      console.error('Failed to resend:', error);
+    // Extract text part if it has images
+    let textOnly = textToResend;
+    let refImageUrl = undefined;
+    const imageMatch = textToResend.match(/<image src="([^"]+)">/);
+    if (imageMatch) {
+      refImageUrl = imageMatch[1];
+      textOnly = textToResend.replace(/<image src="[^"]+">\n?/, '');
     }
+
+    // Capture the current node ID to prevent jumping back
+    const currentIdBeforeSend = currentNodeId;
+
+    handleSend(textOnly, { 
+      isImageMode: false, 
+      resolution: '1024x1024', 
+      refImageUrl,
+      overrideParentId: parentId
+    });
   };
 
   const handleEdit = (msg: Message) => {
@@ -405,10 +430,10 @@ function ChatApp() {
     
     let messageToEdit = msg;
     if (msg.role === 'assistant') {
-      const msgIndex = messages.findIndex(m => m.id === msg.id);
-      const prevMsg = messages[msgIndex - 1];
-      if (prevMsg && prevMsg.role === 'user') {
-        messageToEdit = prevMsg;
+      // If user clicks edit on AI response, they actually want to edit the question
+      const userMsg = messages.find(m => m.id === msg.parent_id);
+      if (userMsg) {
+        messageToEdit = userMsg;
       } else {
         return;
       }
@@ -421,30 +446,57 @@ function ChatApp() {
   const handleConfirmEdit = async (newText: string) => {
     if (!editingMessage || !currentConversationId) return;
     
-    try {
-      // 1. Truncate in backend
-      await apiClient.truncateMessages(currentConversationId, editingMessage.id);
-
-      // 2. Truncate in frontend state
-      const truncateIndex = messages.findIndex(m => m.id === editingMessage.id);
-      setMessages(prev => prev.slice(0, truncateIndex));
-
-      // 3. Send with new text
-      // Extract original image if any
-      let refImageUrl = undefined;
-      const imageMatch = editingMessage.content.match(/<image src="([^"]+)">/);
-      if (imageMatch) {
-        refImageUrl = imageMatch[1];
-      }
-
-      handleSend(newText, { 
-        isImageMode: false, 
-        resolution: '1024x1024', 
-        refImageUrl 
-      });
-    } catch (error) {
-      console.error('Failed to edit and send:', error);
+    // Extract original image if any
+    let refImageUrl = undefined;
+    const imageMatch = editingMessage.content.match(/<image src="([^"]+)">/);
+    if (imageMatch) {
+      refImageUrl = imageMatch[1];
     }
+
+    // Explicitly set the node ID to prevent jumping
+    const targetParentId = editingMessage.parent_id;
+
+    handleSend(newText, { 
+      isImageMode: false, 
+      resolution: '1024x1024', 
+      refImageUrl,
+      overrideParentId: targetParentId
+    });
+
+    setIsEditOpen(false);
+    setEditingMessage(null);
+  };
+
+  const activePath = useMemo(() => {
+    if (!currentNodeId || messages.length === 0) return [];
+    const path: Message[] = [];
+    const msgMap = new Map(messages.map(m => [m.id, m]));
+    
+    let currId: string | undefined = currentNodeId;
+    while (currId) {
+      const msg = msgMap.get(currId);
+      if (!msg) break;
+      path.unshift(msg);
+      currId = msg.parent_id;
+    }
+    return path;
+  }, [messages, currentNodeId]);
+
+  const findDeepestLeaf = (messageId: string, allMessages: Message[]): string => {
+    const children = allMessages.filter(m => m.parent_id === messageId);
+    if (children.length === 0) return messageId;
+    
+    // Sort children by created_at to find the latest branch
+    const sortedChildren = [...children].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
+    return findDeepestLeaf(sortedChildren[0].id, allMessages);
+  };
+
+  const handleSwitchBranch = (messageId: string) => {
+    const deepestLeafId = findDeepestLeaf(messageId, messages);
+    setCurrentNodeId(deepestLeafId);
   };
 
   const currentConversation = conversations.find(c => c.id === currentConversationId);
@@ -484,12 +536,15 @@ function ChatApp() {
           ) : (
             <div key="chat-content" className="chat-area-wrapper">
               <ChatArea 
-                messages={messages} 
+                messages={activePath}
+                allMessages={messages}
+                currentNodeId={currentNodeId}
                 ref={chatAreaRef} 
                 onScrollStateChange={setIsAtBottom}
                 onShowSearch={handleShowSearch}
                 onResend={handleResend}
                 onEdit={handleEdit}
+                onSwitchBranch={handleSwitchBranch}
               />
             </div>
           )}
@@ -499,7 +554,7 @@ function ChatApp() {
             onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
             isAtBottom={isAtBottom}
             isEmpty={!hasMessages}
-            userMessages={messages.filter(m => m.role === 'user').map(m => m.content)}
+            userMessages={activePath.filter(m => m.role === 'user').map(m => m.content)}
           />
         </div>
       </div>

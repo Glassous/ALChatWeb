@@ -205,8 +205,9 @@
 
 .assistant-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   margin-top: 8px;
+  align-items: center;
 }
 
 .action-button {
@@ -243,6 +244,55 @@
   transition: opacity 0.2s ease;
   align-items: center;
   margin-top: 4px;
+}
+
+.branch-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--surface-hover);
+  border-radius: 12px;
+  padding: 2px 4px;
+  margin-right: 4px;
+}
+
+.branch-switcher.assistant {
+  background-color: var(--surface-hover);
+  padding: 2px 4px;
+  margin-right: 4px;
+  border-radius: 12px;
+}
+
+.branch-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.branch-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-color);
+}
+
+.branch-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.branch-info {
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+  min-width: 32px;
+  text-align: center;
+  font-family: monospace;
 }
 
 .message-wrapper:hover .user-actions {

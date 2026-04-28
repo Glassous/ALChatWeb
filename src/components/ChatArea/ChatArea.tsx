@@ -7,6 +7,7 @@ import './ChatArea.css';
 export interface Message {
   id: string;
   conversation_id: string;
+  parent_id?: string;
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
@@ -29,10 +30,13 @@ export interface Message {
 
 interface ChatAreaProps {
   messages: Message[];
+  allMessages: Message[];
+  currentNodeId: string | null;
   onScrollStateChange?: (isAtBottom: boolean) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
+  onSwitchBranch?: (messageId: string) => void;
 }
 
 export interface ChatAreaHandle {
@@ -55,18 +59,30 @@ const EditIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960" fill="currentColor"><path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/></svg>
 );
 
+const PrevIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>
+);
+
+const NextIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M383-240l-56-56 184-184-184-184 56-56 240 240-240 240Z"/></svg>
+);
+
 function MessageItem({ 
   msg, 
+  allMessages,
   onImageClick, 
   onShowSearch,
   onResend,
-  onEdit
+  onEdit,
+  onSwitchBranch
 }: { 
   msg: Message; 
+  allMessages: Message[];
   onImageClick: (url: string) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
+  onSwitchBranch?: (messageId: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -74,6 +90,44 @@ function MessageItem({
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
   const [showExpandButton, setShowExpandButton] = useState(false);
   const userBubbleRef = useRef<HTMLDivElement>(null);
+
+  const siblings = allMessages.filter(m => (m.parent_id || null) === (msg.parent_id || null));
+  const siblingIndex = siblings.findIndex(m => m.id === msg.id);
+  const hasSiblings = siblings.length > 1;
+
+  // For assistant messages, we also check if the parent (user message) has siblings (e.g. user edited their question)
+  const userParent = msg.role === 'assistant' ? allMessages.find(m => m.id === msg.parent_id) : null;
+  const parentSiblings = userParent 
+    ? allMessages.filter(m => (m.parent_id || null) === (userParent.parent_id || null))
+    : [];
+  const parentSiblingIndex = userParent 
+    ? parentSiblings.findIndex(m => m.id === userParent.id)
+    : -1;
+  const hasParentSiblings = parentSiblings.length > 1;
+
+  const handlePrevBranch = () => {
+    if (siblingIndex > 0) {
+      onSwitchBranch?.(siblings[siblingIndex - 1].id);
+    }
+  };
+
+  const handleNextBranch = () => {
+    if (siblingIndex < siblings.length - 1) {
+      onSwitchBranch?.(siblings[siblingIndex + 1].id);
+    }
+  };
+
+  const handlePrevParentBranch = () => {
+    if (parentSiblingIndex > 0) {
+      onSwitchBranch?.(parentSiblings[parentSiblingIndex - 1].id);
+    }
+  };
+
+  const handleNextParentBranch = () => {
+    if (parentSiblingIndex < parentSiblings.length - 1) {
+      onSwitchBranch?.(parentSiblings[parentSiblingIndex + 1].id);
+    }
+  };
 
   const toggleUserCollapse = () => {
     const willExpand = isUserCollapsed;
@@ -379,6 +433,45 @@ function MessageItem({
             </div>
             {!isPureImage && (
               <div className="assistant-actions">
+                {/* Branch Switcher: Priority to AI regeneration, then User edits */}
+                {hasSiblings ? (
+                  <div className="branch-switcher assistant">
+                    <button 
+                      className="branch-btn" 
+                      onClick={handlePrevBranch} 
+                      disabled={siblingIndex === 0}
+                    >
+                      <PrevIcon />
+                    </button>
+                    <span className="branch-info">{siblingIndex + 1} / {siblings.length}</span>
+                    <button 
+                      className="branch-btn" 
+                      onClick={handleNextBranch} 
+                      disabled={siblingIndex === siblings.length - 1}
+                    >
+                      <NextIcon />
+                    </button>
+                  </div>
+                ) : hasParentSiblings ? (
+                  <div className="branch-switcher assistant">
+                    <button 
+                      className="branch-btn" 
+                      onClick={handlePrevParentBranch} 
+                      disabled={parentSiblingIndex === 0}
+                    >
+                      <PrevIcon />
+                    </button>
+                    <span className="branch-info">{parentSiblingIndex + 1} / {parentSiblings.length}</span>
+                    <button 
+                      className="branch-btn" 
+                      onClick={handleNextParentBranch} 
+                      disabled={parentSiblingIndex === parentSiblings.length - 1}
+                    >
+                      <NextIcon />
+                    </button>
+                  </div>
+                ) : null}
+
                 <button 
                   className={`action-button copy-action ${copied ? 'copied' : ''}`} 
                   onClick={handleCopy}
@@ -386,8 +479,9 @@ function MessageItem({
                 >
                   {copied ? <CheckIcon /> : <CopyIcon />}
                 </button>
+
                 <button 
-                  className="action-button resend-action" 
+                  className={`action-button resend-action`} 
                   onClick={() => onResend?.(msg)}
                   title="重新发送"
                 >
@@ -402,7 +496,16 @@ function MessageItem({
   );
 }
 
-export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch, onResend, onEdit }, ref) => {
+export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ 
+  messages, 
+  allMessages,
+  currentNodeId,
+  onScrollStateChange, 
+  onShowSearch, 
+  onResend, 
+  onEdit,
+  onSwitchBranch
+}, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -562,10 +665,12 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, o
           >
             <MessageItem 
               msg={msg} 
+              allMessages={allMessages}
               onImageClick={setPreviewUrl} 
               onShowSearch={onShowSearch}
               onResend={onResend}
               onEdit={onEdit}
+              onSwitchBranch={onSwitchBranch}
             />
           </div>
         ))}
