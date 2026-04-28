@@ -200,12 +200,12 @@ function ChatApp() {
       try {
         const data = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
         const imageUrl = data.url;
-        const realAssistantId = data.assistant_message_id;
-        const realUserId = data.user_message_id;
+        const realAssistantId = data.assistant_message_id as string;
+        const realUserId = data.user_message_id as string;
 
         // Update loading message with image tag and completed status, and swap IDs
         setMessages((prev) => {
-          const updated = (Array.isArray(prev) ? prev : []).map((msg) => {
+          const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
             if (msg.id === assistantMsgId) {
               return { ...msg, id: realAssistantId || msg.id, content: `<image src="${imageUrl}">`, status: 'completed' };
             }
@@ -246,7 +246,7 @@ function ChatApp() {
         } catch (error) {
         console.error('Failed to generate image:', error);
         setMessages((prev) =>
-          (Array.isArray(prev) ? prev : []).map((msg) =>
+          (Array.isArray(prev) ? prev : []).map((msg): Message =>
             msg.id === assistantMsgId
               ? { ...msg, content: `Error generating image: ${error}`, status: 'error' }
               : msg
@@ -303,7 +303,7 @@ function ChatApp() {
         (reasoning) => {
           // Update assistant message with reasoning token
           setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message =>
               msg.id === assistantMsgId
                 ? { ...msg, reasoning: (msg.reasoning || '') + reasoning, status: 'loading' }
                 : msg
@@ -324,13 +324,13 @@ function ChatApp() {
           // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
 
-          const realAssistantId = doneData?.assistant_message_id;
-          const realUserId = doneData?.user_message_id;
+          const realAssistantId = doneData?.assistant_message_id as string;
+          const realUserId = doneData?.user_message_id as string;
 
           // Swap temporary IDs with real IDs immediately to stabilize the UI
           if (realAssistantId && realUserId) {
             setMessages((prev) => {
-              const updated = (Array.isArray(prev) ? prev : []).map((msg) => {
+              const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                 if (msg.id === assistantMsgId) {
                   return { ...msg, id: realAssistantId, status: 'completed' };
                 }
@@ -371,7 +371,7 @@ function ChatApp() {
           console.error('SSE Error:', error);
           setIsLoading(false);
           setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message =>
               msg.id === assistantMsgId
                 ? { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error' }
                 : msg
@@ -385,7 +385,7 @@ function ChatApp() {
       console.error('Failed to send message:', error);
       setIsLoading(false);
       setMessages((prev) =>
-        (Array.isArray(prev) ? prev : []).map((msg) =>
+        (Array.isArray(prev) ? prev : []).map((msg): Message =>
           msg.id === assistantMsgId
             ? { ...msg, content: msg.content + `\n\n[Failed to send message: ${error}]`, status: 'error' }
             : msg
