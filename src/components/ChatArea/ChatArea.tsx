@@ -404,18 +404,61 @@ function MessageItem({
 
 export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, onScrollStateChange, onShowSearch, onResend, onEdit }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const isAutoScrollEnabledRef = useRef(true);
   const prevMessagesLengthRef = useRef(messages.length);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    
     // We consider it near bottom if within 150px
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
     isAutoScrollEnabledRef.current = isNearBottom;
     onScrollStateChange?.(isNearBottom);
-  }, [onScrollStateChange]);
+
+    // Manual active message detection for better accuracy, especially at bottom
+    // We want the message that is currently at the top of the viewport (with some offset)
+    const offset = 20; // 20px offset from top
+    const userMessageEls = Array.from(messageRefs.current.entries())
+      .filter(([id]) => {
+        const msg = messages.find(m => m.id === id);
+        return msg?.role === 'user';
+      });
+
+    // If at the very bottom, highlight the last user message
+    if (scrollHeight - scrollTop - clientHeight < 50) {
+      if (userMessageEls.length > 0) {
+        setActiveMessageId(userMessageEls[userMessageEls.length - 1][0]);
+        return;
+      }
+    }
+
+    let currentActiveId = activeMessageId;
+    let minDistance = Infinity;
+
+    userMessageEls.forEach(([id, el]) => {
+      const rect = el.getBoundingClientRect();
+      const containerRect = scrollRef.current!.getBoundingClientRect();
+      const distance = Math.abs(rect.top - containerRect.top - offset);
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        currentActiveId = id;
+      }
+    });
+
+    if (currentActiveId !== activeMessageId) {
+      setActiveMessageId(currentActiveId);
+    }
+  }, [onScrollStateChange, messages, activeMessageId]);
+
+  // Remove the IntersectionObserver effect as we're now using manual scroll detection
+  useEffect(() => {
+    // No-op, functionality moved to handleScroll for better control
+  }, [messages]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (scrollRef.current) {
@@ -468,20 +511,83 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ messages, o
     }
   };
 
+  const scrollToMessage = (id: string) => {
+    const el = messageRefs.current.get(id);
+    if (el && scrollRef.current) {
+      // el.offsetTop gives the distance from the top of the scrollable container
+      // We subtract the container's padding-top (24px) to align it perfectly
+      const targetScrollTop = el.offsetTop - 24;
+      scrollRef.current.scrollTo({
+        top: targetScrollTop,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const getFilteredContent = (content: string) => {
+    if (!content) return '';
+    
+    // Check if it's purely a file or image message
+    const hasFile = content.includes('<file');
+    const hasImage = content.includes('<image');
+
+    // Strip <file ...> and <image ...> tags
+    const filtered = content
+      .replace(/<file[^>]*>/g, '')
+      .replace(/<image[^>]*>/g, '')
+      .trim();
+
+    // If empty after filtering, show placeholder
+    if (!filtered) {
+      if (hasFile && hasImage) return '[文件与图片]';
+      if (hasFile) return '[文件]';
+      if (hasImage) return '[图片]';
+      return '消息';
+    }
+
+    return filtered;
+  };
+
   return (
     <div className="chat-area" ref={scrollRef} onScroll={handleScroll}>
       <div className="chat-content">
         {messages.map((msg) => (
-          <MessageItem 
+          <div 
             key={msg.id} 
-            msg={msg} 
-            onImageClick={setPreviewUrl} 
-            onShowSearch={onShowSearch}
-            onResend={onResend}
-            onEdit={onEdit}
-          />
+            data-message-id={msg.id}
+            ref={(el) => {
+              if (el) messageRefs.current.set(msg.id, el);
+              else messageRefs.current.delete(msg.id);
+            }}
+          >
+            <MessageItem 
+              msg={msg} 
+              onImageClick={setPreviewUrl} 
+              onShowSearch={onShowSearch}
+              onResend={onResend}
+              onEdit={onEdit}
+            />
+          </div>
         ))}
       </div>
+
+      {/* Message Navigator */}
+      {messages.some(m => m.role === 'user') && (
+        <div className="message-navigator">
+          <div className="navigator-card">
+            {messages.filter(m => m.role === 'user').map((msg) => (
+              <div 
+                key={msg.id} 
+                className={`navigator-item ${activeMessageId === msg.id ? 'active' : ''}`}
+                onClick={() => scrollToMessage(msg.id)}
+              >
+                <span className="navigator-text">{getFilteredContent(msg.content)}</span>
+                <span className="navigator-bar"></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {previewUrl && (
         <div className="image-preview-overlay" onClick={() => setPreviewUrl(null)}>
