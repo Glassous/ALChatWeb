@@ -31,7 +31,6 @@ export interface Message {
 interface ChatAreaProps {
   messages: Message[];
   allMessages: Message[];
-  currentNodeId: string | null;
   onScrollStateChange?: (isAtBottom: boolean) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
@@ -499,7 +498,6 @@ function MessageItem({
 export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({ 
   messages, 
   allMessages,
-  currentNodeId,
   onScrollStateChange, 
   onShowSearch, 
   onResend, 

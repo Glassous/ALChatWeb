@@ -414,9 +414,6 @@ function ChatApp() {
       textOnly = textToResend.replace(/<image src="[^"]+">\n?/, '');
     }
 
-    // Capture the current node ID to prevent jumping back
-    const currentIdBeforeSend = currentNodeId;
-
     handleSend(textOnly, { 
       isImageMode: false, 
       resolution: '1024x1024', 
@@ -538,7 +535,6 @@ function ChatApp() {
               <ChatArea 
                 messages={activePath}
                 allMessages={messages}
-                currentNodeId={currentNodeId}
                 ref={chatAreaRef} 
                 onScrollStateChange={setIsAtBottom}
                 onShowSearch={handleShowSearch}
