@@ -18,6 +18,11 @@
 .topbar-right {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.overview-button.active {
+  color: var(--md-sys-color-primary);
 }
 
 .mobile-menu-button {

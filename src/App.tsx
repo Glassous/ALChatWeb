@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
+import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
@@ -39,6 +40,7 @@ function ChatApp() {
   const [searchData, setSearchData] = useState<SearchData | null>(null);
   const [isSearchSidebarOpen, setIsSearchSidebarOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isTreeViewOpen, setIsTreeViewOpen] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
@@ -88,18 +90,26 @@ function ChatApp() {
       setCurrentConversationId(conversationId);
       setHasMessages(messages.length > 0);
       
-      // If targetNodeId is provided, use it. Otherwise, if we don't have a currentNodeId, 
-      // or the current one is not in the new messages list, use the last message.
-      if (targetNodeId) {
-        setCurrentNodeId(targetNodeId);
+      // Determine the next node ID to display.
+      let nextNodeId: string | null = null;
+      if (targetNodeId && messages.some(m => m.id === targetNodeId)) {
+        // 1. If targetNodeId is provided and exists in the new messages, use it.
+        nextNodeId = targetNodeId;
       } else if (messages.length > 0) {
-        const currentInNew = messages.some(m => m.id === currentNodeId);
-        if (!currentNodeId || !currentInNew) {
-          setCurrentNodeId(messages[messages.length - 1].id);
+        // 2. If not found (e.g. after sending a message where IDs change), 
+        // find the latest leaf node in the conversation to ensure we stay on the newest branch.
+        const leaves = messages.filter(m => !messages.some(child => child.parent_id === m.id));
+        if (leaves.length > 0) {
+          const sortedLeaves = [...leaves].sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+          nextNodeId = sortedLeaves[0].id;
+        } else {
+          nextNodeId = messages[messages.length - 1].id;
         }
-      } else {
-        setCurrentNodeId(null);
       }
+      
+      setCurrentNodeId(nextNodeId);
       
       setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
     } catch (error) {
@@ -150,7 +160,7 @@ function ChatApp() {
     }
 
     // Add user message to UI immediately
-    const userMsgId = Date.now().toString();
+    const userMsgId = `temp-user-${Date.now()}`;
     let userMsgContent = text;
     if (options?.refImageUrl) {
       userMsgContent = `<image src="${options.refImageUrl}">\n${text}`;
@@ -171,7 +181,7 @@ function ChatApp() {
 
     if (options?.isImageMode) {
       // Handle image generation
-      const assistantMsgId = (Date.now() + 1).toString();
+      const assistantMsgId = `temp-assistant-${Date.now() + 1}`;
       const loadingMsg: Message = {
         id: assistantMsgId,
         conversation_id: conversationId,
@@ -188,16 +198,35 @@ function ChatApp() {
       setIsLoading(true);
 
       try {
-        const imageUrl = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
-        
-        // Update loading message with image tag and completed status
-        setMessages((prev) =>
-          (Array.isArray(prev) ? prev : []).map((msg) =>
-            msg.id === assistantMsgId
-              ? { ...msg, content: `<image src="${imageUrl}">`, status: 'completed' }
-              : msg
-          )
-        );
+        const data = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
+        const imageUrl = data.url;
+        const realAssistantId = data.assistant_message_id;
+        const realUserId = data.user_message_id;
+
+        // Update loading message with image tag and completed status, and swap IDs
+        setMessages((prev) => {
+          const updated = (Array.isArray(prev) ? prev : []).map((msg) => {
+            if (msg.id === assistantMsgId) {
+              return { ...msg, id: realAssistantId || msg.id, content: `<image src="${imageUrl}">`, status: 'completed' };
+            }
+            if (msg.id === userMsgId) {
+              return { ...msg, id: realUserId || msg.id };
+            }
+            if (msg.parent_id === userMsgId) {
+              return { ...msg, parent_id: realUserId || msg.parent_id };
+            }
+            if (msg.parent_id === assistantMsgId) {
+              return { ...msg, parent_id: realAssistantId || msg.parent_id };
+            }
+            return msg;
+          });
+          return updated;
+        });
+
+        if (realAssistantId) {
+          setCurrentNodeId(realAssistantId);
+        }
+
         setIsLoading(false);
 
         // If this was the first message, generate a title using AI
@@ -211,7 +240,7 @@ function ChatApp() {
           }
   
           if (conversationId) {
-            loadConversation(conversationId, currentNodeId || undefined);
+            loadConversation(conversationId, realAssistantId || undefined);
           }
           loadConversations();
         } catch (error) {
@@ -229,7 +258,7 @@ function ChatApp() {
     }
 
     // Create placeholder for assistant message
-    const assistantMsgId = (Date.now() + 1).toString();
+    const assistantMsgId = `temp-assistant-${Date.now() + 1}`;
     const assistantMsg: Message = {
       id: assistantMsgId,
       conversation_id: conversationId,
@@ -266,7 +295,7 @@ function ChatApp() {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, content: msg.content + token, status: 'completed' }
+                ? { ...msg, content: msg.content + token, status: 'loading' }
                 : msg
             )
           );
@@ -276,7 +305,7 @@ function ChatApp() {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
               msg.id === assistantMsgId
-                ? { ...msg, reasoning: (msg.reasoning || '') + reasoning, status: 'completed' }
+                ? { ...msg, reasoning: (msg.reasoning || '') + reasoning, status: 'loading' }
                 : msg
             )
           );
@@ -291,9 +320,36 @@ function ChatApp() {
             )
           );
         },
-        async () => {
+        async (doneData) => {
           // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
+
+          const realAssistantId = doneData?.assistant_message_id;
+          const realUserId = doneData?.user_message_id;
+
+          // Swap temporary IDs with real IDs immediately to stabilize the UI
+          if (realAssistantId && realUserId) {
+            setMessages((prev) => {
+              const updated = (Array.isArray(prev) ? prev : []).map((msg) => {
+                if (msg.id === assistantMsgId) {
+                  return { ...msg, id: realAssistantId, status: 'completed' };
+                }
+                if (msg.id === userMsgId) {
+                  return { ...msg, id: realUserId };
+                }
+                // Update parent_ids of any messages pointing to temp IDs
+                if (msg.parent_id === userMsgId) {
+                  return { ...msg, parent_id: realUserId };
+                }
+                if (msg.parent_id === assistantMsgId) {
+                  return { ...msg, parent_id: realAssistantId };
+                }
+                return msg;
+              });
+              return updated;
+            });
+            setCurrentNodeId(realAssistantId);
+          }
           
           // If this was the first message, generate a title using AI
           if (isFirstMessage && conversationId) {
@@ -306,9 +362,8 @@ function ChatApp() {
           }
           
           // Sync with real database IDs to maintain correct tree structure
-          // After a send, we want to stay on the branch we just created
           if (conversationId) {
-            loadConversation(conversationId, currentNodeId || undefined);
+            loadConversation(conversationId, realAssistantId || undefined);
           }
           loadConversations();
         },
@@ -341,6 +396,7 @@ function ChatApp() {
 
   const handleNewChat = () => {
     setMessages([]);
+    setCurrentNodeId(null);
     setHasMessages(false);
     setCurrentConversationId(null);
     setIsMobileDrawerOpen(false); // Close drawer on mobile
@@ -496,6 +552,19 @@ function ChatApp() {
     setCurrentNodeId(deepestLeafId);
   };
 
+  const isTree = useMemo(() => {
+    if (!messages || messages.length === 0) return false;
+    const parentCounts = new Map<string | null, number>();
+    messages.forEach(m => {
+      const pid = m.parent_id || null;
+      parentCounts.set(pid, (parentCounts.get(pid) || 0) + 1);
+    });
+    for (const count of parentCounts.values()) {
+      if (count > 1) return true;
+    }
+    return false;
+  }, [messages]);
+
   const currentConversation = conversations.find(c => c.id === currentConversationId);
   const conversationTitle = currentConversation?.title;
 
@@ -518,6 +587,9 @@ function ChatApp() {
           conversationTitle={conversationTitle}
           onMenuClick={() => setIsMobileDrawerOpen(true)}
           onNewChat={handleNewChat}
+          showOverviewButton={isTree}
+          onOverviewClick={() => setIsTreeViewOpen(!isTreeViewOpen)}
+          isTreeViewOpen={isTreeViewOpen}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
         <div className="chat-container">
@@ -543,6 +615,18 @@ function ChatApp() {
                 onSwitchBranch={handleSwitchBranch}
               />
             </div>
+          )}
+          {isTreeViewOpen && (
+            <TreeView 
+              allMessages={messages}
+              activePath={activePath}
+              currentNodeId={currentNodeId}
+              onSelectNode={(id) => {
+                handleSwitchBranch(id);
+                setIsTreeViewOpen(false);
+              }}
+              onClose={() => setIsTreeViewOpen(false)}
+            />
           )}
           <InputArea 
             onSend={handleSend} 

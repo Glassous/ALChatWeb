@@ -1,0 +1,238 @@
+.tree-view-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-color); /* Fully opaque */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+.tree-view-overlay.closing {
+  animation: fadeOut 0.2s ease-in forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.02); }
+}
+
+.tree-view-content {
+  background-color: var(--bg-color);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Tooltip Styling */
+.tree-node-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%) translateY(-12px);
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  width: 300px;
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  pointer-events: auto; /* Allow interaction */
+  animation: tooltipAppear 0.2s ease-out;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.tree-node-tooltip::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+@keyframes tooltipAppear {
+  from { opacity: 0; transform: translate(-50%, -100%) translateY(-4px); }
+  to { opacity: 1; transform: translate(-50%, -100%) translateY(-12px); }
+}
+
+.tooltip-role {
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.tooltip-content {
+  font-size: 0.875rem;
+  color: var(--text-color);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tooltip-reasoning {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.reasoning-label {
+  font-weight: bold;
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+}
+
+.tree-view-header {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-color);
+  z-index: 10;
+}
+
+.tree-view-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-color);
+}
+
+.close-tree-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  transition: background-color 0.2s;
+}
+
+.close-tree-btn:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-color);
+}
+
+.tree-view-forest {
+  flex: 1;
+  overflow: auto;
+  padding: 60px;
+  position: relative; /* Essential for react-xarrows coordinate system */
+  display: block; /* Change from flex to allow inner container to manage alignment */
+}
+
+.forest-container {
+  display: inline-flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 120px;
+  min-width: 100%; /* Ensure it takes at least full width to allow centering */
+  padding-bottom: 100px; /* Extra space at bottom */
+}
+
+/* Custom Scrollbar */
+.tree-view-forest::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.tree-view-forest::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tree-view-forest::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.tree-view-forest::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Connection lines will be handled by react-xarrows */
+.tree-children {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 48px;
+  margin-top: 80px; /* More space for smoother SVG curves */
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.tree-node-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tree-node {
+  padding: 14px 20px;
+  border-radius: 18px;
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  min-width: 140px;
+  max-width: 260px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  text-align: center;
+  position: relative;
+}
+
+.tree-node:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  background-color: var(--surface-hover);
+  border-color: var(--text-muted);
+}
+
+.tree-node.user {
+  background-color: var(--surface-hover);
+  color: var(--text-color);
+}
+
+.tree-node.assistant {
+  background-color: var(--surface-color);
+  color: var(--text-color);
+}
+
+.tree-node.active {
+  border-color: var(--text-muted);
+}
+
+.tree-node.current {
+  background-color: var(--button-bg);
+  color: var(--button-text);
+  border-color: var(--button-bg);
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+}
+
+.tree-node-content {
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+}

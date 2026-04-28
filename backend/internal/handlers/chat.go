@@ -200,6 +200,10 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	// Send done signal
 	doneResponse := models.ChatStreamResponse{
 		Type: "done",
+		Data: gin.H{
+			"user_message_id":      userMsg.ID.Hex(),
+			"assistant_message_id": assistantMsg.ID.Hex(),
+		},
 	}
 	data, _ := json.Marshal(doneResponse)
 	fmt.Fprintf(c.Writer, "data: %s\n\n", data)

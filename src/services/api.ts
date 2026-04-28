@@ -285,7 +285,7 @@ class APIClient {
     return data.title;
   }
 
-  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string, parentMessageId?: string | null): Promise<string> {
+  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string, parentMessageId?: string | null): Promise<any> {
     this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/chat/image`, {
       method: 'POST',
@@ -302,8 +302,7 @@ class APIClient {
       const error = await response.json();
       throw new Error(error.error || 'Failed to generate image');
     }
-    const data = await response.json();
-    return data.url;
+    return response.json();
   }
 
   async uploadReferenceImage(file: File): Promise<string> {
@@ -347,7 +346,7 @@ class APIClient {
     onToken: (token: string) => void,
     onReasoning: (reasoning: string) => void,
     onSearch: (data: any) => void,
-    onDone: () => void,
+    onDone: (data: any) => void,
     onError: (error: string) => void,
     location?: string,
     parentMessageId?: string | null
@@ -397,7 +396,7 @@ class APIClient {
               } else if (parsed.type === 'search' && parsed.data) {
                 onSearch(parsed.data);
               } else if (parsed.type === 'done') {
-                onDone();
+                onDone(parsed.data);
               } else if (parsed.type === 'error') {
                 onError(parsed.content || 'Unknown error');
               }

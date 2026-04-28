@@ -86,14 +86,16 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 
 	// Save assistant message with image tag
 	imageTag := fmt.Sprintf(`<image src="%s">`, url)
-	_, err = h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", imageTag, userID, userMsg.ID.Hex())
+	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", imageTag, userID, userMsg.ID.Hex())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save assistant message"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"url": url,
+		"url":                  url,
+		"user_message_id":      userMsg.ID.Hex(),
+		"assistant_message_id": assistantMsg.ID.Hex(),
 	})
 }
 
