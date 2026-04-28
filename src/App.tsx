@@ -31,6 +31,7 @@ function ChatApp() {
   const [isExiting, setIsExiting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+  const [isMessageLoading, setIsMessageLoading] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -61,6 +62,14 @@ function ChatApp() {
     try {
       const convs = await apiClient.getConversations();
       setConversations(convs || []); // Ensure it's always an array
+      
+      // Preload first 15 conversations
+      if (convs && convs.length > 0) {
+        const toPreload = convs.slice(0, 15);
+        // Preload in parallel to populate the cache
+        Promise.all(toPreload.map(conv => apiClient.getConversation(conv.id)))
+          .catch(err => console.warn('Failed to preload some conversations:', err));
+      }
     } catch (error) {
       console.error('Failed to load conversations:', error);
       setConversations([]); // Set empty array on error
@@ -70,6 +79,7 @@ function ChatApp() {
   };
 
   const loadConversation = async (conversationId: string) => {
+    setIsMessageLoading(true);
     try {
       const conv = await apiClient.getConversation(conversationId);
       const messages = Array.isArray(conv.messages) ? conv.messages : [];
@@ -81,6 +91,8 @@ function ChatApp() {
       console.error('Failed to load conversation:', error);
       setMessages([]);
       setHasMessages(false);
+    } finally {
+      setIsMessageLoading(false);
     }
   };
 
@@ -458,6 +470,7 @@ function ChatApp() {
           onMenuClick={() => setIsMobileDrawerOpen(true)}
           onNewChat={handleNewChat}
         />
+        {isMessageLoading && <div className="loading-bar"></div>}
         <div className="chat-container">
           {!hasMessages ? (
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>

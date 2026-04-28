@@ -20,6 +20,43 @@
   height: 100%;
   overflow: hidden;
   transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.loading-bar {
+  height: 2px;
+  width: 100%;
+  background-color: transparent;
+  position: absolute;
+  top: 64px; /* Height of TopBar */
+  left: 0;
+  z-index: 100;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .loading-bar {
+    top: 56px;
+  }
+}
+
+.loading-bar::after {
+  content: "";
+  position: absolute;
+  left: -50%;
+  height: 100%;
+  width: 50%;
+  background-color: var(--accent-color, #007aff);
+  animation: loading-indeterminate 1.5s infinite linear;
+}
+
+@keyframes loading-indeterminate {
+  0% {
+    left: -50%;
+  }
+  100% {
+    left: 100%;
+  }
 }
 
 .main-content.sidebar-open {

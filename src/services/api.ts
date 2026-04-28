@@ -36,11 +36,26 @@ export interface ChatStreamResponse {
 }
 
 
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
 class APIClient {
   private baseURL: string;
+  private conversationCache = new Map<string, CacheEntry<ConversationWithMessages>>();
+  private readonly CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
+  }
+
+  private invalidateCache(id?: string) {
+    if (id) {
+      this.conversationCache.delete(id);
+    } else {
+      this.conversationCache.clear();
+    }
   }
 
   private getHeaders(): HeadersInit {
@@ -190,6 +205,12 @@ class APIClient {
   }
 
   async getConversation(id: string): Promise<ConversationWithMessages> {
+    const cached = this.conversationCache.get(id);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
+    }
+
     try {
       const response = await fetch(`${this.baseURL}/api/conversations/${id}`, {
         headers: this.getHeaders(),
@@ -199,10 +220,17 @@ class APIClient {
       }
       const data = await response.json();
       // Ensure messages is always an array
-      return {
+      const result = {
         ...data,
         messages: Array.isArray(data.messages) ? data.messages : []
       };
+      
+      this.conversationCache.set(id, {
+        data: result,
+        timestamp: now
+      });
+      
+      return result;
     } catch (error) {
       console.error('Error fetching conversation:', error);
       throw error;
@@ -210,6 +238,7 @@ class APIClient {
   }
 
   async deleteConversation(id: string): Promise<void> {
+    this.invalidateCache(id);
     const response = await fetch(`${this.baseURL}/api/conversations/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(),
@@ -220,6 +249,7 @@ class APIClient {
   }
 
   async truncateMessages(conversationId: string, messageId: string): Promise<void> {
+    this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/conversations/${conversationId}/messages/after/${messageId}`, {
       method: 'DELETE',
       headers: this.getHeaders(),
@@ -230,6 +260,7 @@ class APIClient {
   }
 
   async updateConversationTitle(id: string, title: string): Promise<void> {
+    this.invalidateCache(id);
     const response = await fetch(`${this.baseURL}/api/conversations/${id}/title`, {
       method: 'PUT',
       headers: this.getHeaders(),
@@ -241,6 +272,7 @@ class APIClient {
   }
 
   async generateTitle(id: string): Promise<string> {
+    this.invalidateCache(id);
     const response = await fetch(`${this.baseURL}/api/conversations/${id}/generate-title`, {
       method: 'POST',
       headers: this.getHeaders(),
@@ -253,6 +285,7 @@ class APIClient {
   }
 
   async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string): Promise<string> {
+    this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/chat/image`, {
       method: 'POST',
       headers: this.getHeaders(),
@@ -316,6 +349,7 @@ class APIClient {
     onError: (error: string) => void,
     location?: string
   ): Promise<void> {
+    this.invalidateCache(conversationId);
     const response = await fetch(`${this.baseURL}/api/chat`, {
       method: 'POST',
       headers: this.getHeaders(),
