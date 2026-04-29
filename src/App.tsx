@@ -137,10 +137,8 @@ function ChatApp() {
       : currentNodeId;
 
     // Create new conversation if needed
-    let isFirstMessage = false;
     if (!conversationId) {
       try {
-        isFirstMessage = true;
         const newConv = await apiClient.createConversation(' ');
         conversationId = newConv.id;
         setCurrentConversationId(conversationId);
