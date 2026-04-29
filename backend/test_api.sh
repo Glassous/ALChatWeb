@@ -2,7 +2,7 @@
 
 # AL Chat Backend API 测试脚本
 
-BASE_URL="http://localhost:8080"
+BASE_URL="http://localhost:9080"
 
 echo "🧪 AL Chat Backend API 测试"
 echo "================================"

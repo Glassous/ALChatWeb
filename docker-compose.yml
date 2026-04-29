@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.dev # 使用开发环境的 Dockerfile
     container_name: alchat-backend
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
     volumes:
       - ./backend:/app           # 挂载代码目录，实现热重载
     env_file:
