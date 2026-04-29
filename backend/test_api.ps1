@@ -1,6 +1,6 @@
 # AL Chat Backend API 测试脚本 (PowerShell)
 
-$BASE_URL = "http://localhost:9080"
+$BASE_URL = "http://localhost:8080"
 
 Write-Host "🧪 AL Chat Backend API 测试" -ForegroundColor Cyan
 Write-Host "================================" -ForegroundColor Cyan

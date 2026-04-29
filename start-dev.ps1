@@ -100,7 +100,7 @@ Start-Sleep -Seconds 3
 
 # 检查后端是否启动成功
 try {
-    $response = Invoke-RestMethod -Uri "http://localhost:9080/health" -Method Get -TimeoutSec 5
+    $response = Invoke-RestMethod -Uri "http://localhost:8080/health" -Method Get -TimeoutSec 5
     Write-Host "✅ 后端服务启动成功 (Job ID: $($backendJob.Id))" -ForegroundColor Green
 } catch {
     Write-Host "❌ 后端服务启动失败" -ForegroundColor Red
@@ -119,7 +119,7 @@ Write-Host "✅ 开发环境已启动！" -ForegroundColor Green
 Write-Host ""
 Write-Host "📝 访问地址:" -ForegroundColor Cyan
 Write-Host "   前端: http://localhost:5173/" -ForegroundColor Gray
-Write-Host "   后端: http://localhost:9080/" -ForegroundColor Gray
+Write-Host "   后端: http://localhost:8080/" -ForegroundColor Gray
 Write-Host ""
 Write-Host "🛑 停止服务: 按 Ctrl+C 然后运行以下命令" -ForegroundColor Yellow
 Write-Host "   Stop-Job -Id $($backendJob.Id); Remove-Job -Id $($backendJob.Id)" -ForegroundColor Gray

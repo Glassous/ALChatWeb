@@ -117,7 +117,7 @@ cd ..
 sleep 3
 
 # 检查后端是否启动成功
-if curl -s http://localhost:9080/health > /dev/null; then
+if curl -s http://localhost:8080/health > /dev/null; then
     echo "✅ 后端服务启动成功 (PID: $BACKEND_PID)"
 else
     echo "❌ 后端服务启动失败，查看 backend.log 获取详情"
@@ -135,7 +135,7 @@ echo "✅ 开发环境已启动！"
 echo ""
 echo "📝 访问地址:"
 echo "   前端: http://localhost:5173/"
-echo "   后端: http://localhost:9080/"
+echo "   后端: http://localhost:8080/"
 echo ""
 echo "📊 后端日志: backend.log"
 echo "🛑 停止后端: kill $BACKEND_PID"

@@ -52,7 +52,7 @@ func Load() *Config {
 	}
 
 	cfg := &Config{
-		Port:               getEnv("PORT", "9080"),
+		Port:               getEnv("PORT", "8080"),
 		MongoDBURI:         getEnv("MONGODB_URI", "mongodb://localhost:27017"),
 		MongoDBDatabase:    getEnv("MONGODB_DATABASE", getEnv("MONGODB_DB", "alchat")),
 		OpenAIAPIKey:       getEnv("OPENAI_API_KEY", ""),
