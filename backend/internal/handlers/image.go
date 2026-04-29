@@ -14,13 +14,15 @@ type ImageHandler struct {
 	imageService        *services.ImageService
 	conversationService *services.ConversationService
 	ossService          *services.OSSService
+	aiService           *services.AIService
 }
 
-func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService) *ImageHandler {
+func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService) *ImageHandler {
 	return &ImageHandler{
 		imageService:        imageService,
 		conversationService: conversationService,
 		ossService:          ossService,
+		aiService:           aiService,
 	}
 }
 
@@ -92,10 +94,14 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
+	// Check if title needs auto-generation
+	newTitle, _ := h.conversationService.AutoGenerateTitle(c.Request.Context(), req.ConversationID, userID, h.aiService)
+
 	c.JSON(http.StatusOK, gin.H{
 		"url":                  url,
 		"user_message_id":      userMsg.ID.Hex(),
 		"assistant_message_id": assistantMsg.ID.Hex(),
+		"title":                newTitle,
 	})
 }
 
@@ -109,9 +115,10 @@ func (h *ImageHandler) DeleteReferenceImage(c *gin.Context) {
 	}
 
 	// Extract object key from URL
-	// URL format: https://bucket.endpoint/objectKey
-	re := regexp.MustCompile(`https://[^/]+/(.+)`)
+	// URL format: http(s)://bucket.endpoint/objectKey
+	re := regexp.MustCompile(`https?://[^/]+/(.+)`)
 	matches := re.FindStringSubmatch(req.URL)
+
 	if len(matches) < 2 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid image URL"})
 		return

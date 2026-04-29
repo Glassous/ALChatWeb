@@ -64,6 +64,8 @@ func main() {
 		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)
 	}
 
+	streamManager := services.NewStreamManager()
+
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize Image service: %v. Image generation will be disabled.", err)
@@ -72,8 +74,9 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, db)
-	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, db, streamManager)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService)
+
 
 	// Setup Gin router
 	router := gin.Default()
@@ -115,8 +118,10 @@ func main() {
 			chat.Use(middleware.RateLimiter(rdb, 10, time.Minute))
 			{
 				chat.POST("", chatHandler.Chat)
+				chat.GET("/stream", chatHandler.Stream)
 				chat.POST("/image", imageHandler.GenerateImage)
 			}
+
 			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
 			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
 		}

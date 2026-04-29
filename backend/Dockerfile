@@ -29,8 +29,8 @@ RUN apk add --no-cache tzdata ca-certificates
 # 从构建阶段复制编译好的二进制文件
 COPY --from=builder /app/alchat-server .
 
-# 暴露后端运行的端口（根据 .env.example 默认是 8080）
-EXPOSE 8080
+# 暴露后端运行的端口（根据 .env.example 默认是 9080）
+EXPOSE 9080
 
 # 启动命令
 CMD ["./alchat-server"]

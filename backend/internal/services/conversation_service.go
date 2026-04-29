@@ -302,3 +302,47 @@ func (s *ConversationService) UpdateConversationTitle(ctx context.Context, conve
 
 	return nil
 }
+
+func (s *ConversationService) AutoGenerateTitle(ctx context.Context, conversationID string, userID string, aiService *AIService) (string, error) {
+	// Check if title needs auto-generation
+	objID, err := primitive.ObjectIDFromHex(conversationID)
+	if err != nil {
+		return "", err
+	}
+
+	var conv models.Conversation
+	err = s.db.Conversations().FindOne(ctx, bson.M{"_id": objID}).Decode(&conv)
+	if err != nil {
+		return "", err
+	}
+
+	if conv.Title != "New Conversation" && conv.Title != " " && conv.Title != "" {
+		return conv.Title, nil
+	}
+
+	// Get conversation history for title generation
+	history, err := s.GetMessages(ctx, conversationID)
+	if err != nil || len(history) == 0 {
+		return "", err
+	}
+
+	genkitMsgs := make([]struct {
+		Role    string
+		Content string
+	}, len(history))
+	for i, m := range history {
+		genkitMsgs[i] = struct {
+			Role    string
+			Content string
+		}{Role: m.Role, Content: m.Content}
+	}
+
+	title, err := aiService.GenerateTitle(ctx, ConvertToGenkitMessages(genkitMsgs))
+	if err != nil || title == "" {
+		return "", err
+	}
+
+	err = s.UpdateConversationTitle(ctx, conversationID, title, userID)
+	return title, err
+}
+

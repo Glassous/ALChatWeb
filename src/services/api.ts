@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9080';
 
 export interface Conversation {
   id: string;
@@ -31,7 +31,7 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error' | 'search';
+  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title';
   content?: string;
   data?: any;
 }
@@ -347,12 +347,15 @@ class APIClient {
     onReasoning: (reasoning: string) => void,
     onSearch: (data: any) => void,
     onDone: (data: any) => void,
+    onTitle: (title: string) => void,
     onError: (error: string) => void,
     location?: string,
     parentMessageId?: string | null
   ): Promise<void> {
     this.invalidateCache(conversationId);
-    const response = await fetch(`${this.baseURL}/api/chat`, {
+    
+    // Step 1: Trigger background generation
+    const triggerResponse = await fetch(`${this.baseURL}/api/chat`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
@@ -364,8 +367,19 @@ class APIClient {
       }),
     });
 
+    if (!triggerResponse.ok) {
+      const error = await triggerResponse.json();
+      throw new Error(error.error || 'Failed to trigger chat');
+    }
+
+    // Step 2: Connect to the stream
+    const streamUrl = `${this.baseURL}/api/chat/stream?conversation_id=${encodeURIComponent(conversationId)}`;
+    const response = await fetch(streamUrl, {
+      headers: this.getHeaders(),
+    });
+
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      throw new Error('Failed to connect to stream');
     }
 
     const reader = response.body?.getReader();
@@ -375,17 +389,22 @@ class APIClient {
       throw new Error('Response body is not readable');
     }
 
+    let buffer = '';
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        
+        // Keep the last partial line in the buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
+          if (line.trim().startsWith('data: ')) {
+            const data = line.trim().slice(6);
             try {
               const parsed: ChatStreamResponse = JSON.parse(data);
               
@@ -397,11 +416,13 @@ class APIClient {
                 onSearch(parsed.data);
               } else if (parsed.type === 'done') {
                 onDone(parsed.data);
+              } else if (parsed.type === 'title' && parsed.content) {
+                onTitle(parsed.content);
               } else if (parsed.type === 'error') {
                 onError(parsed.content || 'Unknown error');
               }
             } catch (e) {
-              console.error('Failed to parse SSE data:', e);
+              console.error('Failed to parse SSE data:', e, 'Data:', data);
             }
           }
         }
@@ -410,6 +431,7 @@ class APIClient {
       reader.releaseLock();
     }
   }
+
 }
 
 export const apiClient = new APIClient(API_BASE_URL);

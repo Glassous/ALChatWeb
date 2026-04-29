@@ -4,6 +4,7 @@ import (
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,13 +22,15 @@ type ChatHandler struct {
 	aiService           *services.AIService
 	conversationService *services.ConversationService
 	db                  *database.MongoDB
+	streamManager       *services.StreamManager
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, db *database.MongoDB) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, db *database.MongoDB, streamManager *services.StreamManager) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
 		db:                  db,
+		streamManager:       streamManager,
 	}
 }
 
@@ -51,26 +54,163 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	// Get conversation history (branch)
-	messages, err := h.conversationService.GetMessageBranch(c.Request.Context(), req.ConversationID, userMsg.ID.Hex())
+	// Create a belong to assistant empty message
+	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", "", userID, userMsg.ID.Hex())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch conversation history"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create assistant message placeholder"})
 		return
 	}
 
-	// Convert to Genkit format
-	genkitMessages := make([]struct {
-		Role    string
-		Content string
-	}, len(messages))
-	for i, msg := range messages {
-		genkitMessages[i] = struct {
+	// Detached context for background processing
+	bgCtx := context.WithoutCancel(c.Request.Context())
+
+	// Start background generation
+	go func() {
+		// Get conversation history (branch)
+		messages, err := h.conversationService.GetMessageBranch(bgCtx, req.ConversationID, userMsg.ID.Hex())
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "error",
+				Content: "Failed to fetch conversation history",
+			})
+			return
+		}
+
+		// Convert to Genkit format
+		genkitMessages := make([]struct {
 			Role    string
 			Content string
-		}{
-			Role:    msg.Role,
-			Content: msg.Content,
+		}, len(messages))
+		for i, msg := range messages {
+			genkitMessages[i] = struct {
+				Role    string
+				Content string
+			}{
+				Role:    msg.Role,
+				Content: msg.Content,
+			}
 		}
+
+		// Get user settings for system prompt
+		userIDObj, _ := primitive.ObjectIDFromHex(userID)
+		var user models.User
+		h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user)
+
+		// Construct system prompt
+		var systemPromptBuilder strings.Builder
+		if user.SystemPrompt != "" {
+			systemPromptBuilder.WriteString(user.SystemPrompt)
+		}
+
+		if user.IncludeDateTime {
+			currentTime := time.Now().Format("2006-01-02 15:04:05")
+			if systemPromptBuilder.Len() > 0 {
+				systemPromptBuilder.WriteString("\n\n")
+			}
+			fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
+		}
+
+		if user.IncludeLocation && req.Location != "" {
+			if systemPromptBuilder.Len() > 0 {
+				systemPromptBuilder.WriteString("\n\n")
+			}
+			fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", req.Location)
+		}
+
+		// Stream AI response
+		var fullResponse strings.Builder
+		var fullReasoning strings.Builder
+		var lastSearchData *models.SearchData
+
+		err = h.aiService.GenerateStream(
+			bgCtx,
+			services.ConvertToGenkitMessages(genkitMessages),
+			req.Mode,
+			systemPromptBuilder.String(),
+			func(token string, reasoning string) error {
+				if reasoning != "" {
+					fullReasoning.WriteString(reasoning)
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+						Type:    "reasoning",
+						Content: reasoning,
+					})
+				}
+
+				if token != "" {
+					fullResponse.WriteString(token)
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+						Type:    "token",
+						Content: token,
+					})
+				}
+
+				return nil
+			},
+			func(searchData models.SearchData) error {
+				lastSearchData = &searchData
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+					Type: "search",
+					Data: searchData,
+				})
+				return nil
+			},
+		)
+
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "error",
+				Content: err.Error(),
+			})
+			return
+		}
+
+		// Update assistant message with final content
+		assistantMsg.Content = fullResponse.String()
+		assistantMsg.Reasoning = fullReasoning.String()
+		assistantMsg.Search = lastSearchData
+		err = h.conversationService.UpdateMessage(bgCtx, assistantMsg)
+		if err != nil {
+			log.Printf("Failed to update assistant message: %v", err)
+		}
+
+		// Send done signal
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type: "done",
+			Data: gin.H{
+				"user_message_id":      userMsg.ID.Hex(),
+				"assistant_message_id": assistantMsg.ID.Hex(),
+			},
+		})
+
+		// Check if title needs auto-generation
+		title, err := h.conversationService.AutoGenerateTitle(bgCtx, req.ConversationID, userID, h.aiService)
+		if err == nil && title != "" {
+			// Notify subscribers about the new title if it was generated
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "title",
+				Content: title,
+			})
+		}
+
+		// Optional: delay cleanup to allow last message to reach subscribers
+		time.AfterFunc(10*time.Second, func() {
+
+			h.streamManager.CloseConversation(req.ConversationID)
+		})
+	}()
+
+	// Respond immediately
+	c.JSON(http.StatusOK, gin.H{
+		"user_message_id":      userMsg.ID.Hex(),
+		"assistant_message_id": assistantMsg.ID.Hex(),
+	})
+}
+
+func (h *ChatHandler) Stream(c *gin.Context) {
+	conversationID := c.Query("conversation_id")
+	if conversationID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation_id is required"})
+		return
 	}
 
 	// Set up SSE headers
@@ -79,141 +219,22 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
-	// Flush headers
-	c.Writer.Flush()
+	// Subscribe to the stream
+	ch := h.streamManager.Subscribe(conversationID)
+	defer h.streamManager.Unsubscribe(conversationID, ch)
 
-	// Get user settings for system prompt
-	userIDObj, _ := primitive.ObjectIDFromHex(userID)
-	var user models.User
-	h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
-
-	// Construct system prompt
-	var systemPromptBuilder strings.Builder
-	if user.SystemPrompt != "" {
-		systemPromptBuilder.WriteString(user.SystemPrompt)
-	}
-
-	if user.IncludeDateTime {
-		currentTime := time.Now().Format("2006-01-02 15:04:05")
-		if systemPromptBuilder.Len() > 0 {
-			systemPromptBuilder.WriteString("\n\n")
-		}
-		fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
-	}
-
-	if user.IncludeLocation && req.Location != "" {
-		if systemPromptBuilder.Len() > 0 {
-			systemPromptBuilder.WriteString("\n\n")
-		}
-		fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", req.Location)
-	}
-
-	// Stream AI response
-	var fullResponse strings.Builder
-	var fullReasoning strings.Builder
-	var lastSearchData *models.SearchData
-
-	err = h.aiService.GenerateStream(
-		c.Request.Context(),
-		services.ConvertToGenkitMessages(genkitMessages),
-		req.Mode,
-		systemPromptBuilder.String(),
-		func(token string, reasoning string) error {
-			if reasoning != "" {
-				fullReasoning.WriteString(reasoning)
-				// Send reasoning token as SSE
-				response := models.ChatStreamResponse{
-					Type:    "reasoning",
-					Content: reasoning,
-				}
-				data, _ := json.Marshal(response)
-				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-				c.Writer.Flush()
+	// Stream events
+	c.Stream(func(w io.Writer) bool {
+		select {
+		case <-c.Request.Context().Done():
+			return false
+		case resp, ok := <-ch:
+			if !ok {
+				return false
 			}
-
-			if token != "" {
-				fullResponse.WriteString(token)
-				// Send token as SSE
-				response := models.ChatStreamResponse{
-					Type:    "token",
-					Content: token,
-				}
-				data, _ := json.Marshal(response)
-				fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-				c.Writer.Flush()
-			}
-
-			return nil
-		},
-		func(searchData models.SearchData) error {
-			lastSearchData = &searchData
-			// Send search progress as SSE
-			response := models.ChatStreamResponse{
-				Type: "search",
-				Data: searchData,
-			}
-			data, _ := json.Marshal(response)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
-			return nil
-		},
-	)
-
-	if err != nil {
-		errorResponse := models.ChatStreamResponse{
-			Type:    "error",
-			Content: err.Error(),
+			data, _ := json.Marshal(resp)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			return true
 		}
-		data, _ := json.Marshal(errorResponse)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		c.Writer.Flush()
-		return
-	}
-
-	// Save assistant message
-	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", fullResponse.String(), userID, userMsg.ID.Hex())
-	if err != nil {
-		errorResponse := models.ChatStreamResponse{
-			Type:    "error",
-			Content: "Failed to save assistant message",
-		}
-		data, _ := json.Marshal(errorResponse)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-		c.Writer.Flush()
-		return
-	}
-
-	// Update assistant message with reasoning and search if present
-	if fullReasoning.Len() > 0 || lastSearchData != nil {
-		if fullReasoning.Len() > 0 {
-			assistantMsg.Reasoning = fullReasoning.String()
-		}
-		if lastSearchData != nil {
-			assistantMsg.Search = lastSearchData
-		}
-		err = h.conversationService.UpdateMessage(c.Request.Context(), assistantMsg)
-		if err != nil {
-			log.Printf("Failed to update message with extra fields: %v", err)
-		}
-	}
-
-	// Send done signal
-	doneResponse := models.ChatStreamResponse{
-		Type: "done",
-		Data: gin.H{
-			"user_message_id":      userMsg.ID.Hex(),
-			"assistant_message_id": assistantMsg.ID.Hex(),
-		},
-	}
-	data, _ := json.Marshal(doneResponse)
-	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-	c.Writer.Flush()
-}
-
-// Helper to check if client disconnected
-func clientGone(w http.ResponseWriter) bool {
-	if _, err := w.Write([]byte{}); err != nil {
-		return err == io.ErrClosedPipe
-	}
-	return false
+	})
 }

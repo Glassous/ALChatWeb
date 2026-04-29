@@ -198,45 +198,41 @@ function ChatApp() {
       setIsLoading(true);
 
       try {
-        const data = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
-        const imageUrl = data.url;
-        const realAssistantId = data.assistant_message_id as string;
-        const realUserId = data.user_message_id as string;
+          const data = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
+          const imageUrl = data.url;
+          const realAssistantId = data.assistant_message_id as string;
+          const realUserId = data.user_message_id as string;
+          const newTitle = data.title as string;
 
-        // Update loading message with image tag and completed status, and swap IDs
-        setMessages((prev) => {
-          const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
-            if (msg.id === assistantMsgId) {
-              return { ...msg, id: realAssistantId || msg.id, content: `<image src="${imageUrl}">`, status: 'completed' };
-            }
-            if (msg.id === userMsgId) {
-              return { ...msg, id: realUserId || msg.id };
-            }
-            if (msg.parent_id === userMsgId) {
-              return { ...msg, parent_id: realUserId || msg.parent_id };
-            }
-            if (msg.parent_id === assistantMsgId) {
-              return { ...msg, parent_id: realAssistantId || msg.parent_id };
-            }
-            return msg;
+          // Update loading message with image tag and completed status, and swap IDs
+          setMessages((prev) => {
+            const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
+              if (msg.id === assistantMsgId) {
+                return { ...msg, id: realAssistantId || msg.id, content: `<image src="${imageUrl}">`, status: 'completed' };
+              }
+              if (msg.id === userMsgId) {
+                return { ...msg, id: realUserId || msg.id };
+              }
+              if (msg.parent_id === userMsgId) {
+                return { ...msg, parent_id: realUserId || msg.parent_id };
+              }
+              if (msg.parent_id === assistantMsgId) {
+                return { ...msg, parent_id: realAssistantId || msg.parent_id };
+              }
+              return msg;
+            });
+            return updated;
           });
-          return updated;
-        });
 
-        if (realAssistantId) {
-          setCurrentNodeId(realAssistantId);
-        }
-
-        setIsLoading(false);
-
-        // If this was the first message, generate a title using AI
-        if (isFirstMessage && conversationId) {
-          try {
-            const generatedTitle = await apiClient.generateTitle(conversationId);
-            handleUpdateConversation(conversationId, generatedTitle);
-          } catch (error) {
-            console.error('Failed to auto-generate title:', error);
+          if (realAssistantId) {
+            setCurrentNodeId(realAssistantId);
           }
+
+          setIsLoading(false);
+
+          // If a new title was generated, update it in the UI
+          if (newTitle && conversationId) {
+            handleUpdateConversation(conversationId, newTitle);
           }
   
           if (conversationId) {
@@ -351,21 +347,17 @@ function ChatApp() {
             setCurrentNodeId(realAssistantId);
           }
           
-          // If this was the first message, generate a title using AI
-          if (isFirstMessage && conversationId) {
-            try {
-              const generatedTitle = await apiClient.generateTitle(conversationId);
-              handleUpdateConversation(conversationId, generatedTitle);
-            } catch (error) {
-              console.error('Failed to auto-generate title:', error);
-            }
-          }
-          
           // Sync with real database IDs to maintain correct tree structure
           if (conversationId) {
             loadConversation(conversationId, realAssistantId || undefined);
           }
           loadConversations();
+        },
+        (newTitle) => {
+          // Handle automatic title generation from backend
+          if (conversationId) {
+            handleUpdateConversation(conversationId, newTitle);
+          }
         },
         (error) => {
           console.error('SSE Error:', error);
