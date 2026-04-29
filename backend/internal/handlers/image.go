@@ -3,9 +3,12 @@ package handlers
 import (
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,14 +18,16 @@ type ImageHandler struct {
 	conversationService *services.ConversationService
 	ossService          *services.OSSService
 	aiService           *services.AIService
+	streamManager       *services.StreamManager
 }
 
-func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService) *ImageHandler {
+func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService, streamManager *services.StreamManager) *ImageHandler {
 	return &ImageHandler{
 		imageService:        imageService,
 		conversationService: conversationService,
 		ossService:          ossService,
 		aiService:           aiService,
+		streamManager:       streamManager,
 	}
 }
 
@@ -46,7 +51,6 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	refImageURL := req.RefImageURL
 	if refImageURL == "" {
 		// Fallback to multi-round dialogue logic if no user-uploaded ref image
-		// We use the branch if ParentMessageID is provided
 		var messages []models.Message
 		var err error
 		if req.ParentMessageID != "" {
@@ -58,7 +62,6 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		if err == nil && len(messages) > 0 {
 			lastMsg := messages[len(messages)-1]
 			if lastMsg.Role == "assistant" {
-				// Extract image URL from <image src="..."> tag
 				re := regexp.MustCompile(`<image src="([^"]+)">`)
 				matches := re.FindStringSubmatch(lastMsg.Content)
 				if len(matches) > 1 {
@@ -80,28 +83,69 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 		return
 	}
 
-	url, err := h.imageService.GenerateAndUploadImage(c.Request.Context(), req.Prompt, req.Resolution, refImageURL)
+	// Create assistant placeholder message
+	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", "", userID, userMsg.ID.Hex())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create assistant message placeholder"})
 		return
 	}
 
-	// Save assistant message with image tag
-	imageTag := fmt.Sprintf(`<image src="%s">`, url)
-	assistantMsg, err := h.conversationService.SaveMessage(c.Request.Context(), req.ConversationID, "assistant", imageTag, userID, userMsg.ID.Hex())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save assistant message"})
-		return
-	}
+	// Detached context for background processing
+	bgCtx := context.WithoutCancel(c.Request.Context())
 
-	// Check if title needs auto-generation
-	newTitle, _ := h.conversationService.AutoGenerateTitle(c.Request.Context(), req.ConversationID, userID, h.aiService)
+	// Start background generation
+	go func() {
+		url, err := h.imageService.GenerateAndUploadImage(bgCtx, req.Prompt, req.Resolution, refImageURL)
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "error",
+				Content: err.Error(),
+			})
+			return
+		}
 
+		// Save assistant message with image tag
+		imageTag := fmt.Sprintf(`<image src="%s">`, url)
+		assistantMsg.Content = imageTag
+		err = h.conversationService.UpdateMessage(bgCtx, assistantMsg)
+		if err != nil {
+			log.Printf("Failed to update assistant message: %v", err)
+		}
+
+		// Publish result to stream
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "token",
+			Content: imageTag,
+		})
+
+		// Check if title needs auto-generation
+		title, err := h.conversationService.AutoGenerateTitle(bgCtx, req.ConversationID, userID, h.aiService)
+		if err == nil && title != "" {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "title",
+				Content: title,
+			})
+		}
+
+		// Send done signal
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type: "done",
+			Data: gin.H{
+				"user_message_id":      userMsg.ID.Hex(),
+				"assistant_message_id": assistantMsg.ID.Hex(),
+			},
+		})
+
+		// Optional: delay cleanup
+		time.AfterFunc(10*time.Second, func() {
+			h.streamManager.CloseConversation(req.ConversationID)
+		})
+	}()
+
+	// Respond immediately
 	c.JSON(http.StatusOK, gin.H{
-		"url":                  url,
 		"user_message_id":      userMsg.ID.Hex(),
 		"assistant_message_id": assistantMsg.ID.Hex(),
-		"title":                newTitle,
 	})
 }
 

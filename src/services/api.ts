@@ -285,9 +285,21 @@ class APIClient {
     return data.title;
   }
 
-  async generateImage(conversationId: string, prompt: string, resolution: string, refImageUrl?: string, parentMessageId?: string | null): Promise<any> {
+  async generateImage(
+    conversationId: string,
+    prompt: string,
+    resolution: string,
+    onToken: (token: string) => void,
+    onDone: (data: any) => void,
+    onTitle: (title: string) => void,
+    onError: (error: string) => void,
+    refImageUrl?: string,
+    parentMessageId?: string | null
+  ): Promise<void> {
     this.invalidateCache(conversationId);
-    const response = await fetch(`${this.baseURL}/api/chat/image`, {
+    
+    // Step 1: Trigger background generation
+    const triggerResponse = await fetch(`${this.baseURL}/api/chat/image`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ 
@@ -298,11 +310,62 @@ class APIClient {
         ref_image_url: refImageUrl
       }),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to generate image');
+
+    if (!triggerResponse.ok) {
+      const error = await triggerResponse.json();
+      throw new Error(error.error || 'Failed to trigger image generation');
     }
-    return response.json();
+
+    // Step 2: Connect to the stream
+    const streamUrl = `${this.baseURL}/api/chat/stream?conversation_id=${encodeURIComponent(conversationId)}`;
+    const response = await fetch(streamUrl, {
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to connect to stream');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    if (!reader) return;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim().startsWith('data: ')) {
+            try {
+              const dataStr = line.trim().substring(6);
+              const parsed = JSON.parse(dataStr) as ChatStreamResponse;
+
+              if (parsed.type === 'token') {
+                onToken(parsed.content || '');
+              } else if (parsed.type === 'done') {
+                onDone(parsed.data);
+              } else if (parsed.type === 'title' && parsed.content) {
+                onTitle(parsed.content);
+              } else if (parsed.type === 'error') {
+                onError(parsed.content || 'Unknown error');
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE line:', line, e);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   async uploadReferenceImage(file: File): Promise<string> {

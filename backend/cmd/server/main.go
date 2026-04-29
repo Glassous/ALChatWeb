@@ -75,7 +75,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, db, streamManager)
-	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager)
 
 
 	// Setup Gin router

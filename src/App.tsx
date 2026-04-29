@@ -198,47 +198,72 @@ function ChatApp() {
       setIsLoading(true);
 
       try {
-          const data = await apiClient.generateImage(conversationId, text, options.resolution, options.refImageUrl, effectiveParentId);
-          const imageUrl = data.url;
-          const realAssistantId = data.assistant_message_id as string;
-          const realUserId = data.user_message_id as string;
-          const newTitle = data.title as string;
+          await apiClient.generateImage(
+            conversationId, 
+            text, 
+            options.resolution,
+            (imageTag) => {
+              setMessages((prev) =>
+                (Array.isArray(prev) ? prev : []).map((msg) =>
+                  msg.id === assistantMsgId
+                    ? { ...msg, content: imageTag, status: 'completed' }
+                    : msg
+                )
+              );
+            },
+            (doneData) => {
+              const realAssistantId = doneData?.assistant_message_id as string;
+              const realUserId = doneData?.user_message_id as string;
 
-          // Update loading message with image tag and completed status, and swap IDs
-          setMessages((prev) => {
-            const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
-              if (msg.id === assistantMsgId) {
-                return { ...msg, id: realAssistantId || msg.id, content: `<image src="${imageUrl}">`, status: 'completed' };
-              }
-              if (msg.id === userMsgId) {
-                return { ...msg, id: realUserId || msg.id };
-              }
-              if (msg.parent_id === userMsgId) {
-                return { ...msg, parent_id: realUserId || msg.parent_id };
-              }
-              if (msg.parent_id === assistantMsgId) {
-                return { ...msg, parent_id: realAssistantId || msg.parent_id };
-              }
-              return msg;
-            });
-            return updated;
-          });
+              // Update IDs
+              setMessages((prev) => {
+                const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
+                  if (msg.id === assistantMsgId) {
+                    return { ...msg, id: realAssistantId || msg.id, status: 'completed' };
+                  }
+                  if (msg.id === userMsgId) {
+                    return { ...msg, id: realUserId || msg.id };
+                  }
+                  if (msg.parent_id === userMsgId) {
+                    return { ...msg, parent_id: realUserId || msg.parent_id };
+                  }
+                  if (msg.parent_id === assistantMsgId) {
+                    return { ...msg, parent_id: realAssistantId || msg.parent_id };
+                  }
+                  return msg;
+                });
+                return updated;
+              });
 
-          if (realAssistantId) {
-            setCurrentNodeId(realAssistantId);
-          }
+              if (realAssistantId) {
+                setCurrentNodeId(realAssistantId);
+              }
 
-          setIsLoading(false);
-
-          // If a new title was generated, update it in the UI
-          if (newTitle && conversationId) {
-            handleUpdateConversation(conversationId, newTitle);
-          }
-  
-          if (conversationId) {
-            loadConversation(conversationId, realAssistantId || undefined);
-          }
-          loadConversations();
+              setIsLoading(false);
+              if (conversationId) {
+                loadConversation(conversationId, realAssistantId || undefined);
+              }
+              loadConversations();
+            },
+            (newTitle) => {
+              if (conversationId) {
+                handleUpdateConversation(conversationId, newTitle);
+              }
+            },
+            (error) => {
+              console.error('SSE Error:', error);
+              setIsLoading(false);
+              setMessages((prev) =>
+                (Array.isArray(prev) ? prev : []).map((msg): Message =>
+                  msg.id === assistantMsgId
+                    ? { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error' }
+                    : msg
+                )
+              );
+            },
+            options.refImageUrl, 
+            effectiveParentId
+          );
         } catch (error) {
         console.error('Failed to generate image:', error);
         setMessages((prev) =>
