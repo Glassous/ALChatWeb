@@ -106,27 +106,57 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 	log.Printf("[AIService] Updating config for mode: %s, model: %s, baseURL: %s, key length: %d", mode, model, baseURL, len(apiKey))
 	switch mode {
 	case "daily":
-		s.baseURL = baseURL
-		s.apiKey = apiKey
-		s.model = model
+		if baseURL != "" {
+			s.baseURL = baseURL
+		}
+		if apiKey != "" {
+			s.apiKey = apiKey
+		}
+		if model != "" {
+			s.model = model
+		}
 		needReinit = true
 	case "expert":
-		s.expertBaseURL = baseURL
-		s.expertAPIKey = apiKey
-		s.expertModel = model
+		if baseURL != "" {
+			s.expertBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.expertAPIKey = apiKey
+		}
+		if model != "" {
+			s.expertModel = model
+		}
 	case "title":
-		s.titleBaseURL = baseURL
-		s.titleAPIKey = apiKey
-		s.titleModel = model
+		if baseURL != "" {
+			s.titleBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.titleAPIKey = apiKey
+		}
+		if model != "" {
+			s.titleModel = model
+		}
 		needReinit = true
 	case "search":
-		s.searchBaseURL = baseURL
-		s.searchAPIKey = apiKey
-		s.searchModel = model
+		if baseURL != "" {
+			s.searchBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.searchAPIKey = apiKey
+		}
+		if model != "" {
+			s.searchModel = model
+		}
 	case "multimodal":
-		s.multimodalBaseURL = baseURL
-		s.multimodalAPIKey = apiKey
-		s.multimodalModel = model
+		if baseURL != "" {
+			s.multimodalBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.multimodalAPIKey = apiKey
+		}
+		if model != "" {
+			s.multimodalModel = model
+		}
 		needReinit = true
 	}
 	s.mu.Unlock()
@@ -166,7 +196,7 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 
 	// 2. Call AI (non-streaming)
 	var keywords strings.Builder
-	err := s.generateCustomStream(ctx, keywordMessages, apiKey, baseURL, model, func(token string, reasoning string) error {
+	err := s.generateCustomStream(ctx, keywordMessages, apiKey, baseURL, model, false, func(token string, reasoning string) error {
 		keywords.WriteString(token)
 		return nil
 	})
@@ -206,9 +236,10 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 // GenerateStream generates AI response with streaming
 func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
-	multimodalAPIKey := s.multimodalAPIKey
+	apiKey := s.apiKey
+	baseURL := s.baseURL
 	model := s.model
-	genkitInstance := s.g
+	multimodalAPIKey := s.multimodalAPIKey
 	s.mu.RUnlock()
 
 	// Prepend user system prompt if provided
@@ -251,33 +282,9 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 		return s.generateSearchStream(ctx, messages, callback, searchCallback)
 	}
 
-	// Use GenerateStream from genkit for daily mode
-	modelName := fmt.Sprintf("openai/%s", model)
-	stream := genkit.GenerateStream(ctx, genkitInstance,
-		ai.WithModelName(modelName),
-		ai.WithMessages(messages...),
-	)
-
-	for result, err := range stream {
-		if err != nil {
-			return 0, 0, fmt.Errorf("generation failed: %w", err)
-		}
-
-		if result.Done {
-			break
-		}
-
-		// Get text from chunk
-		text := result.Chunk.Text()
-
-		if text != "" {
-			if err := callback(text, ""); err != nil {
-				return 0, 0, err
-			}
-		}
-	}
-
-	return 0, 0, nil
+	// Daily mode: use direct HTTP with enable_thinking disabled
+	err := s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
+	return 0, 0, err
 }
 
 func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
@@ -286,7 +293,7 @@ func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Mes
 	baseURL := s.expertBaseURL
 	model := s.expertModel
 	s.mu.RUnlock()
-	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, callback)
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, true, callback)
 }
 
 func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
@@ -378,6 +385,9 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 		"model":    model,
 		"messages": oaiMessages,
 		"stream":   true,
+		"thinking": map[string]any{
+			"type": "disabled",
+		},
 	})
 	if err != nil {
 		return err
@@ -557,11 +567,11 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	augmentedMessages = append(augmentedMessages, messages...)
 
 	// Use search model for final response
-	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, callback)
+	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, false, callback)
 	return kwInput, kwOutput, err
 }
 
-func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, callback func(token string, reasoning string) error) error {
+func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
 	// For custom modes, we use a direct HTTP request to handle reasoning_content
 	// since Genkit and some Go SDKs might not support it yet.
 
@@ -594,11 +604,17 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 		})
 	}
 
-	requestBody, err := json.Marshal(map[string]any{
+	requestBodyMap := map[string]any{
 		"model":    model,
 		"messages": oaiMessages,
 		"stream":   true,
-	})
+	}
+	if !enableThinking {
+		requestBodyMap["thinking"] = map[string]any{
+			"type": "disabled",
+		}
+	}
+	requestBody, err := json.Marshal(requestBodyMap)
 	if err != nil {
 		return err
 	}
@@ -684,8 +700,9 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 // GenerateTitle generates a title for the conversation based on messages
 func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (string, error) {
 	s.mu.RLock()
-	titleModel := s.titleModel
-	genkitInstance := s.g
+	apiKey := s.titleAPIKey
+	baseURL := s.titleBaseURL
+	model := s.titleModel
 	s.mu.RUnlock()
 
 	// Add a system message to instruct the AI to generate a title
@@ -696,15 +713,16 @@ func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (
 
 	allMessages := append(messages, titlePrompt)
 
-	resp, err := genkit.Generate(ctx, genkitInstance,
-		ai.WithModelName(fmt.Sprintf("openai-title/%s", titleModel)),
-		ai.WithMessages(allMessages...),
-	)
+	var title strings.Builder
+	err := s.generateCustomStream(ctx, allMessages, apiKey, baseURL, model, false, func(token string, reasoning string) error {
+		title.WriteString(token)
+		return nil
+	})
 	if err != nil {
 		return "", fmt.Errorf("title generation failed: %w", err)
 	}
 
-	return resp.Text(), nil
+	return strings.TrimSpace(title.String()), nil
 }
 
 // ConvertToGenkitMessages converts our message format to Genkit format
