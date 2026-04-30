@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -17,11 +18,16 @@ import (
 )
 
 type AIService struct {
+	mu                sync.RWMutex
 	g                 *genkit.Genkit
+	apiKey            string
+	baseURL           string
 	model             string
 	expertAPIKey      string
 	expertBaseURL     string
 	expertModel       string
+	titleAPIKey       string
+	titleBaseURL      string
 	titleModel        string
 	searchAPIKey      string
 	searchBaseURL     string
@@ -34,44 +40,15 @@ type AIService struct {
 }
 
 func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel string) (*AIService, error) {
-	ctx := context.Background()
-
-	// Initialize Genkit with multiple OpenAI-compatible plugins
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(
-			&compat_oai.OpenAICompatible{
-				Provider: "openai",
-				APIKey:   apiKey,
-				BaseURL:  baseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
-			},
-			&compat_oai.OpenAICompatible{
-				Provider: "openai-title",
-				APIKey:   titleAPIKey,
-				BaseURL:  titleBaseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
-			},
-			&compat_oai.OpenAICompatible{
-				Provider: "openai-multimodal",
-				APIKey:   multimodalAPIKey,
-				BaseURL:  multimodalBaseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
-			},
-		),
-	)
-
-	return &AIService{
-		g:                 g,
+	s := &AIService{
+		apiKey:            apiKey,
+		baseURL:           baseURL,
 		model:             model,
 		expertAPIKey:      expertAPIKey,
 		expertBaseURL:     expertBaseURL,
 		expertModel:       expertModel,
+		titleAPIKey:       titleAPIKey,
+		titleBaseURL:      titleBaseURL,
 		titleModel:        titleModel,
 		searchAPIKey:      searchAPIKey,
 		searchBaseURL:     searchBaseURL,
@@ -81,13 +58,92 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		multimodalModel:   multimodalModel,
 		bochaAPIKey:       bochaAPIKey,
 		searchService:     NewSearchService(bochaAPIKey),
-	}, nil
+	}
+	s.reinitGenkit()
+	return s, nil
+}
+
+func (s *AIService) reinitGenkit() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ctx := context.Background()
+	s.g = genkit.Init(ctx,
+		genkit.WithPlugins(
+			&compat_oai.OpenAICompatible{
+				Provider: "openai",
+				APIKey:   s.apiKey,
+				BaseURL:  s.baseURL,
+				Opts: []option.RequestOption{
+					option.WithHeader("Content-Type", "application/json"),
+				},
+			},
+			&compat_oai.OpenAICompatible{
+				Provider: "openai-title",
+				APIKey:   s.titleAPIKey,
+				BaseURL:  s.titleBaseURL,
+				Opts: []option.RequestOption{
+					option.WithHeader("Content-Type", "application/json"),
+				},
+			},
+			&compat_oai.OpenAICompatible{
+				Provider: "openai-multimodal",
+				APIKey:   s.multimodalAPIKey,
+				BaseURL:  s.multimodalBaseURL,
+				Opts: []option.RequestOption{
+					option.WithHeader("Content-Type", "application/json"),
+				},
+			},
+		),
+	)
+}
+
+func (s *AIService) UpdateConfig(mode, baseURL, apiKey, model string) error {
+	s.mu.Lock()
+	needReinit := false
+	switch mode {
+	case "daily":
+		s.baseURL = baseURL
+		s.apiKey = apiKey
+		s.model = model
+		needReinit = true
+	case "expert":
+		s.expertBaseURL = baseURL
+		s.expertAPIKey = apiKey
+		s.expertModel = model
+	case "title":
+		s.titleBaseURL = baseURL
+		s.titleAPIKey = apiKey
+		s.titleModel = model
+		needReinit = true
+	case "search":
+		s.searchBaseURL = baseURL
+		s.searchAPIKey = apiKey
+		s.searchModel = model
+	case "multimodal":
+		s.multimodalBaseURL = baseURL
+		s.multimodalAPIKey = apiKey
+		s.multimodalModel = model
+		needReinit = true
+	}
+	s.mu.Unlock()
+
+	if needReinit {
+		s.reinitGenkit()
+	}
+	return nil
 }
 
 type SearchCallback func(data models.SearchData) error
 
 // GenerateStream generates AI response with streaming
 func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+	s.mu.RLock()
+	multimodalAPIKey := s.multimodalAPIKey
+	model := s.model
+	genkitInstance := s.g
+	s.mu.RUnlock()
+
 	// Prepend user system prompt if provided
 	if userSystemPrompt != "" {
 		messages = append([]*ai.Message{
@@ -114,7 +170,7 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 		}
 	}
 
-	if hasMultimodal && s.multimodalAPIKey != "" {
+	if hasMultimodal && multimodalAPIKey != "" {
 		return s.generateMultimodalStream(ctx, messages, callback)
 	}
 
@@ -127,8 +183,8 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 	}
 
 	// Use GenerateStream from genkit for daily mode
-	modelName := fmt.Sprintf("openai/%s", s.model)
-	stream := genkit.GenerateStream(ctx, s.g,
+	modelName := fmt.Sprintf("openai/%s", model)
+	stream := genkit.GenerateStream(ctx, genkitInstance,
 		ai.WithModelName(modelName),
 		ai.WithMessages(messages...),
 	)
@@ -156,10 +212,20 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 }
 
 func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
-	return s.generateCustomStream(ctx, messages, s.expertAPIKey, s.expertBaseURL, s.expertModel, callback)
+	s.mu.RLock()
+	apiKey := s.expertAPIKey
+	baseURL := s.expertBaseURL
+	model := s.expertModel
+	s.mu.RUnlock()
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, callback)
 }
 
 func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+	s.mu.RLock()
+	apiKey := s.multimodalAPIKey
+	baseURL := s.multimodalBaseURL
+	model := s.multimodalModel
+	s.mu.RUnlock()
 	// For multimodal models, we need to parse <file> and <image> tags
 	// and convert them to the format the API expects (image_url or file_url).
 
@@ -240,7 +306,7 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	}
 
 	requestBody, err := json.Marshal(map[string]any{
-		"model":    s.multimodalModel,
+		"model":    model,
 		"messages": oaiMessages,
 		"stream":   true,
 	})
@@ -248,14 +314,14 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 		return err
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", s.multimodalBaseURL)
+	url := fmt.Sprintf("%s/chat/completions", baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(requestBody)))
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.multimodalAPIKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -326,6 +392,12 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 }
 
 func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+	s.mu.RLock()
+	apiKey := s.searchAPIKey
+	baseURL := s.searchBaseURL
+	model := s.searchModel
+	s.mu.RUnlock()
+
 	// 1. Get search query from the last user message
 	lastMsg := messages[len(messages)-1]
 	var queryBuilder strings.Builder
@@ -411,7 +483,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	augmentedMessages = append(augmentedMessages, messages...)
 
 	// Use search model for final response
-	return s.generateCustomStream(ctx, augmentedMessages, s.searchAPIKey, s.searchBaseURL, s.searchModel, callback)
+	return s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, callback)
 }
 
 func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, callback func(token string, reasoning string) error) error {
@@ -536,6 +608,11 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 
 // GenerateTitle generates a title for the conversation based on messages
 func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (string, error) {
+	s.mu.RLock()
+	titleModel := s.titleModel
+	genkitInstance := s.g
+	s.mu.RUnlock()
+
 	// Add a system message to instruct the AI to generate a title
 	titlePrompt := &ai.Message{
 		Role:    ai.RoleUser,
@@ -544,8 +621,8 @@ func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (
 
 	allMessages := append(messages, titlePrompt)
 
-	resp, err := genkit.Generate(ctx, s.g,
-		ai.WithModelName(fmt.Sprintf("openai-title/%s", s.titleModel)),
+	resp, err := genkit.Generate(ctx, genkitInstance,
+		ai.WithModelName(fmt.Sprintf("openai-title/%s", titleModel)),
 		ai.WithMessages(allMessages...),
 	)
 	if err != nil {

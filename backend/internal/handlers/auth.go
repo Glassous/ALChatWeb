@@ -33,9 +33,10 @@ func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services
 	}
 }
 
-func (h *AuthHandler) generateToken(userID primitive.ObjectID) (string, error) {
+func (h *AuthHandler) generateToken(userID primitive.ObjectID, role string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": userID.Hex(),
+		"role":    role,
 		"exp":     time.Now().Add(time.Hour * 24 * 7).Unix(), // 7 days
 	})
 	return token.SignedString([]byte(h.jwtSecret))
@@ -90,6 +91,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Password:         string(hashedPassword),
 		SecurityQuestion: req.SecurityQuestion,
 		SecurityAnswer:   string(hashedAnswer),
+		Role:             "user", // Default role
 		CreatedAt:        time.Now(),
 		UpdatedAt:        time.Now(),
 	}
@@ -104,7 +106,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := h.generateToken(user.ID)
+	token, err := h.generateToken(user.ID, user.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
@@ -143,7 +145,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.generateToken(user.ID)
+	token, err := h.generateToken(user.ID, user.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return

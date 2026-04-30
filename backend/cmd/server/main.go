@@ -6,6 +6,7 @@ import (
 	"alchat-backend/internal/handlers"
 	"alchat-backend/internal/middleware"
 	"alchat-backend/internal/services"
+	"context"
 	"log"
 	"time"
 
@@ -76,7 +77,9 @@ func main() {
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, db, streamManager)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager)
-
+	adminHandler := handlers.NewAdminHandler(db, aiService)
+	adminHandler.SetupAdmin(context.Background())
+	adminHandler.LoadConfigs(context.Background())
 
 	// Setup Gin router
 	router := gin.Default()
@@ -124,6 +127,16 @@ func main() {
 
 			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
 			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
+
+			// Admin routes
+			admin := protected.Group("/admin")
+			admin.Use(middleware.AdminMiddleware())
+			{
+				admin.GET("/dashboard", adminHandler.GetDashboardStats)
+				admin.GET("/users", adminHandler.GetUsers)
+				admin.GET("/configs", adminHandler.GetModelConfigs)
+				admin.PUT("/configs", adminHandler.UpdateModelConfig)
+			}
 		}
 	}
 

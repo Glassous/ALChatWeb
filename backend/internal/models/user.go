@@ -14,6 +14,7 @@ type User struct {
 	SecurityQuestion string             `bson:"security_question" json:"security_question"`
 	SecurityAnswer   string             `bson:"security_answer" json:"-"` // Omit from JSON
 	Avatar           string             `bson:"avatar" json:"avatar"`
+	Role             string             `bson:"role" json:"role"` // "user" | "admin"
 	SystemPrompt     string             `bson:"system_prompt" json:"system_prompt"`
 	IncludeDateTime  bool               `bson:"include_datetime" json:"include_datetime"`
 	IncludeLocation  bool               `bson:"include_location" json:"include_location"`

@@ -54,3 +54,7 @@ func (m *MongoDB) Conversations() *mongo.Collection {
 func (m *MongoDB) Messages() *mongo.Collection {
 	return m.Database.Collection("messages")
 }
+
+func (m *MongoDB) Configs() *mongo.Collection {
+	return m.Database.Collection("configs")
+}
