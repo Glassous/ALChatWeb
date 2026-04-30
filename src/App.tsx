@@ -227,6 +227,9 @@ function ChatApp() {
               );
             },
             (doneData) => {
+              // Refresh user profile to get latest credits and membership info
+              loadUserProfile();
+
               const realAssistantId = doneData?.assistant_message_id as string;
               const realUserId = doneData?.user_message_id as string;
               const newCredits = doneData?.credits as number;
@@ -372,9 +375,25 @@ function ChatApp() {
         async (doneData) => {
           // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
+          
+          // Refresh user profile to get latest credits and membership info
+          loadUserProfile();
 
           const realAssistantId = doneData?.assistant_message_id as string;
           const realUserId = doneData?.user_message_id as string;
+          const newCredits = doneData?.credits as number;
+
+          if (newCredits !== undefined) {
+            setUserCredits(newCredits);
+            // Update local storage
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+              const user = JSON.parse(userStr);
+              user.credits = newCredits;
+              localStorage.setItem('user', JSON.stringify(user));
+              window.dispatchEvent(new Event('user-profile-updated'));
+            }
+          }
 
           // Swap temporary IDs with real IDs immediately to stabilize the UI
           if (realAssistantId && realUserId) {

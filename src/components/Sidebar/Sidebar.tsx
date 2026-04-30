@@ -577,7 +577,7 @@ export function Sidebar({
                       </span>
                       {userCredits !== null && (
                         <span className="user-credits">
-                          余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                          余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
                       )}
                       {userMemberType !== 'free' && userMemberExpiry && (
