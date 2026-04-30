@@ -87,6 +87,7 @@ export function Sidebar({
   const [originalNickname, setOriginalNickname] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
   const [userMemberType, setUserMemberType] = useState('free');
+  const [userMemberExpiry, setUserMemberExpiry] = useState<string | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
@@ -96,6 +97,7 @@ export function Sidebar({
       try {
         const user = await apiClient.getProfile();
         setUserMemberType(user.member_type || 'free');
+        setUserMemberExpiry(user.member_expiry || null);
         setUserCredits(user.credits ?? 1000);
         localStorage.setItem('user', JSON.stringify(user));
       } catch (error) {
@@ -113,6 +115,7 @@ export function Sidebar({
         if (userStr) {
           const user = JSON.parse(userStr);
           setUserMemberType(user.member_type || 'free');
+          setUserMemberExpiry(user.member_expiry || null);
           setUserCredits(user.credits ?? 1000);
         }
       } catch { }
@@ -575,6 +578,11 @@ export function Sidebar({
                       {userCredits !== null && (
                         <span className="user-credits">
                           余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        </span>
+                      )}
+                      {userMemberType !== 'free' && userMemberExpiry && (
+                        <span className="user-expiry" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          至 {new Date(userMemberExpiry).toLocaleDateString()}
                         </span>
                       )}
                     </div>

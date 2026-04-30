@@ -387,14 +387,65 @@ func (h *AdminHandler) UpdateUserMemberType(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User member type updated successfully"})
 }
 
-func (h *AdminHandler) GenerateInvitationCodes(c *gin.Context) {
+func (h *AdminHandler) UpdateUserMember(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
 	var req struct {
-		Count int    `json:"count" binding:"required"`
-		Type  string `json:"type" binding:"required"` // pro, max
+		MemberType   string     `json:"member_type"`
+		Credits      float64    `json:"credits"`
+		MemberExpiry *time.Time `json:"member_expiry"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"updated_at": time.Now(),
+	}
+	if req.MemberType != "" {
+		update["member_type"] = req.MemberType
+	}
+	update["credits"] = req.Credits
+	if req.MemberExpiry != nil {
+		// Round to the next day's 00:00:00 of the selected date
+		e := *req.MemberExpiry
+		rounded := time.Date(e.Year(), e.Month(), e.Day(), 0, 0, 0, 0, e.Location()).AddDate(0, 0, 1)
+		update["member_expiry"] = rounded
+	} else {
+		update["member_expiry"] = nil
+	}
+
+	_, err = h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": update})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User member settings updated successfully"})
+}
+
+func (h *AdminHandler) GenerateInvitationCodes(c *gin.Context) {
+	var req struct {
+		Count          int    `json:"count" binding:"required"`
+		Type           string `json:"type" binding:"required"` // pro, max
+		DurationMonths int    `json:"duration_months"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.DurationMonths <= 0 {
+		req.DurationMonths = 1 // Default to 1 month
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
@@ -406,11 +457,12 @@ func (h *AdminHandler) GenerateInvitationCodes(c *gin.Context) {
 		code := generateRandomCode(10)
 		generatedCodes[i] = code
 		codes[i] = models.InvitationCode{
-			ID:        primitive.NewObjectID(),
-			Code:      code,
-			Type:      models.MemberType(req.Type),
-			IsUsed:    false,
-			CreatedAt: time.Now(),
+			ID:             primitive.NewObjectID(),
+			Code:           code,
+			Type:           models.MemberType(req.Type),
+			DurationMonths: req.DurationMonths,
+			IsUsed:         false,
+			CreatedAt:      time.Now(),
 		}
 	}
 
@@ -477,7 +529,7 @@ func (h *AdminHandler) GetSystemSettings(c *gin.Context) {
 }
 
 func (h *AdminHandler) UpdateSystemSettings(c *gin.Context) {
-	var req models.CampaignConfig
+	var req models.SystemSettings
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -488,7 +540,7 @@ func (h *AdminHandler) UpdateSystemSettings(c *gin.Context) {
 
 	update := bson.M{
 		"$set": bson.M{
-			"campaign_config": req,
+			"campaign_config": req.CampaignConfig,
 			"updated_at":      time.Now(),
 		},
 	}

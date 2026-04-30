@@ -66,6 +66,7 @@ func main() {
 	}
 
 	memberService := services.NewMemberService(db)
+	memberService.StartExpiryChecker(context.Background())
 	streamManager := services.NewStreamManager()
 
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
@@ -141,6 +142,7 @@ func main() {
 				admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
 				admin.PUT("/users/:id/credits", adminHandler.UpdateUserCredits)
 				admin.PUT("/users/:id/member-type", adminHandler.UpdateUserMemberType)
+				admin.PUT("/users/:id/member", adminHandler.UpdateUserMember)
 				admin.DELETE("/users/:id", adminHandler.DeleteUser)
 				admin.GET("/conversations", adminHandler.GetConversations)
 				admin.GET("/conversations/:id", adminHandler.GetConversation)

@@ -94,6 +94,12 @@ func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID pr
 		return "", err
 	}
 
+	var user models.User
+	err = s.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		return "", err
+	}
+
 	now := time.Now()
 	// Update invitation code
 	_, err = s.db.Collection("invitation_codes").UpdateOne(
@@ -105,6 +111,19 @@ func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID pr
 		return "", err
 	}
 
+	// Calculate new expiry
+	var newExpiry time.Time
+	duration := time.Duration(invCode.DurationMonths) * 30 * 24 * time.Hour
+
+	if user.MemberType == string(invCode.Type) && user.MemberExpiry != nil && user.MemberExpiry.After(now) {
+		newExpiry = user.MemberExpiry.Add(duration)
+	} else {
+		newExpiry = now.Add(duration)
+	}
+
+	// Round up to the next day's 00:00:00
+	newExpiry = time.Date(newExpiry.Year(), newExpiry.Month(), newExpiry.Day(), 0, 0, 0, 0, newExpiry.Location()).AddDate(0, 0, 1)
+
 	// Update user member type and reset credits
 	settings, _ := s.GetSystemSettings(ctx)
 	dailyLimit, _ := utils.GetMemberLimits(string(invCode.Type), settings.CampaignConfig.IsActive, settings.CampaignConfig.CampaignCredits)
@@ -114,6 +133,7 @@ func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID pr
 		bson.M{"_id": userID},
 		bson.M{"$set": bson.M{
 			"member_type":          string(invCode.Type),
+			"member_expiry":        newExpiry,
 			"credits":              dailyLimit,
 			"last_credit_reset_at": now,
 			"updated_at":           now,
@@ -124,6 +144,59 @@ func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID pr
 	}
 
 	return string(invCode.Type), nil
+}
+
+func (s *MemberService) StartExpiryChecker(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				s.CheckExpiries(ctx)
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (s *MemberService) CheckExpiries(ctx context.Context) {
+	now := time.Now()
+	// Find users whose membership has expired and they are not "free"
+	filter := bson.M{
+		"member_type":   bson.M{"$ne": "free"},
+		"member_expiry": bson.M{"$lt": now},
+	}
+
+	cursor, err := s.db.Users().Find(ctx, filter)
+	if err != nil {
+		return
+	}
+	defer cursor.Close(ctx)
+
+	settings, _ := s.GetSystemSettings(ctx)
+
+	for cursor.Next(ctx) {
+		var user models.User
+		if err := cursor.Decode(&user); err != nil {
+			continue
+		}
+
+		// Downgrade to free
+		dailyLimit, _ := utils.GetMemberLimits("free", settings.CampaignConfig.IsActive, settings.CampaignConfig.CampaignCredits)
+		_, _ = s.db.Users().UpdateOne(
+			ctx,
+			bson.M{"_id": user.ID},
+			bson.M{"$set": bson.M{
+				"member_type":          "free",
+				"member_expiry":        nil,
+				"credits":              dailyLimit,
+				"last_credit_reset_at": now,
+				"updated_at":           now,
+			}},
+		)
+	}
 }
 
 func (s *MemberService) RefreshAllUsersCredits(ctx context.Context) error {

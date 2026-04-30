@@ -19,6 +19,7 @@ type User struct {
 	IncludeDateTime   bool               `bson:"include_datetime" json:"include_datetime"`
 	IncludeLocation   bool               `bson:"include_location" json:"include_location"`
 	MemberType        string             `bson:"member_type" json:"member_type"` // "free" | "pro" | "max"
+	MemberExpiry      *time.Time         `bson:"member_expiry,omitempty" json:"member_expiry,omitempty"`
 	Credits           float64            `bson:"credits" json:"credits"`
 	LastCreditResetAt time.Time          `bson:"last_credit_reset_at" json:"last_credit_reset_at"`
 	CreatedAt         time.Time          `bson:"created_at" json:"created_at"`
