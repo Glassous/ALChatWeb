@@ -7,19 +7,22 @@ import (
 )
 
 type User struct {
-	ID               primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Username         string             `bson:"username" json:"username"`
-	Nickname         string             `bson:"nickname" json:"nickname"`
-	Password         string             `bson:"password" json:"-"` // Omit password from JSON
-	SecurityQuestion string             `bson:"security_question" json:"security_question"`
-	SecurityAnswer   string             `bson:"security_answer" json:"-"` // Omit from JSON
-	Avatar           string             `bson:"avatar" json:"avatar"`
-	Role             string             `bson:"role" json:"role"` // "user" | "admin"
-	SystemPrompt     string             `bson:"system_prompt" json:"system_prompt"`
-	IncludeDateTime  bool               `bson:"include_datetime" json:"include_datetime"`
-	IncludeLocation  bool               `bson:"include_location" json:"include_location"`
-	CreatedAt        time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt        time.Time          `bson:"updated_at" json:"updated_at"`
+	ID                primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	Username          string             `bson:"username" json:"username"`
+	Nickname          string             `bson:"nickname" json:"nickname"`
+	Password          string             `bson:"password" json:"-"` // Omit password from JSON
+	SecurityQuestion  string             `bson:"security_question" json:"security_question"`
+	SecurityAnswer    string             `bson:"security_answer" json:"-"` // Omit from JSON
+	Avatar            string             `bson:"avatar" json:"avatar"`
+	Role              string             `bson:"role" json:"role"` // "user" | "admin"
+	SystemPrompt      string             `bson:"system_prompt" json:"system_prompt"`
+	IncludeDateTime   bool               `bson:"include_datetime" json:"include_datetime"`
+	IncludeLocation   bool               `bson:"include_location" json:"include_location"`
+	MemberType        string             `bson:"member_type" json:"member_type"` // "free" | "pro" | "max"
+	Credits           float64            `bson:"credits" json:"credits"`
+	LastCreditResetAt time.Time          `bson:"last_credit_reset_at" json:"last_credit_reset_at"`
+	CreatedAt         time.Time          `bson:"created_at" json:"created_at"`
+	UpdatedAt         time.Time          `bson:"updated_at" json:"updated_at"`
 }
 
 type RegisterRequest struct {
@@ -37,10 +40,10 @@ type LoginRequest struct {
 }
 
 type ResetPasswordRequest struct {
-	Username         string `json:"username"`
-	SecurityAnswer   string `json:"security_answer"`
-	NewPassword      string `json:"new_password"`
-	ConfirmPassword  string `json:"confirm_password"`
+	Username        string `json:"username"`
+	SecurityAnswer  string `json:"security_answer"`
+	NewPassword     string `json:"new_password"`
+	ConfirmPassword string `json:"confirm_password"`
 }
 
 type AuthResponse struct {

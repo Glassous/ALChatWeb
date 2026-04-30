@@ -20,16 +20,18 @@ import (
 )
 
 type AuthHandler struct {
-	db         *database.MongoDB
-	jwtSecret  string
-	ossService *services.OSSService
+	db            *database.MongoDB
+	jwtSecret     string
+	ossService    *services.OSSService
+	memberService *services.MemberService
 }
 
-func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService) *AuthHandler {
 	return &AuthHandler{
-		db:         db,
-		jwtSecret:  jwtSecret,
-		ossService: ossService,
+		db:            db,
+		jwtSecret:     jwtSecret,
+		ossService:    ossService,
+		memberService: memberService,
 	}
 }
 
@@ -85,15 +87,18 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	user := models.User{
-		ID:               primitive.NewObjectID(),
-		Username:         req.Username,
-		Nickname:         req.Nickname,
-		Password:         string(hashedPassword),
-		SecurityQuestion: req.SecurityQuestion,
-		SecurityAnswer:   string(hashedAnswer),
-		Role:             "user", // Default role
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
+		ID:                primitive.NewObjectID(),
+		Username:          req.Username,
+		Nickname:          req.Nickname,
+		Password:          string(hashedPassword),
+		SecurityQuestion:  req.SecurityQuestion,
+		SecurityAnswer:    string(hashedAnswer),
+		Role:              "user", // Default role
+		MemberType:        "free",
+		Credits:           1000,
+		LastCreditResetAt: time.Now(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	if user.Nickname == "" {
@@ -143,6 +148,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
 		return
+	}
+
+	// Reset credits if needed
+	if err := h.memberService.CheckAndResetCredits(ctx, &user); err != nil {
+		fmt.Printf("Failed to reset credits during login: %v\n", err)
 	}
 
 	token, err := h.generateToken(user.ID, user.Role)
@@ -344,6 +354,60 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		"message": "Avatar updated successfully",
 		"avatar":  avatarURL,
 	})
+}
+
+func (h *AuthHandler) Upgrade(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	memberType, err := h.memberService.UpgradeWithInvitationCode(c.Request.Context(), userID, req.Code)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or used invitation code"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upgrade"})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully upgraded", "member_type": memberType})
+}
+
+func (h *AuthHandler) GetProfile(c *gin.Context) {
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
+
+	var user models.User
+	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch profile"})
+		return
+	}
+
+	// Reset credits if needed
+	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
+		fmt.Printf("Failed to reset credits: %v\n", err)
+	}
+
+	c.JSON(http.StatusOK, user)
 }
 
 func (h *AuthHandler) GetSystemPrompt(c *gin.Context) {

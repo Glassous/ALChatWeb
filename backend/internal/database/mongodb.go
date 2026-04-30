@@ -58,3 +58,7 @@ func (m *MongoDB) Messages() *mongo.Collection {
 func (m *MongoDB) Configs() *mongo.Collection {
 	return m.Database.Collection("configs")
 }
+
+func (m *MongoDB) Collection(name string) *mongo.Collection {
+	return m.Database.Collection(name)
+}

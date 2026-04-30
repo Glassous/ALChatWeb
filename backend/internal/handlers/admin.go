@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -332,6 +335,170 @@ func (h *AdminHandler) LoadConfigs(ctx context.Context) {
 	for _, cfg := range configs {
 		h.aiService.UpdateConfig(cfg.Mode, cfg.BaseURL, cfg.APIKey, cfg.Model)
 	}
+}
+
+func (h *AdminHandler) UpdateUserCredits(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := primitive.ObjectIDFromHex(idStr)
+
+	var req struct {
+		Credits float64 `json:"credits" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	_, err := h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"credits": req.Credits, "updated_at": time.Now()}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User credits updated successfully"})
+}
+
+func (h *AdminHandler) UpdateUserMemberType(c *gin.Context) {
+	idStr := c.Param("id")
+	id, _ := primitive.ObjectIDFromHex(idStr)
+
+	var req struct {
+		MemberType string `json:"member_type" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	_, err := h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"member_type": req.MemberType, "updated_at": time.Now()}})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User member type updated successfully"})
+}
+
+func (h *AdminHandler) GenerateInvitationCodes(c *gin.Context) {
+	var req struct {
+		Count int    `json:"count" binding:"required"`
+		Type  string `json:"type" binding:"required"` // pro, max
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	codes := make([]interface{}, req.Count)
+	generatedCodes := make([]string, req.Count)
+	for i := 0; i < req.Count; i++ {
+		code := generateRandomCode(10)
+		generatedCodes[i] = code
+		codes[i] = models.InvitationCode{
+			ID:        primitive.NewObjectID(),
+			Code:      code,
+			Type:      models.MemberType(req.Type),
+			IsUsed:    false,
+			CreatedAt: time.Now(),
+		}
+	}
+
+	_, err := h.db.Collection("invitation_codes").InsertMany(ctx, codes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"codes": generatedCodes})
+}
+
+func generateRandomCode(length int) string {
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Avoid easily confused characters
+	result := make([]byte, length)
+	for i := range result {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		result[i] = charset[num.Int64()]
+	}
+	return string(result)
+}
+
+func (h *AdminHandler) GetInvitationCodes(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	cursor, err := h.db.Collection("invitation_codes").Find(ctx, bson.M{}, options.Find().SetSort(bson.M{"created_at": -1}))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var codes []models.InvitationCode
+	if err := cursor.All(ctx, &codes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, codes)
+}
+
+func (h *AdminHandler) GetSystemSettings(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	var settings models.SystemSettings
+	err := h.db.Collection("system_settings").FindOne(ctx, bson.M{}).Decode(&settings)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusOK, models.SystemSettings{
+				CampaignConfig: models.CampaignConfig{
+					IsActive:        false,
+					CampaignCredits: make(map[string]float64),
+				},
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, settings)
+}
+
+func (h *AdminHandler) UpdateSystemSettings(c *gin.Context) {
+	var req models.CampaignConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	update := bson.M{
+		"$set": bson.M{
+			"campaign_config": req,
+			"updated_at":      time.Now(),
+		},
+	}
+
+	opts := options.Update().SetUpsert(true)
+	_, err := h.db.Collection("system_settings").UpdateOne(ctx, bson.M{}, update, opts)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "System settings updated successfully"})
 }
 
 // SetupAdmin ensures at least one admin exists

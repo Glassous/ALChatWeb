@@ -69,6 +69,9 @@ interface InputAreaProps {
   isAtBottom?: boolean;
   isEmpty?: boolean;
   userMessages?: string[];
+  userCredits?: number | null;
+  userMemberType?: string;
+  onShowUpgrade?: () => void;
 }
 
 const RESOLUTIONS = [
@@ -85,7 +88,10 @@ export function InputArea({
   onScrollToBottom, 
   isAtBottom = true, 
   isEmpty = true,
-  userMessages = []
+  userMessages = [],
+  userCredits = null,
+  userMemberType = 'free',
+  onShowUpgrade
 }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
@@ -533,9 +539,35 @@ export function InputArea({
     }
   };
 
+  const isExhausted = userCredits !== null && userCredits <= 0;
+  const warningThreshold = userMemberType === 'free' ? 50 : 100;
+  const showWarning = userCredits !== null && userCredits > 0 && userCredits <= warningThreshold;
+
   return (
     <div className="input-area-wrapper">
-      {(refImageUrl || attachments.length > 0 || isUploading) && (
+      {showWarning && (
+        <div className="credit-warning-container">
+          <div className="credit-warning-text">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+              <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+            </svg>
+            <span>额度即将耗尽 (剩余 {userCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })})</span>
+          </div>
+          <div className="upgrade-link" onClick={onShowUpgrade}>立即升级</div>
+        </div>
+      )}
+      {isExhausted && (
+        <div className="credit-warning-container exhausted">
+          <div className="credit-warning-text">
+            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+              <path d="M480-280q17 0 28.5-11.5T520-320q0-17-11.5-28.5T480-360q-17 0-28.5 11.5T440-320q0 17 11.5 28.5T480-280Zm-40-160h80v-240h-80v240Zm40 360q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+            </svg>
+            <span>今日额度已用完，请明天再来或升级会员</span>
+          </div>
+          <div className="upgrade-link" onClick={onShowUpgrade}>升级会员</div>
+        </div>
+      )}
+      {(refImageUrl || attachments.length > 0 || isUploading) && !isExhausted && (
         <div className="previews-container">
           {refImageUrl && (
             <div className="ref-image-preview-card">
@@ -573,220 +605,297 @@ export function InputArea({
           )}
         </div>
       )}
-      <div 
-        className={`input-container-square ${isExpanded ? 'expanded' : ''} ${dragStatus !== 'none' ? `dragging ${dragStatus}` : ''}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <div className="input-top-row">
-          <div className="textarea-wrapper">
+      {!isExhausted && (
+        <div 
+          className={`input-container-square ${isExpanded ? 'expanded' : ''} ${dragStatus !== 'none' ? `dragging ${dragStatus}` : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <div className="input-top-row">
+            <div className="textarea-wrapper">
+              {suggestion && (
+                <div ref={suggestionRef} className="input-suggestion-overlay">
+                  {suggestion}
+                </div>
+              )}
+              <textarea
+                className="chat-textarea"
+                placeholder={suggestion ? "" : (isImageMode ? "描述你想生成的图片..." : "输入消息...")}
+                value={text}
+                onChange={handleTextChange}
+                onKeyDown={handleKeyDown}
+                onScroll={handleScroll}
+                disabled={disabled || isUploading}
+                rows={1}
+                ref={textareaRef}
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
             {suggestion && (
-              <div ref={suggestionRef} className="input-suggestion-overlay">
-                {suggestion}
+              <div className="tab-hint">
+                按 Tab 插入
               </div>
             )}
-            <textarea
-              className="chat-textarea"
-              placeholder={suggestion ? "" : (isImageMode ? "描述你想生成的图片..." : "输入消息...")}
-              value={text}
-              onChange={handleTextChange}
-              onKeyDown={handleKeyDown}
-              onScroll={handleScroll}
-              disabled={disabled || isUploading}
-              rows={1}
-              ref={textareaRef}
-              spellCheck={false}
-              autoComplete="off"
-            />
+            {dragStatus !== 'none' && (
+              <div className={`drag-hint ${dragStatus}`}>
+                {dragMessage}
+              </div>
+            )}
+            {text.trim() && (
+              <button 
+                className="send-button" 
+                onClick={handleSend}
+                disabled={disabled || isUploading}
+              >
+                <svg viewBox="0 0 24 24" className="send-icon">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
+                </svg>
+              </button>
+            )}
           </div>
-          {suggestion && (
-            <div className="tab-hint">
-              按 Tab 插入
-            </div>
-          )}
-          {dragStatus !== 'none' && (
-            <div className={`drag-hint ${dragStatus}`}>
-              {dragMessage}
-            </div>
-          )}
-          {text.trim() && (
-            <button 
-              className="send-button" 
-              onClick={handleSend}
-              disabled={disabled || isUploading}
-            >
-              <svg viewBox="0 0 24 24" className="send-icon">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="input-bottom-row">
-          <motion.div className="tools-left" layout>
-            <AnimatePresence initial={false}>
-              {!isImageMode && !isSearchMode && attachments.length === 0 && (
-                <motion.div
-                  key="mode-toggle"
-                  layout
-                  variants={leftToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex' }}
-                >
-                  <button 
-                    className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
-                    onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
-                    title={mode === 'daily' ? '日常模式' : '专家模式'}
+          <div className="input-bottom-row">
+            <motion.div className="tools-left" layout>
+              <AnimatePresence initial={false}>
+                {!isImageMode && !isSearchMode && attachments.length === 0 && (
+                  <motion.div
+                    key="mode-toggle"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
                   >
-                    {mode === 'daily' ? '日常' : '专家'}
-                  </button>
-                </motion.div>
-              )}
-              {!isSearchMode && attachments.length === 0 && (
-                <motion.div
-                  key="image-mode"
-                  layout
-                  variants={leftToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex' }}
-                >
-                  <button 
-                    className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
-                    onClick={() => {
-                      setIsImageMode(!isImageMode);
-                      if (!isImageMode) setIsSearchMode(false);
-                    }}
-                    title="图片生成"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                      <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-                    </svg>
-                  </button>
-                </motion.div>
-              )}
-              {!isImageMode && attachments.length === 0 && (
-                <motion.div
-                  key="search-mode"
-                  layout
-                  variants={leftToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex' }}
-                >
-                  <button 
-                    className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
-                    onClick={() => setIsSearchMode(!isSearchMode)}
-                    title="联网搜索"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                      <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
-                    </svg>
-                  </button>
-                </motion.div>
-              )}
-              {isImageMode && (
-                <motion.div
-                  key="image-tools"
-                  layout
-                  variants={leftToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ display: 'flex', alignItems: 'center' }}
-                >
-                  <div className="resolution-selector" ref={popupRef}>
                     <button 
-                      className="resolution-btn"
-                      onClick={() => setShowResolutions(!showResolutions)}
+                      className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
+                      onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+                      title={mode === 'daily' ? '日常模式' : '专家模式'}
                     >
-                      {resolution}
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M7 10l5 5 5-5z" />
-                      </svg>
+                      {mode === 'daily' ? '日常' : '专家'}
                     </button>
-                    <AnimatePresence>
-                      {showResolutions && (
-                        <motion.div 
-                          className="resolution-popup"
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          transition={{ duration: 0.15, ease: "easeOut" }}
-                        >
-                          <div className="resolution-header">选择图片比例</div>
-                          <div className="resolution-grid">
-                            {RESOLUTIONS.map(res => {
-                              const boxSize = 36;
-                              const boxWidth = res.ratio >= 1 ? boxSize : boxSize * res.ratio;
-                              const boxHeight = res.ratio <= 1 ? boxSize : boxSize / res.ratio;
-                              const isActive = res.value === resolution;
-
-                              return (
-                                <div 
-                                  key={res.value} 
-                                  className={`resolution-card ${isActive ? 'active' : ''}`}
-                                  onClick={() => {
-                                    setResolution(res.value);
-                                    setShowResolutions(false);
-                                  }}
-                                >
-                                  <div className="resolution-illustration-box">
-                                     <div 
-                                       className="resolution-rect"
-                                       style={{ 
-                                         width: `${boxWidth}px`, 
-                                         height: `${boxHeight}px` 
-                                       }}
-                                     />
-                                   </div>
-                                   <div className="resolution-info">
-                                     <span className="resolution-value">{res.value}</span>
-                                     <span className="resolution-ratio-hint">{res.label}</span>
-                                   </div>
-                                   <button className="resolution-select-tag">
-                                     {isActive ? '已选' : '选择'}
-                                   </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  {!refImageUrl && !isUploading && (
+                  </motion.div>
+                )}
+                {!isSearchMode && attachments.length === 0 && (
+                  <motion.div
+                    key="image-mode"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
+                  >
                     <button 
-                      className="tool-btn upload-btn"
-                      onClick={handleUploadClick}
-                      title="上传参考图"
-                      style={{ marginLeft: 4 }}
+                      className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
+                      onClick={() => {
+                        setIsImageMode(!isImageMode);
+                        if (!isImageMode) setIsSearchMode(false);
+                      }}
+                      title="图片生成"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                        <path d="M440-440ZM120-120q-33 0-56.5-23.5T40-200v-480q0-33 23.5-56.5T120-760h126l74-80h240v80H355l-73 80H120v480h640v-360h80v360q0 33-23.5 56.5T760-120H120Zm640-560v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80ZM440-260q75 0 127.5-52.5T620-440q0-75-52.5-127.5T440-620q-75 0-127.5 52.5T260-440q0 75 52.5 127.5T440-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Z"/>
+                        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
                     </button>
-                  )}
-                  <input 
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-          <motion.div className="tools-right" layout>
-            <AnimatePresence initial={false}>
-              {!isEmpty && !isAtBottom && (
+                  </motion.div>
+                )}
+                {!isImageMode && attachments.length === 0 && (
+                  <motion.div
+                    key="search-mode"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
+                  >
+                    <button 
+                      className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
+                      onClick={() => setIsSearchMode(!isSearchMode)}
+                      title="联网搜索"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
+                      </svg>
+                    </button>
+                  </motion.div>
+                )}
+                {isImageMode && (
+                  <motion.div
+                    key="image-tools"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ display: 'flex', alignItems: 'center' }}
+                  >
+                    <div className="resolution-selector" ref={popupRef}>
+                      <button 
+                        className="resolution-btn"
+                        onClick={() => setShowResolutions(!showResolutions)}
+                      >
+                        {resolution}
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                          <path d="M7 10l5 5 5-5z" />
+                        </svg>
+                      </button>
+                      <AnimatePresence>
+                        {showResolutions && (
+                          <motion.div 
+                            className="resolution-popup"
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                          >
+                            <div className="resolution-header">选择图片比例</div>
+                            <div className="resolution-grid">
+                              {RESOLUTIONS.map(res => {
+                                const boxSize = 36;
+                                const boxWidth = res.ratio >= 1 ? boxSize : boxSize * res.ratio;
+                                const boxHeight = res.ratio <= 1 ? boxSize : boxSize / res.ratio;
+                                const isActive = res.value === resolution;
+
+                                return (
+                                  <div 
+                                    key={res.value} 
+                                    className={`resolution-card ${isActive ? 'active' : ''}`}
+                                    onClick={() => {
+                                      setResolution(res.value);
+                                      setShowResolutions(false);
+                                    }}
+                                  >
+                                    <div className="resolution-illustration-box">
+                                      <div 
+                                        className="resolution-rect"
+                                        style={{ 
+                                          width: `${boxWidth}px`, 
+                                          height: `${boxHeight}px` 
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="resolution-info">
+                                      <span className="resolution-value">{res.value}</span>
+                                      <span className="resolution-ratio-hint">{res.label}</span>
+                                    </div>
+                                    <button className="resolution-select-tag">
+                                      {isActive ? '已选' : '选择'}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    {!refImageUrl && !isUploading && (
+                      <button 
+                        className="tool-btn upload-btn"
+                        onClick={handleUploadClick}
+                        title="上传参考图"
+                        style={{ marginLeft: 4 }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                          <path d="M440-440ZM120-120q-33 0-56.5-23.5T40-200v-480q0-33 23.5-56.5T120-760h126l74-80h240v80H355l-73 80H120v480h640v-360h80v360q0 33-23.5 56.5T760-120H120Zm640-560v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80ZM440-260q75 0 127.5-52.5T620-440q0-75-52.5-127.5T440-620q-75 0-127.5 52.5T260-440q0 75 52.5 127.5T440-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Z"/>
+                        </svg>
+                      </button>
+                    )}
+                    <input 
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+            <motion.div className="tools-right" layout>
+              <AnimatePresence initial={false}>
+                {!isEmpty && !isAtBottom && (
+                  <motion.div
+                    key="scroll-bottom"
+                    layout
+                    variants={rightToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
+                  >
+                    <button 
+                      type="button"
+                      className="tool-btn scroll-bottom-btn"
+                      onClick={onScrollToBottom}
+                      title="回到底部"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
+                      </svg>
+                    </button>
+                  </motion.div>
+                )}
+                {!isImageMode && !isSearchMode && (
+                  <motion.div
+                    key="attachment"
+                    layout
+                    variants={rightToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ display: 'flex' }}
+                  >
+                    <div className="attachment-selector" ref={attachmentMenuRef}>
+                      <button 
+                        className="tool-btn attachment-btn"
+                        onClick={handleAttachmentClick}
+                        title="添加附件"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                          <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
+                        </svg>
+                      </button>
+                      <AnimatePresence>
+                        {showAttachmentMenu && (
+                          <motion.div 
+                            className="attachment-menu"
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                          >
+                            <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
+                              <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                                <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+                              </svg>
+                              <span>图片</span>
+                            </div>
+                            <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
+                              <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
+                                <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
+                              </svg>
+                              <span>视频</span>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <input 
+                        type="file"
+                        ref={attachmentInputRef}
+                        onChange={handleAttachmentFileChange}
+                        accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
+                        multiple
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+                  </motion.div>
+                )}
                 <motion.div
-                  key="scroll-bottom"
+                  key="expand"
                   layout
                   variants={rightToolVariants}
                   initial="initial"
@@ -796,97 +905,22 @@ export function InputArea({
                 >
                   <button 
                     type="button"
-                    className="tool-btn scroll-bottom-btn"
-                    onClick={onScrollToBottom}
-                    title="回到底部"
+                    className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
+                    onClick={toggleExpand}
+                    title={isExpanded ? "缩小输入框" : "放大输入框"}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                      <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
-                    </svg>
+                    {isExpanded ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
+                    )}
                   </button>
                 </motion.div>
-              )}
-              {!isImageMode && !isSearchMode && (
-                <motion.div
-                  key="attachment"
-                  layout
-                  variants={rightToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ display: 'flex' }}
-                >
-                  <div className="attachment-selector" ref={attachmentMenuRef}>
-                    <button 
-                      className="tool-btn attachment-btn"
-                      onClick={handleAttachmentClick}
-                      title="添加附件"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                        <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
-                      </svg>
-                    </button>
-                    <AnimatePresence>
-                      {showAttachmentMenu && (
-                        <motion.div 
-                          className="attachment-menu"
-                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                          transition={{ duration: 0.15, ease: "easeOut" }}
-                        >
-                          <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('image')}>
-                            <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                              <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
-                            </svg>
-                            <span>图片</span>
-                          </div>
-                          <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
-                            <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                              <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
-                            </svg>
-                            <span>视频</span>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    <input 
-                      type="file"
-                      ref={attachmentInputRef}
-                      onChange={handleAttachmentFileChange}
-                      accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
-                      multiple
-                      style={{ display: 'none' }}
-                    />
-                  </div>
-                </motion.div>
-              )}
-              <motion.div
-                key="expand"
-                layout
-                variants={rightToolVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                style={{ overflow: 'hidden', display: 'flex' }}
-              >
-                <button 
-                  type="button"
-                  className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
-                  onClick={toggleExpand}
-                  title={isExpanded ? "缩小输入框" : "放大输入框"}
-                >
-                  {isExpanded ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
-                  )}
-                </button>
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
+              </AnimatePresence>
+            </motion.div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

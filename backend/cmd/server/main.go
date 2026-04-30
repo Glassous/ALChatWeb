@@ -65,6 +65,7 @@ func main() {
 		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)
 	}
 
+	memberService := services.NewMemberService(db)
 	streamManager := services.NewStreamManager()
 
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
@@ -73,9 +74,9 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService)
+	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, db, streamManager)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager)
 	adminHandler := handlers.NewAdminHandler(db, aiService)
 	adminHandler.SetupAdmin(context.Background())
@@ -102,10 +103,12 @@ func main() {
 		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 		{
 			// Auth protected routes
+			protected.GET("/auth/profile", authHandler.GetProfile)
 			protected.PUT("/auth/profile", authHandler.UpdateProfile)
 			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
 			protected.GET("/auth/system-prompt", authHandler.GetSystemPrompt)
 			protected.PUT("/auth/system-prompt", authHandler.UpdateSystemPrompt)
+			protected.POST("/auth/upgrade", authHandler.Upgrade)
 
 			// Conversation routes
 			protected.GET("/conversations", conversationHandler.GetAllConversations)
@@ -136,6 +139,8 @@ func main() {
 				admin.GET("/users", adminHandler.GetUsers)
 				admin.GET("/users/:id", adminHandler.GetUser)
 				admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
+				admin.PUT("/users/:id/credits", adminHandler.UpdateUserCredits)
+				admin.PUT("/users/:id/member-type", adminHandler.UpdateUserMemberType)
 				admin.DELETE("/users/:id", adminHandler.DeleteUser)
 				admin.GET("/conversations", adminHandler.GetConversations)
 				admin.GET("/conversations/:id", adminHandler.GetConversation)
@@ -143,6 +148,10 @@ func main() {
 				admin.GET("/messages/search", adminHandler.SearchMessages)
 				admin.GET("/configs", adminHandler.GetModelConfigs)
 				admin.PUT("/configs", adminHandler.UpdateModelConfig)
+				admin.GET("/invitation-codes", adminHandler.GetInvitationCodes)
+				admin.POST("/invitation-codes", adminHandler.GenerateInvitationCodes)
+				admin.GET("/settings", adminHandler.GetSystemSettings)
+				admin.PUT("/settings", adminHandler.UpdateSystemSettings)
 			}
 		}
 	}

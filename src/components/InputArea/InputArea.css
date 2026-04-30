@@ -123,6 +123,41 @@
   box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.2);
 }
 
+.credit-warning-container {
+  width: 100%;
+  max-width: 860px;
+  background-color: #fff2f0;
+  border: 1px solid #ffccc7;
+  border-radius: 12px;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  animation: slide-up 0.3s ease;
+  pointer-events: auto;
+}
+
+.credit-warning-text {
+  font-size: 13px;
+  color: #ff4d4f;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upgrade-link {
+  font-size: 13px;
+  color: #1890ff;
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+.upgrade-link:hover {
+  color: #40a9ff;
+}
+
 .input-container-square.expanded .tab-hint {
   top: 11px;
 }

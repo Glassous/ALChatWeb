@@ -120,6 +120,30 @@ class APIClient {
   }
 
   // Profile APIs
+  async getProfile() {
+    const response = await fetch(`${this.baseURL}/api/auth/profile`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch profile');
+    }
+    return response.json();
+  }
+
+  async upgrade(code: string) {
+    const response = await fetch(`${this.baseURL}/api/auth/upgrade`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ code }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to upgrade');
+    }
+    return response.json();
+  }
+
   async updateProfile(data: { nickname: string }) {
     const response = await fetch(`${this.baseURL}/api/auth/profile`, {
       method: 'PUT',

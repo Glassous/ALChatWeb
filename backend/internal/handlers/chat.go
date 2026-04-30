@@ -4,6 +4,7 @@ import (
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
+	"alchat-backend/internal/utils"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,14 +22,16 @@ import (
 type ChatHandler struct {
 	aiService           *services.AIService
 	conversationService *services.ConversationService
+	memberService       *services.MemberService
 	db                  *database.MongoDB
 	streamManager       *services.StreamManager
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, db *database.MongoDB, streamManager *services.StreamManager) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, streamManager *services.StreamManager) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
+		memberService:       memberService,
 		db:                  db,
 		streamManager:       streamManager,
 	}
@@ -44,6 +47,26 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	if req.ConversationID == "" || req.Message == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation_id and message are required"})
+		return
+	}
+
+	// 1. Check user credits and reset if needed
+	userIDObj, _ := primitive.ObjectIDFromHex(userID)
+	var user models.User
+	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	// Reset credits if it's a new day
+	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
+		log.Printf("Failed to reset credits: %v", err)
+	}
+
+	// If credits already <= 0, deny request
+	if user.Credits <= 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
 		return
 	}
 
@@ -174,11 +197,13 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		}
 
 		// Send done signal
+		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(fullResponse.String()))
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 			Type: "done",
 			Data: gin.H{
 				"user_message_id":      userMsg.ID.Hex(),
 				"assistant_message_id": assistantMsg.ID.Hex(),
+				"credits":              newCredits,
 			},
 		})
 

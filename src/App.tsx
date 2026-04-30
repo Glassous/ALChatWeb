@@ -43,13 +43,30 @@ function ChatApp() {
   const [isTreeViewOpen, setIsTreeViewOpen] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
+  const [userCredits, setUserCredits] = useState<number | null>(null);
+  const [userMemberType, setUserMemberType] = useState('free');
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
     loadSystemPromptSettings();
+    loadUserProfile();
   }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const user = await apiClient.getProfile();
+      setUserCredits(user.credits ?? 1000);
+      setUserMemberType(user.member_type || 'free');
+      localStorage.setItem('user', JSON.stringify(user));
+      // Notify other components (like Sidebar) if they use local storage
+      window.dispatchEvent(new Event('user-profile-updated'));
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+    }
+  };
+
 
   const loadSystemPromptSettings = async () => {
     try {
@@ -212,6 +229,19 @@ function ChatApp() {
             (doneData) => {
               const realAssistantId = doneData?.assistant_message_id as string;
               const realUserId = doneData?.user_message_id as string;
+              const newCredits = doneData?.credits as number;
+
+              if (newCredits !== undefined) {
+                setUserCredits(newCredits);
+                // Update local storage
+                const userStr = localStorage.getItem('user');
+                if (userStr) {
+                  const user = JSON.parse(userStr);
+                  user.credits = newCredits;
+                  localStorage.setItem('user', JSON.stringify(user));
+                  window.dispatchEvent(new Event('user-profile-updated'));
+                }
+              }
 
               // Update IDs
               setMessages((prev) => {
@@ -650,6 +680,9 @@ function ChatApp() {
             isAtBottom={isAtBottom}
             isEmpty={!hasMessages}
             userMessages={activePath.filter(m => m.role === 'user').map(m => m.content)}
+            userCredits={userCredits}
+            userMemberType={userMemberType}
+            onShowUpgrade={() => window.dispatchEvent(new Event('open-upgrade-dialog'))}
           />
         </div>
       </div>

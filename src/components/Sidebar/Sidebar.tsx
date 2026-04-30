@@ -80,10 +80,79 @@ export function Sidebar({
   const [editTitle, setEditTitle] = useState('');
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const [invitationCode, setInvitationCode] = useState('');
+  const [isUpgrading, setIsUpgrading] = useState(false);
   const [userNickname, setUserNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
+  const [userMemberType, setUserMemberType] = useState('free');
+  const [userCredits, setUserCredits] = useState<number | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+
+  useEffect(() => {
+    // Initial fetch of profile to get latest credits and member type
+    const fetchProfile = async () => {
+      try {
+        const user = await apiClient.getProfile();
+        setUserMemberType(user.member_type || 'free');
+        setUserCredits(user.credits ?? 1000);
+        localStorage.setItem('user', JSON.stringify(user));
+      } catch (error) {
+        console.error('Failed to fetch profile', error);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  // Listen for storage changes or custom events for credit updates
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          setUserMemberType(user.member_type || 'free');
+          setUserCredits(user.credits ?? 1000);
+        }
+      } catch { }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    // Custom event for credits update within the same window
+    window.addEventListener('user-profile-updated', handleStorageChange);
+    
+    const handleOpenUpgrade = () => {
+      setShowUpgradeDialog(true);
+    };
+    window.addEventListener('open-upgrade-dialog', handleOpenUpgrade);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('user-profile-updated', handleStorageChange);
+      window.removeEventListener('open-upgrade-dialog', handleOpenUpgrade);
+    };
+  }, []);
+
+  const handleUpgrade = async () => {
+    if (!invitationCode.trim()) return;
+    setIsUpgrading(true);
+    try {
+      await apiClient.upgrade(invitationCode.trim());
+      setInvitationCode('');
+      setShowUpgradeDialog(false);
+      // Refresh profile
+      const user = await apiClient.getProfile();
+      localStorage.setItem('user', JSON.stringify(user));
+      window.dispatchEvent(new Event('user-profile-updated'));
+      alert('升级成功！');
+    } catch (error: any) {
+      alert(error.message || '升级失败');
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
+
   const [isCropping, setIsCropping] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
@@ -478,18 +547,38 @@ export function Sidebar({
                       </div>
                     );
                   })()}
-                  <span className="username-text">
-                    {(() => {
-                      try {
-                        const userStr = localStorage.getItem('user');
-                        if (userStr) {
-                          const user = JSON.parse(userStr);
-                          return user.nickname || user.username || '用户';
-                        }
-                      } catch { }
-                      return '用户';
-                    })()}
-                  </span>
+                  <div className="user-member-info">
+                    <span className="username-text">
+                      {(() => {
+                        try {
+                          const userStr = localStorage.getItem('user');
+                          if (userStr) {
+                            const user = JSON.parse(userStr);
+                            return user.nickname || user.username || '用户';
+                          }
+                        } catch { }
+                        return '用户';
+                      })()}
+                    </span>
+                    <div 
+                      className="member-info-row" 
+                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowSettings(false);
+                        setShowUpgradeDialog(true);
+                      }}
+                    >
+                      <span className={`member-badge ${userMemberType}`}>
+                        {userMemberType === 'free' ? 'Free' : userMemberType === 'pro' ? 'Pro' : 'Max'}
+                      </span>
+                      {userCredits !== null && (
+                        <span className="user-credits">
+                          余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>,
@@ -777,6 +866,59 @@ export function Sidebar({
           </form>
           <div slot="actions">
             <md-text-button onClick={handleCloseUserDialog}>关闭</md-text-button>
+          </div>
+        </md-dialog>
+      )}
+
+      {showUpgradeDialog && (
+        <md-dialog 
+          open={showUpgradeDialog}
+          onClose={() => setShowUpgradeDialog(false)}
+        >
+          <div slot="headline">会员升级</div>
+          <div slot="content" className="upgrade-dialog-content">
+            <div className="upgrade-benefits">
+              <div className="benefit-item">
+                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+                <span><b>Free</b>: 1,000 Credit/天 (默认)</span>
+              </div>
+              <div className="benefit-item">
+                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+                <span><b>Pro</b>: 5,000 Credit/天</span>
+              </div>
+              <div className="benefit-item">
+                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+                <span><b>Max</b>: 10,000 Credit/天</span>
+              </div>
+            </div>
+
+            <div className="upgrade-input-section">
+              <md-outlined-text-field
+                label="邀请码"
+                value={invitationCode}
+                onInput={(e: React.FormEvent) => setInvitationCode((e.target as HTMLInputElement).value)}
+                placeholder="请输入升级邀请码"
+                style={{ width: '100%' }}
+              ></md-outlined-text-field>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+                输入有效的邀请码即可升级到对应等级
+              </p>
+            </div>
+          </div>
+          <div slot="actions">
+            <md-text-button onClick={() => setShowUpgradeDialog(false)}>取消</md-text-button>
+            <md-filled-button 
+              onClick={handleUpgrade}
+              disabled={isUpgrading || !invitationCode.trim()}
+            >
+              {isUpgrading ? '正在升级...' : '立即升级'}
+            </md-filled-button>
           </div>
         </md-dialog>
       )}
