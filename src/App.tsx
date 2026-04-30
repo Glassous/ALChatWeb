@@ -293,7 +293,6 @@ function ChatApp() {
               if (conversationId) {
                 loadConversation(conversationId, realAssistantId || undefined);
               }
-              loadConversations();
             },
             (newTitle) => {
               if (conversationId) {
@@ -442,7 +441,6 @@ function ChatApp() {
           if (conversationId) {
             loadConversation(conversationId, realAssistantId || undefined);
           }
-          loadConversations();
         },
         (newTitle) => {
           // Handle automatic title generation from backend
@@ -503,18 +501,11 @@ function ChatApp() {
   };
 
   const handleUpdateConversation = (conversationId: string, newTitle: string) => {
-    // Update local state with new title and updated timestamp
-    const now = new Date().toISOString();
     setConversations((prev) => {
-      // Update the conversation
-      const updated = prev.map((c) => 
+      return prev.map((c) => 
         c.id === conversationId 
-          ? { ...c, title: newTitle, updated_at: now } 
+          ? { ...c, title: newTitle }
           : c
-      );
-      // Sort by updated_at descending (most recent first)
-      return updated.sort((a, b) => 
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
     });
   };

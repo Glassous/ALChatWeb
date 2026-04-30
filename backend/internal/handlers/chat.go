@@ -198,6 +198,16 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 		// Send done signal
 		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+
+		// Generate title BEFORE done so it's already saved in DB when frontend reloads
+		title, titleErr := h.conversationService.AutoGenerateTitle(bgCtx, req.ConversationID, userID, h.aiService)
+		if titleErr == nil && title != "" {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "title",
+				Content: title,
+			})
+		}
+
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 			Type: "done",
 			Data: gin.H{
@@ -206,16 +216,6 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 				"credits":              newCredits,
 			},
 		})
-
-		// Check if title needs auto-generation
-		title, err := h.conversationService.AutoGenerateTitle(bgCtx, req.ConversationID, userID, h.aiService)
-		if err == nil && title != "" {
-			// Notify subscribers about the new title if it was generated
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type:    "title",
-				Content: title,
-			})
-		}
 
 		// Optional: delay cleanup to allow last message to reach subscribers
 		time.AfterFunc(10*time.Second, func() {

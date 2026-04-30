@@ -278,7 +278,7 @@ export function Sidebar({
                   className={`history-item ${conv.id === currentConversationId ? 'active' : ''}`}
                   onClick={() => onSelectConversation(conv.id)}
                 >
-                  <div key={`${conv.id}-${conv.title}`} className="history-item-content">{conv.title}</div>
+                  <div className="history-item-content">{conv.title}</div>
                   <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
                     <md-icon-button onClick={(e: React.MouseEvent) => handleMoreClick(e, conv)}>
                       <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
