@@ -84,6 +84,20 @@ func (s *MemberService) DeductCredits(ctx context.Context, userID primitive.Obje
 	return updatedUser.Credits, nil
 }
 
+func (s *MemberService) DeductFlatCredits(ctx context.Context, userID primitive.ObjectID, cost float64) (float64, error) {
+	var updatedUser models.User
+	err := s.db.Users().FindOneAndUpdate(
+		ctx,
+		bson.M{"_id": userID},
+		bson.M{"$inc": bson.M{"credits": -cost}, "$set": bson.M{"updated_at": time.Now()}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updatedUser)
+	if err != nil {
+		return 0, err
+	}
+	return updatedUser.Credits, nil
+}
+
 func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID primitive.ObjectID, code string) (string, error) {
 	var invCode models.InvitationCode
 	err := s.db.Collection("invitation_codes").FindOne(ctx, bson.M{"code": code, "is_used": false}).Decode(&invCode)

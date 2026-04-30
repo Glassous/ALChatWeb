@@ -78,7 +78,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
-	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
 	adminHandler := handlers.NewAdminHandler(db, aiService, memberService)
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())

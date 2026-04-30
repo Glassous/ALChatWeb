@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
 	"context"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type ImageHandler struct {
@@ -19,15 +22,19 @@ type ImageHandler struct {
 	ossService          *services.OSSService
 	aiService           *services.AIService
 	streamManager       *services.StreamManager
+	memberService       *services.MemberService
+	db                  *database.MongoDB
 }
 
-func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService, streamManager *services.StreamManager) *ImageHandler {
+func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService, streamManager *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ImageHandler {
 	return &ImageHandler{
 		imageService:        imageService,
 		conversationService: conversationService,
 		ossService:          ossService,
 		aiService:           aiService,
 		streamManager:       streamManager,
+		memberService:       memberService,
+		db:                  db,
 	}
 }
 
@@ -44,6 +51,24 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	var req GenerateImageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check user credits and reset if needed
+	userIDObj, _ := primitive.ObjectIDFromHex(userID)
+	var user models.User
+	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
+		log.Printf("Failed to reset credits: %v", err)
+	}
+
+	if user.Credits <= 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
 		return
 	}
 
@@ -127,12 +152,16 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 			})
 		}
 
+		// Deduct flat 50 credits for image generation
+		newCredits, _ := h.memberService.DeductFlatCredits(bgCtx, userIDObj, 50)
+
 		// Send done signal
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 			Type: "done",
 			Data: gin.H{
 				"user_message_id":      userMsg.ID.Hex(),
 				"assistant_message_id": assistantMsg.ID.Hex(),
+				"credits":              newCredits,
 			},
 		})
 
