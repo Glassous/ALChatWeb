@@ -145,7 +145,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		var fullReasoning strings.Builder
 		var lastSearchData *models.SearchData
 
-		err = h.aiService.GenerateStream(
+		extraInput, extraOutput, err := h.aiService.GenerateStream(
 			bgCtx,
 			services.ConvertToGenkitMessages(genkitMessages),
 			req.Mode,
@@ -197,7 +197,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		}
 
 		// Send done signal
-		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(fullResponse.String()))
+		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 			Type: "done",
 			Data: gin.H{

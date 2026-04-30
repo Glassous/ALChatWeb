@@ -2,6 +2,7 @@ package services
 
 import (
 	"alchat-backend/internal/models"
+	"alchat-backend/internal/utils"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -138,8 +139,72 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 
 type SearchCallback func(data models.SearchData) error
 
+// GenerateKeywords generates search keywords based on conversation history
+func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message) (string, int, int, error) {
+	s.mu.RLock()
+	apiKey := s.searchAPIKey
+	baseURL := s.searchBaseURL
+	model := s.searchModel
+	s.mu.RUnlock()
+
+	// 1. Prepare messages for keyword generation
+	keywordPrompt := "你是一个搜索专家。根据提供的对话历史，总结出 1-3 个最适合用于联网搜索的关键词或短语。要求：1. 关键词应简洁、准确；2. 只输出关键词，用空格分隔；3. 不要包含任何解释或标点符号。"
+
+	keywordMessages := []*ai.Message{
+		{
+			Role:    ai.RoleSystem,
+			Content: []*ai.Part{ai.NewTextPart(keywordPrompt)},
+		},
+	}
+	// Only use the last few messages for keyword generation to keep it focused and save tokens
+	historyLimit := 5
+	start := 0
+	if len(messages) > historyLimit {
+		start = len(messages) - historyLimit
+	}
+	keywordMessages = append(keywordMessages, messages[start:]...)
+
+	// 2. Call AI (non-streaming)
+	var keywords strings.Builder
+	err := s.generateCustomStream(ctx, keywordMessages, apiKey, baseURL, model, func(token string, reasoning string) error {
+		keywords.WriteString(token)
+		return nil
+	})
+
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	result := strings.TrimSpace(keywords.String())
+	if result == "" {
+		// Fallback to the last message content if keyword generation fails
+		lastMsg := messages[len(messages)-1]
+		for _, p := range lastMsg.Content {
+			if p.IsText() {
+				result += p.Text
+			}
+		}
+	}
+
+	// Calculate tokens
+	var inputBuilder strings.Builder
+	inputBuilder.WriteString(keywordPrompt)
+	for _, m := range messages[start:] {
+		for _, p := range m.Content {
+			if p.IsText() {
+				inputBuilder.WriteString(p.Text)
+			}
+		}
+	}
+
+	inputTokens := utils.CountTokens(inputBuilder.String())
+	outputTokens := utils.CountTokens(result)
+
+	return result, inputTokens, outputTokens, nil
+}
+
 // GenerateStream generates AI response with streaming
-func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
 	multimodalAPIKey := s.multimodalAPIKey
 	model := s.model
@@ -173,11 +238,13 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 	}
 
 	if hasMultimodal && multimodalAPIKey != "" {
-		return s.generateMultimodalStream(ctx, messages, callback)
+		err := s.generateMultimodalStream(ctx, messages, callback)
+		return 0, 0, err
 	}
 
 	if mode == "expert" {
-		return s.generateExpertStream(ctx, messages, callback)
+		err := s.generateExpertStream(ctx, messages, callback)
+		return 0, 0, err
 	}
 
 	if mode == "search" {
@@ -193,7 +260,7 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 
 	for result, err := range stream {
 		if err != nil {
-			return fmt.Errorf("generation failed: %w", err)
+			return 0, 0, fmt.Errorf("generation failed: %w", err)
 		}
 
 		if result.Done {
@@ -205,12 +272,12 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 
 		if text != "" {
 			if err := callback(text, ""); err != nil {
-				return err
+				return 0, 0, err
 			}
 		}
 	}
 
-	return nil
+	return 0, 0, nil
 }
 
 func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
@@ -393,22 +460,27 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	return nil
 }
 
-func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) error {
+func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
 	model := s.searchModel
 	s.mu.RUnlock()
 
-	// 1. Get search query from the last user message
-	lastMsg := messages[len(messages)-1]
-	var queryBuilder strings.Builder
-	for _, p := range lastMsg.Content {
-		if p.IsText() {
-			queryBuilder.WriteString(p.Text)
+	// 1. Generate search keywords using AI
+	query, kwInput, kwOutput, err := s.GenerateKeywords(ctx, messages)
+	if err != nil {
+		// Log error but fallback to the last user message
+		fmt.Printf("Keyword generation error: %v, falling back to last message\n", err)
+		lastMsg := messages[len(messages)-1]
+		var queryBuilder strings.Builder
+		for _, p := range lastMsg.Content {
+			if p.IsText() {
+				queryBuilder.WriteString(p.Text)
+			}
 		}
+		query = queryBuilder.String()
 	}
-	query := queryBuilder.String()
 
 	// 2. Notify frontend that we are searching
 	if searchCallback != nil {
@@ -448,7 +520,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 
 	// Send the search tag to the frontend as a token
 	if err := callback(searchTag.String(), ""); err != nil {
-		return err
+		return kwInput, kwOutput, err
 	}
 
 	// 6. Generate final response using search results as context
@@ -485,7 +557,8 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	augmentedMessages = append(augmentedMessages, messages...)
 
 	// Use search model for final response
-	return s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, callback)
+	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, callback)
+	return kwInput, kwOutput, err
 }
 
 func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, callback func(token string, reasoning string) error) error {
