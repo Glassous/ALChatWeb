@@ -134,6 +134,13 @@ func main() {
 			{
 				admin.GET("/dashboard", adminHandler.GetDashboardStats)
 				admin.GET("/users", adminHandler.GetUsers)
+				admin.GET("/users/:id", adminHandler.GetUser)
+				admin.PUT("/users/:id/role", adminHandler.UpdateUserRole)
+				admin.DELETE("/users/:id", adminHandler.DeleteUser)
+				admin.GET("/conversations", adminHandler.GetConversations)
+				admin.GET("/conversations/:id", adminHandler.GetConversation)
+				admin.DELETE("/conversations/:id", adminHandler.DeleteConversation)
+				admin.GET("/messages/search", adminHandler.SearchMessages)
 				admin.GET("/configs", adminHandler.GetModelConfigs)
 				admin.PUT("/configs", adminHandler.UpdateModelConfig)
 			}
