@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -98,9 +99,10 @@ func (s *AIService) reinitGenkit() {
 	)
 }
 
-func (s *AIService) UpdateConfig(mode, baseURL, apiKey, model string) error {
+func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 	s.mu.Lock()
 	needReinit := false
+	log.Printf("[AIService] Updating config for mode: %s, model: %s, baseURL: %s, key length: %d", mode, model, baseURL, len(apiKey))
 	switch mode {
 	case "daily":
 		s.baseURL = baseURL

@@ -19,14 +19,16 @@ import (
 )
 
 type AdminHandler struct {
-	db        *database.MongoDB
-	aiService *services.AIService
+	db            *database.MongoDB
+	aiService     *services.AIService
+	memberService *services.MemberService
 }
 
-func NewAdminHandler(db *database.MongoDB, aiService *services.AIService) *AdminHandler {
+func NewAdminHandler(db *database.MongoDB, aiService *services.AIService, memberService *services.MemberService) *AdminHandler {
 	return &AdminHandler{
-		db:        db,
-		aiService: aiService,
+		db:            db,
+		aiService:     aiService,
+		memberService: memberService,
 	}
 }
 
@@ -106,7 +108,7 @@ func (h *AdminHandler) UpdateModelConfig(c *gin.Context) {
 	}
 
 	// Update AIService hot reload
-	err = h.aiService.UpdateConfig(req.Mode, req.BaseURL, req.APIKey, req.Model)
+	err = h.aiService.UpdateConfig(req.Mode, req.APIKey, req.BaseURL, req.Model)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hot-reload AI service: " + err.Error()})
 		return
@@ -333,7 +335,7 @@ func (h *AdminHandler) LoadConfigs(ctx context.Context) {
 	}
 
 	for _, cfg := range configs {
-		h.aiService.UpdateConfig(cfg.Mode, cfg.BaseURL, cfg.APIKey, cfg.Model)
+		h.aiService.UpdateConfig(cfg.Mode, cfg.APIKey, cfg.BaseURL, cfg.Model)
 	}
 }
 
@@ -498,7 +500,14 @@ func (h *AdminHandler) UpdateSystemSettings(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "System settings updated successfully"})
+	// Refresh all users' credits to the new limits
+	go func() {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.memberService.RefreshAllUsersCredits(refreshCtx)
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "System settings updated successfully and credits refresh started"})
 }
 
 // SetupAdmin ensures at least one admin exists

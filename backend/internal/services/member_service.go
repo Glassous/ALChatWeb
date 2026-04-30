@@ -125,3 +125,40 @@ func (s *MemberService) UpgradeWithInvitationCode(ctx context.Context, userID pr
 
 	return string(invCode.Type), nil
 }
+
+func (s *MemberService) RefreshAllUsersCredits(ctx context.Context) error {
+	settings, err := s.GetSystemSettings(ctx)
+	if err != nil {
+		return err
+	}
+
+	cursor, err := s.db.Users().Find(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	now := time.Now()
+	for cursor.Next(ctx) {
+		var user models.User
+		if err := cursor.Decode(&user); err != nil {
+			continue
+		}
+
+		dailyLimit, _ := utils.GetMemberLimits(user.MemberType, settings.CampaignConfig.IsActive, settings.CampaignConfig.CampaignCredits)
+		_, err = s.db.Users().UpdateOne(
+			ctx,
+			bson.M{"_id": user.ID},
+			bson.M{"$set": bson.M{
+				"credits":              dailyLimit,
+				"last_credit_reset_at": now,
+				"updated_at":           now,
+			}},
+		)
+		if err != nil {
+			continue
+		}
+	}
+
+	return nil
+}
