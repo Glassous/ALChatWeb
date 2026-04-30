@@ -1,21 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Cropper from 'react-easy-crop';
-import type { Point, Area } from 'react-easy-crop';
+import { useNavigate } from 'react-router-dom';
 import '@material/web/iconbutton/icon-button.js';
-import '@material/web/fab/fab.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/dialog/dialog.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/button/filled-button.js';
-import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/progress/circular-progress.js';
-import { motion } from 'framer-motion';
 import './Sidebar.css';
 import { apiClient } from '../../services/api';
-import getCroppedImg from '../../utils/cropImage';
 
 interface Conversation {
   id: string;
@@ -57,11 +52,11 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
-  onSystemPromptUpdated,
   isLoading = false,
   isMobileDrawerOpen = false,
   onMobileDrawerClose
 }: SidebarProps) {
+  const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -71,36 +66,17 @@ export function Sidebar({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showSystemPromptDialog, setShowSystemPromptDialog] = useState(false);
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [includeDateTime, setIncludeDateTime] = useState(false);
-  const [includeLocation, setIncludeLocation] = useState(false);
-  const [isSavingSystemPrompt, setIsSavingSystemPrompt] = useState(false);
-  const [isLoadingSystemPrompt, setIsLoadingSystemPrompt] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
-  const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
-  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
-  const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
-  const [invitationCode, setInvitationCode] = useState('');
-  const [isUpgrading, setIsUpgrading] = useState(false);
-  const [userNickname, setUserNickname] = useState('');
-  const [originalNickname, setOriginalNickname] = useState('');
-  const [userAvatar, setUserAvatar] = useState('');
   const [userMemberType, setUserMemberType] = useState('free');
-  const [userMemberExpiry, setUserMemberExpiry] = useState<string | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   useEffect(() => {
-    // Initial fetch of profile to get latest credits and member type
     const fetchProfile = async () => {
       try {
         const user = await apiClient.getProfile();
         setUserMemberType(user.member_type || 'free');
-        setUserMemberExpiry(user.member_expiry || null);
         setUserCredits(user.credits ?? 1000);
         localStorage.setItem('user', JSON.stringify(user));
       } catch (error) {
@@ -110,7 +86,6 @@ export function Sidebar({
     fetchProfile();
   }, []);
 
-  // Listen for storage changes or custom events for credit updates
   useEffect(() => {
     const handleStorageChange = () => {
       try {
@@ -118,66 +93,20 @@ export function Sidebar({
         if (userStr) {
           const user = JSON.parse(userStr);
           setUserMemberType(user.member_type || 'free');
-          setUserMemberExpiry(user.member_expiry || null);
           setUserCredits(user.credits ?? 1000);
         }
       } catch { }
     };
 
     window.addEventListener('storage', handleStorageChange);
-    // Custom event for credits update within the same window
     window.addEventListener('user-profile-updated', handleStorageChange);
-    
-    const handleOpenUpgrade = () => {
-      setShowUpgradeDialog(true);
-    };
-    window.addEventListener('open-upgrade-dialog', handleOpenUpgrade);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('user-profile-updated', handleStorageChange);
-      window.removeEventListener('open-upgrade-dialog', handleOpenUpgrade);
     };
   }, []);
 
-  const handleUpgrade = async () => {
-    if (!invitationCode.trim()) return;
-    setIsUpgrading(true);
-    try {
-      await apiClient.upgrade(invitationCode.trim());
-      setInvitationCode('');
-      setShowUpgradeDialog(false);
-      
-      // Refresh profile to get latest info
-      const user = await apiClient.getProfile();
-      setUserMemberType(user.member_type || 'free');
-      setUserMemberExpiry(user.member_expiry || null);
-      setUserCredits(user.credits ?? 1000);
-      
-      // Prepare info for success dialog
-      setUpgradeInfo({
-        type: user.member_type || 'free',
-        expiry: user.member_expiry || null
-      });
-      
-      localStorage.setItem('user', JSON.stringify(user));
-      window.dispatchEvent(new Event('user-profile-updated'));
-      
-      // Show success dialog
-      setShowUpgradeSuccess(true);
-    } catch (error: any) {
-      alert(error.message || '升级失败');
-    } finally {
-      setIsUpgrading(false);
-    }
-  };
-
-  const [isCropping, setIsCropping] = useState(false);
-  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -237,68 +166,11 @@ export function Sidebar({
     }
   }, [showSettings, contextMenu]);
 
-  const handleCloseUserDialog = () => {
-    setShowUserProfileDialog(false);
-  };
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      setImageToCrop(reader.result as string);
-      setIsCropping(true);
-    });
-    reader.readAsDataURL(file);
-  };
-
-  const onCropComplete = useCallback((_: Area, _croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(_croppedAreaPixels);
-  }, []);
-
-  const handleConfirmCrop = async () => {
-    if (!imageToCrop || !croppedAreaPixels) return;
-
-    setIsUploadingAvatar(true);
-    setIsCropping(false);
-    
-    try {
-      const croppedBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
-      if (!croppedBlob) throw new Error('Failed to crop image');
-
-      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
-      const response = await apiClient.updateAvatar(croppedFile);
-      const newAvatarUrl = response.avatar;
-      setUserAvatar(newAvatarUrl);
-      
-      // Update local storage
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const user = JSON.parse(userStr);
-        user.avatar = newAvatarUrl;
-        localStorage.setItem('user', JSON.stringify(user));
-      }
-    } catch (error) {
-      console.error('Failed to upload avatar', error);
-      alert('上传头像失败，请稍后重试');
-    } finally {
-      setIsUploadingAvatar(false);
-      setImageToCrop(null);
-      // Reset input
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   const handleMoreClick = (e: React.MouseEvent, conversation: Conversation) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
-    const menuHeight = 100; // Approximate menu height
+    const menuHeight = 100;
     
     setContextMenu({
       conversationId: conversation.id,
@@ -328,7 +200,6 @@ export function Sidebar({
         await apiClient.deleteConversation(selectedConversation.id);
         setShowDeleteDialog(false);
         setSelectedConversation(null);
-        // Call the callback after successful deletion
         onDeleteConversation(selectedConversation.id);
       } catch (error) {
         console.error('Failed to delete conversation:', error);
@@ -344,7 +215,6 @@ export function Sidebar({
         setShowEditDialog(false);
         setSelectedConversation(null);
         setEditTitle('');
-        // Call the callback after successful update
         onUpdateConversation(selectedConversation.id, editTitle.trim());
       } catch (error) {
         console.error('Failed to update conversation title:', error);
@@ -353,27 +223,8 @@ export function Sidebar({
     }
   };
 
-  const handleSaveSystemPrompt = async () => {
-    setIsSavingSystemPrompt(true);
-    try {
-      await apiClient.updateSystemPrompt({
-        system_prompt: systemPrompt,
-        include_datetime: includeDateTime,
-        include_location: includeLocation
-      });
-      setShowSystemPromptDialog(false);
-      onSystemPromptUpdated?.();
-    } catch (error) {
-      console.error('Failed to save system prompt', error);
-      alert('保存失败，请重试');
-    } finally {
-      setIsSavingSystemPrompt(false);
-    }
-  };
-
   const handleAIGenerateTitle = async () => {
     if (!selectedConversation || isGeneratingTitle) return;
-
     setIsGeneratingTitle(true);
     try {
       const newTitle = await apiClient.generateTitle(selectedConversation.id);
@@ -388,18 +239,13 @@ export function Sidebar({
 
   return (
     <>
-      {/* Mobile drawer backdrop */}
       {isMobileDrawerOpen && (
-        <div 
-          className="drawer-backdrop" 
-          onClick={onMobileDrawerClose}
-        />
+        <div className="drawer-backdrop" onClick={onMobileDrawerClose} />
       )}
       
       <div className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'} ${isMobileDrawerOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-top">
           <md-icon-button onClick={() => {
-            // On mobile, close the drawer; on desktop, toggle expand/collapse
             if (window.innerWidth <= 768 && isMobileDrawerOpen) {
               onMobileDrawerClose?.();
             } else {
@@ -412,11 +258,7 @@ export function Sidebar({
           </md-icon-button>
           
           <div className="fab-container">
-            <button 
-              className="new-chat-button"
-              onClick={onNewChat}
-              aria-label="新对话"
-            >
+            <button className="new-chat-button" onClick={onNewChat} aria-label="新对话">
               <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                 <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
               </svg>
@@ -474,29 +316,17 @@ export function Sidebar({
               <div className="settings-row">
                 <span className="settings-label">主题</span>
                 <div className="theme-toggle-group">
-                  <button 
-                    className={`theme-button ${theme === 'auto' ? 'active' : ''}`}
-                    onClick={() => setTheme('auto')}
-                    title="自动"
-                  >
+                  <button className={`theme-button ${theme === 'auto' ? 'active' : ''}`} onClick={() => setTheme('auto')} title="自动">
                     <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
                       <path d="M312-320h64l32-92h146l32 92h62L512-680h-64L312-320Zm114-144 52-150h4l52 150H426Zm54 436L346-160H160v-186L28-480l132-134v-186h186l134-132 134 132h186v186l132 134-132 134v186H614L480-28Zm0-112 100-100h140v-140l100-100-100-100v-140H580L480-820 380-720H240v140L140-480l100 100v140h140l100 100Zm0-340Z"/>
                     </svg>
                   </button>
-                  <button 
-                    className={`theme-button ${theme === 'light' ? 'active' : ''}`}
-                    onClick={() => setTheme('light')}
-                    title="浅色"
-                  >
+                  <button className={`theme-button ${theme === 'light' ? 'active' : ''}`} onClick={() => setTheme('light')} title="浅色">
                     <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
                       <path d="M565-395q35-35 35-85t-35-85q-35-35-85-35t-85 35q-35 35-35 85t35 85q35 35 85 35t85-35Zm-226.5 56.5Q280-397 280-480t58.5-141.5Q397-680 480-680t141.5 58.5Q680-563 680-480t-58.5 141.5Q563-280 480-280t-141.5-58.5ZM200-440H40v-80h160v80Zm720 0H760v-80h160v80ZM440-760v-160h80v160h-80Zm0 720v-160h80v160h-80ZM256-650l-101-97 57-59 96 100-52 56Zm492 496-97-101 53-55 101 97-57 59Zm-98-550 97-101 59 57-100 96-56-52ZM154-212l101-97 55 53-97 101-59-57Zm326-268Z"/>
                     </svg>
                   </button>
-                  <button 
-                    className={`theme-button ${theme === 'dark' ? 'active' : ''}`}
-                    onClick={() => setTheme('dark')}
-                    title="深色"
-                  >
+                  <button className={`theme-button ${theme === 'dark' ? 'active' : ''}`} onClick={() => setTheme('dark')} title="深色">
                     <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
                       <path d="M480-120q-150 0-255-105T120-480q0-150 105-255t255-105q14 0 27.5 1t26.5 3q-41 29-65.5 75.5T444-660q0 90 63 153t153 63q55 0 101-24.5t75-65.5q2 13 3 26.5t1 27.5q0 150-105 255T480-120Zm0-80q88 0 158-48.5T740-375q-20 5-40 8t-40 3q-123 0-209.5-86.5T364-660q0-20 3-40t8-40q-78 32-126.5 102T200-480q0 116 82 198t198 82Zm-10-270Z"/>
                     </svg>
@@ -505,46 +335,10 @@ export function Sidebar({
               </div>
               <div className="settings-divider"></div>
               <div 
-                className="settings-row clickable"
-                onClick={async () => {
-                  setShowSettings(false);
-                  setIsLoadingSystemPrompt(true);
-                  setShowSystemPromptDialog(true);
-                  try {
-                    const data = await apiClient.getSystemPrompt();
-                    setSystemPrompt(data.system_prompt || '');
-                    setIncludeDateTime(data.include_datetime || false);
-                    setIncludeLocation(data.include_location || false);
-                  } catch (error) {
-                    console.error('Failed to fetch system prompt', error);
-                  } finally {
-                    setIsLoadingSystemPrompt(false);
-                  }
-                }}
-              >
-                <div className="settings-row-content">
-                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                    <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
-                  </svg>
-                  <span className="settings-label">系统提示词</span>
-                </div>
-              </div>
-              <div className="settings-divider"></div>
-              <div 
                 className="settings-row user-info-row clickable"
                 onClick={() => {
                   setShowSettings(false);
-                  try {
-                    const userStr = localStorage.getItem('user');
-                    if (userStr) {
-                      const user = JSON.parse(userStr);
-                      const nickname = user.nickname || user.username || '';
-                      setUserNickname(nickname);
-                      setOriginalNickname(nickname);
-                      setUserAvatar(user.avatar || '');
-                    }
-                  } catch { }
-                  setShowUserProfileDialog(true);
+                  navigate('/settings');
                 }}
               >
                 <div className="user-profile-preview">
@@ -579,28 +373,11 @@ export function Sidebar({
                         return '用户';
                       })()}
                     </span>
-                    <div 
-                      className="member-info-row" 
-                      style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowSettings(false);
-                        setShowUpgradeDialog(true);
-                      }}
-                    >
-                      <img 
-                        className="member-badge-icon" 
-                        src={`/badge-${userMemberType}.svg`} 
-                        alt={userMemberType} 
-                      />
+                    <div className="member-info-row" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <img className="member-badge-icon" src={`/badge-${userMemberType}.svg`} alt={userMemberType} />
                       {userCredits !== null && (
                         <span className="user-credits">
-                          余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                        </span>
-                      )}
-                      {userMemberType !== 'free' && userMemberExpiry && (
-                        <span className="user-expiry" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          至 {new Date(userMemberExpiry).toLocaleDateString()}
+                          {userCredits.toLocaleString(undefined, { maximumFractionDigits: 0 })}credit
                         </span>
                       )}
                     </div>
@@ -621,25 +398,19 @@ export function Sidebar({
                 left: `${contextMenu.position.left}px`
               }}
             >
-              <button 
-                className="context-menu-item"
-                onClick={() => {
-                  const conv = conversations.find(c => c.id === contextMenu.conversationId);
-                  if (conv) handleEditClick(conv);
-              }}
-            >
-              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
-              </svg>
-              <span>编辑标题</span>
-            </button>
-              <button 
-                className="context-menu-item danger"
-                onClick={() => {
-                  const conv = conversations.find(c => c.id === contextMenu.conversationId);
-                  if (conv) handleDeleteClick(conv);
-                }}
-              >
+              <button className="context-menu-item" onClick={() => {
+                const conv = conversations.find(c => c.id === contextMenu.conversationId);
+                if (conv) handleEditClick(conv);
+              }}>
+                <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                  <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
+                </svg>
+                <span>编辑标题</span>
+              </button>
+              <button className="context-menu-item danger" onClick={() => {
+                const conv = conversations.find(c => c.id === contextMenu.conversationId);
+                if (conv) handleDeleteClick(conv);
+              }}>
                 <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                   <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
                 </svg>
@@ -650,404 +421,40 @@ export function Sidebar({
           )}
 
           {showDeleteDialog && selectedConversation && (
-            <md-dialog 
-              open={showDeleteDialog}
-              onClose={() => setShowDeleteDialog(false)}
-            >
+            <md-dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>
               <div slot="headline">删除对话</div>
-              <div slot="content">
-                确定要删除对话 "{selectedConversation.title}" 吗？此操作无法撤销。
-              </div>
+              <div slot="content">确定要删除对话 "{selectedConversation.title}" 吗？此操作无法撤销。</div>
               <div slot="actions">
                 <md-text-button onClick={() => setShowDeleteDialog(false)}>取消</md-text-button>
-                <md-filled-button 
-                  onClick={handleConfirmDelete}
-                  style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}
-                >
-                  删除
-                </md-filled-button>
+                <md-filled-button onClick={handleConfirmDelete} style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}>删除</md-filled-button>
               </div>
             </md-dialog>
           )}
 
           {showEditDialog && selectedConversation && (
-            <md-dialog 
-              open={showEditDialog}
-              onClose={() => setShowEditDialog(false)}
-            >
+            <md-dialog open={showEditDialog} onClose={() => setShowEditDialog(false)}>
               <div slot="headline">编辑对话标题</div>
               <div slot="content" style={{ paddingTop: '16px' }}>
                 <md-outlined-text-field
-                    label="对话标题"
-                    value={editTitle}
-                    onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
-                    onKeyDown={(e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter') {
-                      handleConfirmEdit();
-                    }
-                  }}
+                  label="对话标题"
+                  value={editTitle}
+                  onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') handleConfirmEdit(); }}
                   style={{ width: '100%' }}
                 >
-                  <md-icon-button 
-                    slot="trailing-icon"
-                    onClick={handleAIGenerateTitle}
-                    disabled={isGeneratingTitle}
-                    title="AI 生成标题"
-                  >
-                    {isGeneratingTitle ? (
-                      <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '24px' }} />
-                    ) : (
-                      AI_ICON
-                    )}
+                  <md-icon-button slot="trailing-icon" onClick={handleAIGenerateTitle} disabled={isGeneratingTitle} title="AI 生成标题">
+                    {isGeneratingTitle ? <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '24px' }} /> : AI_ICON}
                   </md-icon-button>
                 </md-outlined-text-field>
               </div>
               <div slot="actions">
                 <md-text-button onClick={() => setShowEditDialog(false)}>取消</md-text-button>
-                <md-filled-button 
-                  onClick={handleConfirmEdit} 
-                  disabled={!editTitle.trim()}
-                >
-                  保存
-                </md-filled-button>
-              </div>
-            </md-dialog>
-          )}
-
-          {showSystemPromptDialog && (
-            <md-dialog 
-              open={showSystemPromptDialog}
-              onClose={() => setShowSystemPromptDialog(false)}
-            >
-              <div slot="headline">前置提示词</div>
-              <div slot="content" className="system-prompt-content">
-                {isLoadingSystemPrompt ? (
-                  <div className="dialog-loading">
-                    <md-circular-progress indeterminate></md-circular-progress>
-                  </div>
-                ) : (
-                  <>
-                    <div className="system-prompt-field">
-                      <md-outlined-text-field
-                        type="textarea"
-                        label="输入前置提示词..."
-                        rows={10}
-                        value={systemPrompt}
-                        onInput={(e: React.FormEvent<HTMLInputElement>) => setSystemPrompt((e.target as HTMLInputElement).value)}
-                      ></md-outlined-text-field>
-                    </div>
-                    
-                    <div className="insert-options-section">
-                      <div className="insert-options-title">插入选项</div>
-                      <div className="insert-options-grid">
-                        <div 
-                          className={`insert-option-card ${includeDateTime ? 'active' : ''}`}
-                          onClick={() => setIncludeDateTime(!includeDateTime)}
-                        >
-                          <svg className="option-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                            <path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z"/>
-                          </svg>
-                          <span className="option-label">日期+时间</span>
-                          {includeDateTime && (
-                            <svg className="active-check" xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                              <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
-                            </svg>
-                          )}
-                        </div>
-                        
-                        <div 
-                          className={`insert-option-card ${includeLocation ? 'active' : ''}`}
-                          onClick={() => setIncludeLocation(!includeLocation)}
-                        >
-                          <svg className="option-icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                            <path d="M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 115-79.5 232.5T480-80Z"/>
-                          </svg>
-                          <span className="option-label">地点</span>
-                          {includeLocation && (
-                            <svg className="active-check" xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                              <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-              <div slot="actions">
-                <md-text-button onClick={() => setShowSystemPromptDialog(false)}>取消</md-text-button>
-                <md-filled-button 
-                  onClick={handleSaveSystemPrompt}
-                  disabled={isSavingSystemPrompt || isLoadingSystemPrompt}
-                >
-                  {isSavingSystemPrompt ? '保存中...' : '保存'}
-                </md-filled-button>
+                <md-filled-button onClick={handleConfirmEdit} disabled={!editTitle.trim()}>保存</md-filled-button>
               </div>
             </md-dialog>
           )}
         </div>
       </div>
-
-      {showUserProfileDialog && (
-        <md-dialog 
-          open={showUserProfileDialog}
-          onClose={handleCloseUserDialog}
-        >
-          <div slot="headline">用户设置</div>
-          <form slot="content" method="dialog" className="user-settings-content">
-            <div className="avatar-section">
-              <div className="avatar-container" onClick={handleAvatarClick}>
-                {userAvatar ? (
-                  <img src={userAvatar} alt="User Avatar" className="user-avatar-preview" />
-                ) : (
-                  <div className="user-avatar-placeholder">
-                    <svg xmlns="http://www.w3.org/2000/svg" height="40px" viewBox="0 -960 960 960" width="40px" fill="currentColor">
-                      <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
-                    </svg>
-                  </div>
-                )}
-                {isUploadingAvatar && (
-                  <div className="avatar-loading">
-                    <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '32px' }} />
-                  </div>
-                )}
-                <div className="avatar-overlay">
-                  <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                    <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
-                  </svg>
-                </div>
-              </div>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                accept="image/*" 
-                style={{ display: 'none' }} 
-              />
-              <span className="avatar-hint">点击更换头像</span>
-            </div>
-
-            <div className="nickname-section">
-              <md-outlined-text-field
-                label="修改昵称"
-                value={userNickname}
-                onInput={(e: React.FormEvent<HTMLInputElement>) => setUserNickname((e.target as HTMLInputElement).value)}
-                placeholder="请输入新昵称"
-                style={{ width: '100%' }}
-              >
-                {userNickname !== originalNickname && userNickname.trim() && (
-                  <div slot="trailing-icon" className="nickname-actions">
-                    <md-icon-button
-                      onClick={(e: React.MouseEvent) => {
-                        e.stopPropagation();
-                        setUserNickname(originalNickname);
-                      }}
-                      title="取消"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
-                        <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
-                      </svg>
-                    </md-icon-button>
-                    <md-icon-button
-                      onClick={async (e: React.MouseEvent) => {
-                        e.stopPropagation();
-                        try {
-                          await apiClient.updateProfile({ nickname: userNickname });
-                          const userStr = localStorage.getItem('user');
-                          if (userStr) {
-                            const user = JSON.parse(userStr);
-                            user.nickname = userNickname;
-                            localStorage.setItem('user', JSON.stringify(user));
-                          }
-                          setOriginalNickname(userNickname);
-                        } catch (error) {
-                          console.error('Failed to update profile', error);
-                          alert('修改昵称失败，请稍后重试');
-                        }
-                      }}
-                      title="确认"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
-                        <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
-                      </svg>
-                    </md-icon-button>
-                  </div>
-                )}
-              </md-outlined-text-field>
-            </div>
-            
-            <div className="logout-section">
-              <md-filled-button
-                className="logout-btn"
-                onClick={() => {
-                  localStorage.removeItem('token');
-                  localStorage.removeItem('user');
-                  window.location.href = '/welcome';
-                }}
-                style={{ width: '100%' }}
-              >
-                退出登录
-              </md-filled-button>
-            </div>
-          </form>
-          <div slot="actions">
-            <md-text-button onClick={handleCloseUserDialog}>关闭</md-text-button>
-          </div>
-        </md-dialog>
-      )}
-
-      {showUpgradeDialog && (
-        <md-dialog 
-          open={showUpgradeDialog}
-          onClose={() => setShowUpgradeDialog(false)}
-        >
-          <div slot="headline">会员升级</div>
-          <div slot="content" className="upgrade-dialog-content">
-            <div className="upgrade-benefits">
-              <div className="benefit-item">
-                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                </svg>
-                <span><b>Free</b>: 1,000 Credit/天 (默认)</span>
-              </div>
-              <div className="benefit-item">
-                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                </svg>
-                <span><b>Pro</b>: 5,000 Credit/天</span>
-              </div>
-              <div className="benefit-item">
-                <svg className="benefit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                </svg>
-                <span><b>Max</b>: 10,000 Credit/天</span>
-              </div>
-            </div>
-
-            <div className="upgrade-input-section">
-              <md-outlined-text-field
-                label="邀请码"
-                value={invitationCode}
-                onInput={(e: React.FormEvent<HTMLInputElement>) => setInvitationCode((e.target as HTMLInputElement).value)}
-                placeholder="请输入升级邀请码"
-                style={{ width: '100%' }}
-              ></md-outlined-text-field>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
-                输入有效的邀请码即可升级到对应等级
-              </p>
-            </div>
-          </div>
-          <div slot="actions">
-            <md-text-button onClick={() => setShowUpgradeDialog(false)}>取消</md-text-button>
-            <md-filled-button 
-              onClick={handleUpgrade}
-              disabled={isUpgrading || !invitationCode.trim()}
-            >
-              {isUpgrading ? '正在升级...' : '立即升级'}
-            </md-filled-button>
-          </div>
-        </md-dialog>
-      )}
-
-      {showUpgradeSuccess && upgradeInfo && (
-        <md-dialog 
-          open={showUpgradeSuccess}
-          onClose={() => setShowUpgradeSuccess(false)}
-          className="upgrade-success-dialog"
-        >
-          <div slot="content" className="upgrade-success-content">
-            <motion.div 
-              className="success-animation-container"
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ 
-                type: "spring",
-                stiffness: 260,
-                damping: 20,
-                delay: 0.1
-              }}
-            >
-              <div className="success-icon-wrapper">
-                <motion.svg 
-                  viewBox="0 0 52 52" 
-                  className="success-check-svg"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 0.5, delay: 0.2 }}
-                >
-                  <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
-                  <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-                </motion.svg>
-              </div>
-              
-              <motion.h2 
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
-                兑换成功！
-              </motion.h2>
-              
-              <motion.div 
-                className="success-details"
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.5 }}
-              >
-                <div className="success-detail-item">
-                  <span className="detail-label">当前等级</span>
-                  <img 
-                    className="member-badge-icon large" 
-                    src={`/badge-${upgradeInfo.type}.svg`} 
-                    alt={upgradeInfo.type} 
-                  />
-                </div>
-                {upgradeInfo.expiry && (
-                  <div className="success-detail-item">
-                    <span className="detail-label">有效期至</span>
-                    <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
-                  </div>
-                )}
-              </motion.div>
-            </motion.div>
-          </div>
-          <div slot="actions">
-            <md-filled-button onClick={() => setShowUpgradeSuccess(false)}>太棒了</md-filled-button>
-          </div>
-        </md-dialog>
-      )}
-
-      {isCropping && imageToCrop && (
-        <md-dialog 
-          open={isCropping}
-          onClose={() => setIsCropping(false)}
-          className="crop-dialog"
-        >
-          <div slot="headline">裁剪头像</div>
-          <div slot="content" className="crop-container">
-            <Cropper
-              image={imageToCrop}
-              crop={crop}
-              zoom={zoom}
-              aspect={1}
-              onCropChange={setCrop}
-              onCropComplete={onCropComplete}
-              onZoomChange={setZoom}
-            />
-          </div>
-          <div slot="actions">
-            <md-text-button onClick={() => {
-              setIsCropping(false);
-              setImageToCrop(null);
-            }}>
-              取消
-            </md-text-button>
-            <md-filled-button onClick={handleConfirmCrop}>
-              确定
-            </md-filled-button>
-          </div>
-        </md-dialog>
-      )}
     </>
   );
 }

@@ -10,6 +10,8 @@ interface TopBarProps {
   isTreeViewOpen?: boolean;
   userMemberType?: string;
   onShowUpgrade?: () => void;
+  showBackButton?: boolean;
+  onBack?: () => void;
 }
 
 export function TopBar({ 
@@ -20,16 +22,26 @@ export function TopBar({
   onOverviewClick,
   isTreeViewOpen,
   userMemberType = 'free',
-  onShowUpgrade
+  onShowUpgrade,
+  showBackButton,
+  onBack
 }: TopBarProps) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <md-icon-button className="mobile-menu-button" onClick={onMenuClick}>
-          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-            <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z"/>
-          </svg>
-        </md-icon-button>
+        {showBackButton ? (
+          <md-icon-button onClick={onBack}>
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+              <path d="m313-440 224 224-57 57-320-320 320-320 57 57-224 224h487v80H313Z"/>
+            </svg>
+          </md-icon-button>
+        ) : (
+          <md-icon-button className="mobile-menu-button" onClick={onMenuClick}>
+            <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+              <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z"/>
+            </svg>
+          </md-icon-button>
+        )}
         <div className="topbar-logo-container">
           <h1 className="topbar-title">AL Chat</h1>
           {conversationTitle && (

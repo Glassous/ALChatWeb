@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
@@ -12,6 +12,7 @@ import { Welcome } from './pages/Welcome';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
+import { UserSettings } from './pages/UserSettings';
 import './App.css';
 
 // Protected Route component
@@ -25,6 +26,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 // Chat Application component
 function ChatApp() {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -672,7 +674,7 @@ function ChatApp() {
           onOverviewClick={() => setIsTreeViewOpen(!isTreeViewOpen)}
           isTreeViewOpen={isTreeViewOpen}
           userMemberType={userMemberType}
-          onShowUpgrade={() => window.dispatchEvent(new Event('open-upgrade-dialog'))}
+          onShowUpgrade={() => navigate('/settings')}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
         <div className="chat-container">
@@ -720,7 +722,7 @@ function ChatApp() {
             userMessages={activePath.filter(m => m.role === 'user').map(m => m.content)}
             userCredits={userCredits}
             userMemberType={userMemberType}
-            onShowUpgrade={() => window.dispatchEvent(new Event('open-upgrade-dialog'))}
+            onShowUpgrade={() => navigate('/settings')}
           />
         </div>
       </div>
@@ -752,6 +754,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ChatApp />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/settings" 
+          element={
+            <ProtectedRoute>
+              <UserSettings />
             </ProtectedRoute>
           } 
         />
