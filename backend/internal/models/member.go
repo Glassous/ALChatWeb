@@ -9,15 +9,16 @@ import (
 type MemberType string
 
 const (
-	MemberFree MemberType = "free"
-	MemberPro  MemberType = "pro"
-	MemberMax  MemberType = "max"
+	MemberFree  MemberType = "free"
+	MemberPro   MemberType = "pro"
+	MemberMax   MemberType = "max"
+	MemberUltra MemberType = "ultra"
 )
 
 type InvitationCode struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	Code           string             `bson:"code" json:"code"`
-	Type           MemberType         `bson:"type" json:"type"` // pro, max
+	Type           MemberType         `bson:"type" json:"type"` // pro, max, ultra
 	DurationMonths int                `bson:"duration_months" json:"duration_months"`
 	IsUsed         bool               `bson:"is_used" json:"is_used"`
 	UsedBy    primitive.ObjectID `bson:"used_by,omitempty" json:"used_by,omitempty"`

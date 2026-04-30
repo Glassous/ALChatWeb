@@ -38,6 +38,8 @@ func GetMemberLimits(memberType string, isCampaign bool, campaignCredits map[str
 			dailyLimit = 5000
 		case "max":
 			dailyLimit = 10000
+		case "ultra":
+			dailyLimit = 50000
 		default:
 			dailyLimit = 1000
 		}
@@ -46,6 +48,8 @@ func GetMemberLimits(memberType string, isCampaign bool, campaignCredits map[str
 	switch memberType {
 	case "pro", "max":
 		warningThreshold = 100
+	case "ultra":
+		warningThreshold = 200
 	default:
 		warningThreshold = 50
 	}
