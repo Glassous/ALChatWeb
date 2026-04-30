@@ -52,6 +52,23 @@ function ChatApp() {
     loadConversations();
     loadSystemPromptSettings();
     loadUserProfile();
+
+    // Listen for profile updates from other components (like Sidebar upgrade)
+    const handleProfileUpdate = () => {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          setUserCredits(user.credits ?? 1000);
+          setUserMemberType(user.member_type || 'free');
+        }
+      } catch (error) {
+        console.error('Failed to parse user profile from storage:', error);
+      }
+    };
+
+    window.addEventListener('user-profile-updated', handleProfileUpdate);
+    return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
   }, []);
 
   const loadUserProfile = async () => {
@@ -654,6 +671,8 @@ function ChatApp() {
           showOverviewButton={isTree}
           onOverviewClick={() => setIsTreeViewOpen(!isTreeViewOpen)}
           isTreeViewOpen={isTreeViewOpen}
+          userMemberType={userMemberType}
+          onShowUpgrade={() => window.dispatchEvent(new Event('open-upgrade-dialog'))}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
         <div className="chat-container">

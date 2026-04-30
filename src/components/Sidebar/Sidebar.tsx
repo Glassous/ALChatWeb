@@ -12,6 +12,7 @@ import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/progress/circular-progress.js';
+import { motion } from 'framer-motion';
 import './Sidebar.css';
 import { apiClient } from '../../services/api';
 import getCroppedImg from '../../utils/cropImage';
@@ -81,6 +82,8 @@ export function Sidebar({
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [showUserProfileDialog, setShowUserProfileDialog] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
+  const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
   const [invitationCode, setInvitationCode] = useState('');
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [userNickname, setUserNickname] = useState('');
@@ -144,11 +147,24 @@ export function Sidebar({
       await apiClient.upgrade(invitationCode.trim());
       setInvitationCode('');
       setShowUpgradeDialog(false);
-      // Refresh profile
+      
+      // Refresh profile to get latest info
       const user = await apiClient.getProfile();
+      setUserMemberType(user.member_type || 'free');
+      setUserMemberExpiry(user.member_expiry || null);
+      setUserCredits(user.credits ?? 1000);
+      
+      // Prepare info for success dialog
+      setUpgradeInfo({
+        type: user.member_type || 'free',
+        expiry: user.member_expiry || null
+      });
+      
       localStorage.setItem('user', JSON.stringify(user));
       window.dispatchEvent(new Event('user-profile-updated'));
-      alert('升级成功！');
+      
+      // Show success dialog
+      setShowUpgradeSuccess(true);
     } catch (error: any) {
       alert(error.message || '升级失败');
     } finally {
@@ -572,9 +588,11 @@ export function Sidebar({
                         setShowUpgradeDialog(true);
                       }}
                     >
-                      <span className={`member-badge ${userMemberType}`}>
-                        {userMemberType === 'free' ? 'Free' : userMemberType === 'pro' ? 'Pro' : 'Max'}
-                      </span>
+                      <img 
+                        className="member-badge-icon" 
+                        src={`/badge-${userMemberType}.svg`} 
+                        alt={userMemberType} 
+                      />
                       {userCredits !== null && (
                         <span className="user-credits">
                           余额: {userCredits.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -660,10 +678,10 @@ export function Sidebar({
               <div slot="headline">编辑对话标题</div>
               <div slot="content" style={{ paddingTop: '16px' }}>
                 <md-outlined-text-field
-                  label="对话标题"
-                  value={editTitle}
-                  onInput={(e: React.FormEvent) => setEditTitle((e.target as HTMLInputElement).value)}
-                  onKeyDown={(e: React.KeyboardEvent) => {
+                    label="对话标题"
+                    value={editTitle}
+                    onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === 'Enter') {
                       handleConfirmEdit();
                     }
@@ -715,7 +733,7 @@ export function Sidebar({
                         label="输入前置提示词..."
                         rows={10}
                         value={systemPrompt}
-                        onInput={(e: React.FormEvent) => setSystemPrompt((e.target as HTMLInputElement).value)}
+                        onInput={(e: React.FormEvent<HTMLInputElement>) => setSystemPrompt((e.target as HTMLInputElement).value)}
                       ></md-outlined-text-field>
                     </div>
                     
@@ -813,7 +831,7 @@ export function Sidebar({
               <md-outlined-text-field
                 label="修改昵称"
                 value={userNickname}
-                onInput={(e: React.FormEvent) => setUserNickname((e.target as HTMLInputElement).value)}
+                onInput={(e: React.FormEvent<HTMLInputElement>) => setUserNickname((e.target as HTMLInputElement).value)}
                 placeholder="请输入新昵称"
                 style={{ width: '100%' }}
               >
@@ -910,7 +928,7 @@ export function Sidebar({
               <md-outlined-text-field
                 label="邀请码"
                 value={invitationCode}
-                onInput={(e: React.FormEvent) => setInvitationCode((e.target as HTMLInputElement).value)}
+                onInput={(e: React.FormEvent<HTMLInputElement>) => setInvitationCode((e.target as HTMLInputElement).value)}
                 placeholder="请输入升级邀请码"
                 style={{ width: '100%' }}
               ></md-outlined-text-field>
@@ -927,6 +945,74 @@ export function Sidebar({
             >
               {isUpgrading ? '正在升级...' : '立即升级'}
             </md-filled-button>
+          </div>
+        </md-dialog>
+      )}
+
+      {showUpgradeSuccess && upgradeInfo && (
+        <md-dialog 
+          open={showUpgradeSuccess}
+          onClose={() => setShowUpgradeSuccess(false)}
+          className="upgrade-success-dialog"
+        >
+          <div slot="content" className="upgrade-success-content">
+            <motion.div 
+              className="success-animation-container"
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ 
+                type: "spring",
+                stiffness: 260,
+                damping: 20,
+                delay: 0.1
+              }}
+            >
+              <div className="success-icon-wrapper">
+                <motion.svg 
+                  viewBox="0 0 52 52" 
+                  className="success-check-svg"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
+                  <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                </motion.svg>
+              </div>
+              
+              <motion.h2 
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.4 }}
+              >
+                兑换成功！
+              </motion.h2>
+              
+              <motion.div 
+                className="success-details"
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.5 }}
+              >
+                <div className="success-detail-item">
+                  <span className="detail-label">当前等级</span>
+                  <img 
+                    className="member-badge-icon large" 
+                    src={`/badge-${upgradeInfo.type}.svg`} 
+                    alt={upgradeInfo.type} 
+                  />
+                </div>
+                {upgradeInfo.expiry && (
+                  <div className="success-detail-item">
+                    <span className="detail-label">有效期至</span>
+                    <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
+                  </div>
+                )}
+              </motion.div>
+            </motion.div>
+          </div>
+          <div slot="actions">
+            <md-filled-button onClick={() => setShowUpgradeSuccess(false)}>太棒了</md-filled-button>
           </div>
         </md-dialog>
       )}

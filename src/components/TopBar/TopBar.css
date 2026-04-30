@@ -156,6 +156,30 @@ md-icon-button span.icon {
   background-color: var(--text-color);
 }
 
+.topbar-upgrade-btn {
+  background-color: var(--surface-hover);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.topbar-upgrade-btn:hover {
+  background-color: var(--border-color);
+}
+
+.topbar-member-badge {
+  height: 24px;
+  width: auto;
+  display: block;
+}
+
 md-icon-button svg {
   width: 24px;
   height: 24px;

@@ -190,34 +190,10 @@
   gap: 4px;
 }
 
-.member-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  width: fit-content;
-}
-
-.member-badge.free {
-  background-color: #e3f2fd;
-  color: #1976d2;
-  border: 1px solid #bbdefb;
-}
-
-.member-badge.pro {
-  background-color: #fff9c4;
-  color: #fbc02d;
-  border: 1px solid #fff176;
-}
-
-.member-badge.max {
-  background-color: #f3e5f5;
-  color: #7b1fa2;
-  border: 1px solid #e1bee7;
+.member-badge-icon {
+  height: 18px;
+  width: auto;
+  display: block;
 }
 
 .user-credits {
@@ -259,6 +235,94 @@
   margin-top: 8px;
 }
 
+
+.member-badge-icon.large {
+  height: 20px;
+}
+
+/* Upgrade Success Dialog */
+.upgrade-success-dialog {
+  --md-dialog-container-max-width: 320px;
+}
+
+.upgrade-success-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0 12px 0;
+  text-align: center;
+}
+
+.success-animation-container h2 {
+  margin: 16px 0 24px 0;
+  color: var(--text-color);
+  font-size: 24px;
+}
+
+.success-icon-wrapper {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+}
+
+.success-check-svg {
+  width: 80px;
+  height: 80px;
+  display: block;
+}
+
+.success-check-circle {
+  stroke: #4caf50;
+  stroke-width: 2;
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  stroke-miterlimit: 10;
+  stroke-linecap: round;
+  animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.success-check-path {
+  transform-origin: 50% 50%;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  stroke: #4caf50;
+  stroke-width: 3;
+  stroke-linecap: round;
+  animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+}
+
+@keyframes stroke {
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.success-details {
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.success-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detail-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.detail-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+}
 
 .logout-button {
   background: transparent;
