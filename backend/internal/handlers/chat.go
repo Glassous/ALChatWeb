@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"alchat-backend/internal/agent"
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/firebase/genkit/go/ai"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -25,6 +27,9 @@ type ChatHandler struct {
 	memberService       *services.MemberService
 	db                  *database.MongoDB
 	streamManager       *services.StreamManager
+	agentRunner         interface {
+		Run(ctx context.Context, messages []*ai.Message, callback interface{}) (string, error)
+	}
 }
 
 func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, streamManager *services.StreamManager) *ChatHandler {
@@ -35,6 +40,12 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 		db:                  db,
 		streamManager:       streamManager,
 	}
+}
+
+func (h *ChatHandler) SetAgentRunner(runner interface {
+	Run(ctx context.Context, messages []*ai.Message, callback interface{}) (string, error)
+}) {
+	h.agentRunner = runner
 }
 
 func (h *ChatHandler) Chat(c *gin.Context) {
@@ -89,6 +100,16 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	// Start background generation
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Chat] Panic in background generation: %v", r)
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+					Type:    "error",
+					Content: fmt.Sprintf("Internal error: %v", r),
+				})
+			}
+		}()
+
 		// Get conversation history (branch)
 		messages, err := h.conversationService.GetMessageBranch(bgCtx, req.ConversationID, userMsg.ID.Hex())
 		if err != nil {
@@ -114,8 +135,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			}
 		}
 
-		// Get user settings for system prompt
 		userIDObj, _ := primitive.ObjectIDFromHex(userID)
+
+		if req.Mode == "agent" {
+			h.handleAgentMode(bgCtx, req, genkitMessages, assistantMsg, userIDObj, userMsg)
+			return
+		}
+
+		// Get user settings for system prompt
 		var user models.User
 		h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user)
 
@@ -232,6 +259,111 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"user_message_id":      userMsg.ID.Hex(),
 		"assistant_message_id": assistantMsg.ID.Hex(),
+	})
+}
+
+func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatRequest, genkitMessages []struct {
+	Role    string
+	Content string
+}, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
+	if h.agentRunner == nil {
+		log.Printf("[Agent] Agent runner not configured")
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "error",
+			Content: "Agent not configured. Please set agent model in admin settings.",
+		})
+		return
+	}
+
+	log.Printf("[Agent] Starting agent mode for conversation %s", req.ConversationID)
+	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+		Type: "agent_start",
+	})
+
+	aiMessages := services.ConvertToGenkitMessages(genkitMessages)
+
+	var allSteps []models.AgentStepData
+	var allPlan []models.AgentPlanItemData
+
+	finalAnswer, err := h.agentRunner.Run(ctx, aiMessages, agent.StepCallback(func(step agent.AgentStep) {
+
+		if step.Plan != nil && len(step.Plan.Items) > 0 {
+			allPlan = make([]models.AgentPlanItemData, len(step.Plan.Items))
+			for i, item := range step.Plan.Items {
+				allPlan[i] = models.AgentPlanItemData{
+					ID:          item.ID,
+					Description: item.Description,
+					ToolName:    item.ToolName,
+					Status:      string(item.Status),
+				}
+			}
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "agent_plan",
+				Data: step.Plan.Items,
+			})
+			return
+		}
+
+		if step.ToolName == "plan_progress" {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "plan_item",
+				Data: step.PlanIndex,
+			})
+			return
+		}
+
+		if step.ToolName == "plan_item" {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "plan_item",
+				Data: step.PlanIndex,
+			})
+			return
+		}
+
+		if step.ToolName != "" {
+			inputJSON, _ := json.Marshal(step.ToolInput)
+			stepData := models.AgentStepData{
+				Index:      step.Index,
+				ToolName:   step.ToolName,
+				ToolInput:  string(inputJSON),
+				ToolOutput: step.ToolOutput,
+				Err:        step.Err,
+				PlanIndex:  step.PlanIndex,
+			}
+			allSteps = append(allSteps, stepData)
+
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "agent_step",
+				Data: stepData,
+			})
+		}
+	}))
+
+	if err != nil {
+		log.Printf("[Agent] Run failed: %v", err)
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "error",
+			Content: err.Error(),
+		})
+		return
+	}
+
+	log.Printf("[Agent] Run completed, answer length: %d", len(finalAnswer))
+
+	assistantMsg.Content = finalAnswer
+	assistantMsg.AgentSteps = allSteps
+	assistantMsg.AgentPlan = allPlan
+	h.conversationService.UpdateMessage(ctx, assistantMsg)
+
+	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(finalAnswer))
+
+	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+		Type: "done",
+		Data: gin.H{
+			"user_message_id":      userMsg.ID.Hex(),
+			"assistant_message_id": assistantMsg.ID.Hex(),
+			"credits":              newCredits,
+		},
 	})
 }
 

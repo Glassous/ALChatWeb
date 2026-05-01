@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardR
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
+import { AgentStepPanel } from '../AgentStepPanel/AgentStepPanel';
+import type { AgentStepData, AgentPlanItemData } from '../../services/api';
 import './ChatArea.css';
 
 export interface Message {
@@ -20,6 +22,8 @@ export interface Message {
       snippet: string;
     }>;
   };
+  agent_steps?: AgentStepData[];
+  agent_plan?: AgentPlanItemData[];
   created_at: string;
   status?: 'pending' | 'loading' | 'completed' | 'error';
   metadata?: {
@@ -427,6 +431,13 @@ function MessageItem({
           </>
         ) : (
           <div className="assistant-message-content">
+            {msg.agent_plan && msg.agent_plan.length > 0 && (
+              <AgentStepPanel 
+                steps={msg.agent_steps || []} 
+                plan={msg.agent_plan}
+                isStreaming={msg.status === 'loading'}
+              />
+            )}
             <div className="message-text assistant-text">
               {renderContent()}
             </div>

@@ -22,6 +22,14 @@ type AdminHandler struct {
 	db            *database.MongoDB
 	aiService     *services.AIService
 	memberService *services.MemberService
+	agentRunner   interface {
+		GetToolNames() []string
+		GetToolDescriptions() map[string]string
+		IsToolEnabled(name string) bool
+		SetToolEnabled(name string, enabled bool)
+		SaveToolStates(ctx context.Context) error
+		LoadToolStates(ctx context.Context)
+	}
 }
 
 func NewAdminHandler(db *database.MongoDB, aiService *services.AIService, memberService *services.MemberService) *AdminHandler {
@@ -30,6 +38,17 @@ func NewAdminHandler(db *database.MongoDB, aiService *services.AIService, member
 		aiService:     aiService,
 		memberService: memberService,
 	}
+}
+
+func (h *AdminHandler) SetAgentRunner(runner interface {
+	GetToolNames() []string
+	GetToolDescriptions() map[string]string
+	IsToolEnabled(name string) bool
+	SetToolEnabled(name string, enabled bool)
+	SaveToolStates(ctx context.Context) error
+	LoadToolStates(ctx context.Context)
+}) {
+	h.agentRunner = runner
 }
 
 // Dashboard stats
@@ -560,6 +579,62 @@ func (h *AdminHandler) UpdateSystemSettings(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "System settings updated successfully and credits refresh started"})
+}
+
+func (h *AdminHandler) GetAgentTools(c *gin.Context) {
+	if h.agentRunner == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Agent not initialized"})
+		return
+	}
+
+	names := h.agentRunner.GetToolNames()
+	descriptions := h.agentRunner.GetToolDescriptions()
+
+	type ToolInfo struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Enabled     bool   `json:"enabled"`
+	}
+
+	tools := make([]ToolInfo, 0, len(names))
+	for _, name := range names {
+		tools = append(tools, ToolInfo{
+			Name:        name,
+			Description: descriptions[name],
+			Enabled:     h.agentRunner.IsToolEnabled(name),
+		})
+	}
+
+	c.JSON(http.StatusOK, tools)
+}
+
+func (h *AdminHandler) ToggleAgentTool(c *gin.Context) {
+	if h.agentRunner == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Agent not initialized"})
+		return
+	}
+
+	name := c.Param("name")
+
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.agentRunner.SetToolEnabled(name, req.Enabled)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.agentRunner.SaveToolStates(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save tool state: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Tool state updated", "name": name, "enabled": req.Enabled})
 }
 
 // SetupAdmin ensures at least one admin exists

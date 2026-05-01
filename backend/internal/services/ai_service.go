@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/firebase/genkit/go/ai"
+	coreapi "github.com/firebase/genkit/go/core/api"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/compat_oai"
 	"github.com/openai/openai-go/option"
@@ -39,9 +40,12 @@ type AIService struct {
 	multimodalModel   string
 	bochaAPIKey       string
 	searchService     *SearchService
+	agentAPIKey       string
+	agentBaseURL      string
+	agentModel        string
 }
 
-func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel string) (*AIService, error) {
 	s := &AIService{
 		apiKey:            apiKey,
 		baseURL:           baseURL,
@@ -60,6 +64,9 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		multimodalModel:   multimodalModel,
 		bochaAPIKey:       bochaAPIKey,
 		searchService:     NewSearchService(bochaAPIKey),
+		agentAPIKey:       agentAPIKey,
+		agentBaseURL:      agentBaseURL,
+		agentModel:        agentModel,
 	}
 	s.reinitGenkit()
 	return s, nil
@@ -70,34 +77,46 @@ func (s *AIService) reinitGenkit() {
 	defer s.mu.Unlock()
 
 	ctx := context.Background()
-	s.g = genkit.Init(ctx,
-		genkit.WithPlugins(
-			&compat_oai.OpenAICompatible{
-				Provider: "openai",
-				APIKey:   s.apiKey,
-				BaseURL:  s.baseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
+
+	oaiPlugins := []coreapi.Plugin{
+		&compat_oai.OpenAICompatible{
+			Provider: "openai",
+			APIKey:   s.apiKey,
+			BaseURL:  s.baseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
 			},
-			&compat_oai.OpenAICompatible{
-				Provider: "openai-title",
-				APIKey:   s.titleAPIKey,
-				BaseURL:  s.titleBaseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
+		},
+		&compat_oai.OpenAICompatible{
+			Provider: "openai-title",
+			APIKey:   s.titleAPIKey,
+			BaseURL:  s.titleBaseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
 			},
-			&compat_oai.OpenAICompatible{
-				Provider: "openai-multimodal",
-				APIKey:   s.multimodalAPIKey,
-				BaseURL:  s.multimodalBaseURL,
-				Opts: []option.RequestOption{
-					option.WithHeader("Content-Type", "application/json"),
-				},
+		},
+		&compat_oai.OpenAICompatible{
+			Provider: "openai-multimodal",
+			APIKey:   s.multimodalAPIKey,
+			BaseURL:  s.multimodalBaseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
 			},
-		),
-	)
+		},
+	}
+
+	if s.agentBaseURL != "" && s.agentAPIKey != "" {
+		oaiPlugins = append(oaiPlugins, &compat_oai.OpenAICompatible{
+			Provider: "openai-agent",
+			APIKey:   s.agentAPIKey,
+			BaseURL:  s.agentBaseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
+			},
+		})
+	}
+
+	s.g = genkit.Init(ctx, genkit.WithPlugins(oaiPlugins...))
 }
 
 func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
@@ -156,6 +175,17 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		}
 		if model != "" {
 			s.multimodalModel = model
+		}
+		needReinit = true
+	case "agent":
+		if baseURL != "" {
+			s.agentBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.agentAPIKey = apiKey
+		}
+		if model != "" {
+			s.agentModel = model
 		}
 		needReinit = true
 	}
@@ -742,4 +772,16 @@ func ConvertToGenkitMessages(messages []struct {
 		}
 	}
 	return genkitMessages
+}
+
+func (s *AIService) GetAgentConfig() (apiKey, baseURL, model string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.agentAPIKey, s.agentBaseURL, s.agentModel
+}
+
+func (s *AIService) GetGenkit() *genkit.Genkit {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.g
 }

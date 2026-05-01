@@ -63,7 +63,7 @@ const rightToolVariants: Variants = {
 };
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'agent' }) => void;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -72,6 +72,8 @@ interface InputAreaProps {
   userCredits?: number | null;
   userMemberType?: string;
   onShowUpgrade?: () => void;
+  isAgentMode?: boolean;
+  onAgentModeChange?: (isAgent: boolean) => void;
 }
 
 const RESOLUTIONS = [
@@ -91,7 +93,9 @@ export function InputArea({
   userMessages = [],
   userCredits = null,
   userMemberType = 'free',
-  onShowUpgrade
+  onShowUpgrade,
+  isAgentMode = false,
+  onAgentModeChange
 }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
@@ -718,6 +722,27 @@ export function InputArea({
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                         <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
+                      </svg>
+                    </button>
+                  </motion.div>
+                )}
+                {!isImageMode && !isSearchMode && attachments.length === 0 && (
+                  <motion.div
+                    key="agent-mode"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
+                  >
+                    <button 
+                      className={`tool-btn agent-toggle-btn ${isAgentMode ? 'active' : ''}`}
+                      onClick={() => onAgentModeChange?.(!isAgentMode)}
+                      title={isAgentMode ? '关闭 Agent 模式' : '开启 Agent 模式'}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M240-400h320v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v527l46-47Zm-46 0v-480 480Z"/>
                       </svg>
                     </button>
                   </motion.div>

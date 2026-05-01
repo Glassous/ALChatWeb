@@ -1,6 +1,8 @@
 package main
 
 import (
+	"alchat-backend/internal/agent"
+	"alchat-backend/internal/agent/tools"
 	"alchat-backend/internal/config"
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/handlers"
@@ -54,6 +56,9 @@ func main() {
 		cfg.MultimodalAPIKey,
 		cfg.MultimodalBaseURL,
 		cfg.MultimodalModel,
+		cfg.AgentAPIKey,
+		cfg.AgentBaseURL,
+		cfg.AgentModel,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI service: %v", err)
@@ -83,6 +88,18 @@ func main() {
 	locationHandler := handlers.NewLocationHandler()
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
+
+	registry := tools.NewRegistry(aiService.GetGenkit())
+	registry.Register("web_search", tools.WebSearchDescription, tools.WebSearchFn)
+	registry.Register("weather", tools.WeatherDescription, tools.WeatherFn)
+	registry.Register("calculator", tools.CalculatorDescription, tools.CalculatorFn)
+	registry.Register("get_time", tools.GetTimeDescription, tools.GetTimeFn)
+
+	_, _, agentModel := aiService.GetAgentConfig()
+	agentRunner := agent.NewRunner(aiService.GetGenkit(), registry, db, agentModel)
+	agentRunner.LoadToolStates(context.Background())
+	adminHandler.SetAgentRunner(agentRunner)
+	chatHandler.SetAgentRunner(agentRunner)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -158,6 +175,8 @@ func main() {
 				admin.POST("/invitation-codes", adminHandler.GenerateInvitationCodes)
 				admin.GET("/settings", adminHandler.GetSystemSettings)
 				admin.PUT("/settings", adminHandler.UpdateSystemSettings)
+				admin.GET("/agent/tools", adminHandler.GetAgentTools)
+				admin.PUT("/agent/tools/:name", adminHandler.ToggleAgentTool)
 			}
 		}
 	}

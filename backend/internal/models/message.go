@@ -14,7 +14,25 @@ type Message struct {
 	Content        string              `bson:"content" json:"content"`
 	Reasoning      string              `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
 	Search         *SearchData         `bson:"search,omitempty" json:"search,omitempty"`
+	AgentSteps     []AgentStepData     `bson:"agent_steps,omitempty" json:"agent_steps,omitempty"`
+	AgentPlan      []AgentPlanItemData `bson:"agent_plan,omitempty" json:"agent_plan,omitempty"`
 	CreatedAt      time.Time           `bson:"created_at" json:"created_at"`
+}
+
+type AgentStepData struct {
+	Index      int    `bson:"index" json:"index"`
+	ToolName   string `bson:"tool_name" json:"tool_name"`
+	ToolInput  string `bson:"tool_input" json:"tool_input"`
+	ToolOutput string `bson:"tool_output" json:"tool_output"`
+	Err        string `bson:"err,omitempty" json:"err,omitempty"`
+	PlanIndex  *int   `bson:"plan_index,omitempty" json:"plan_index,omitempty"`
+}
+
+type AgentPlanItemData struct {
+	ID          int    `bson:"id" json:"id"`
+	Description string `bson:"description" json:"description"`
+	ToolName    string `bson:"tool_name" json:"tool_name"`
+	Status      string `bson:"status" json:"status"`
 }
 
 type ChatRequest struct {

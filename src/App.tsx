@@ -47,6 +47,7 @@ function ChatApp() {
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
+  const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Load conversations on mount
@@ -161,13 +162,13 @@ function ChatApp() {
     isImageMode: boolean; 
     resolution: string; 
     refImageUrl?: string; 
-    mode?: 'daily' | 'expert' | 'search';
+    mode?: 'daily' | 'expert' | 'search' | 'agent';
     overrideParentId?: string | null;
   }) => {
     if (isLoading) return;
 
     let conversationId = currentConversationId;
-    const currentMode = options?.mode || 'daily';
+    const currentMode = isAgentMode ? 'agent' : (options?.mode || 'daily');
     const effectiveParentId = options?.hasOwnProperty('overrideParentId') 
       ? options.overrideParentId 
       : currentNodeId;
@@ -460,7 +461,36 @@ function ChatApp() {
           );
         },
         location,
-        effectiveParentId
+        effectiveParentId,
+        (planItems) => {
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message =>
+              msg.id === assistantMsgId
+                ? { ...msg, agent_plan: planItems }
+                : msg
+            )
+          );
+        },
+        (planIndex) => {
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message => {
+              if (msg.id !== assistantMsgId || !msg.agent_plan) return msg;
+              const updatedPlan = msg.agent_plan.map((item, i) =>
+                i === planIndex ? { ...item, status: 'completed' as const } : item
+              );
+              return { ...msg, agent_plan: updatedPlan };
+            })
+          );
+        },
+        (step) => {
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message => {
+              if (msg.id !== assistantMsgId) return msg;
+              const steps = [...(msg.agent_steps || []), step];
+              return { ...msg, agent_steps: steps };
+            })
+          );
+        }
       );
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -714,6 +744,8 @@ function ChatApp() {
             userCredits={userCredits}
             userMemberType={userMemberType}
             onShowUpgrade={() => navigate('/settings')}
+            isAgentMode={isAgentMode}
+            onAgentModeChange={setIsAgentMode}
           />
         </div>
       </div>

@@ -36,6 +36,9 @@ type Config struct {
 	MultimodalAPIKey   string
 	MultimodalBaseURL  string
 	MultimodalModel    string
+	AgentAPIKey        string
+	AgentBaseURL       string
+	AgentModel         string
 	RedisAddr          string
 	RedisPassword      string
 	RedisDB            int
@@ -78,6 +81,9 @@ func Load() *Config {
 		MultimodalAPIKey:   getEnv("MULTIMODAL_API_KEY", ""),
 		MultimodalBaseURL:  getEnv("MULTIMODAL_BASE_URL", "https://api.openai.com/v1"),
 		MultimodalModel:    getEnv("MULTIMODAL_MODEL", "gpt-4o"),
+		AgentAPIKey:        getEnv("AGENT_API_KEY", ""),
+		AgentBaseURL:       getEnv("AGENT_BASE_URL", "https://api.openai.com/v1"),
+		AgentModel:         getEnv("AGENT_MODEL", "gpt-4o"),
 		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
 		RedisDB:            getEnvInt("REDIS_DB", 0),
