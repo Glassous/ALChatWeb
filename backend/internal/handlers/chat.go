@@ -134,10 +134,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		}
 
 		if user.IncludeLocation && req.Location != "" {
+			locationStr := req.Location
+			if IsCoordinateFormat(locationStr) {
+				locationStr = ReverseGeocodeFromCoords(locationStr)
+			}
 			if systemPromptBuilder.Len() > 0 {
 				systemPromptBuilder.WriteString("\n\n")
 			}
-			fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", req.Location)
+			fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", locationStr)
 		}
 
 		// Stream AI response

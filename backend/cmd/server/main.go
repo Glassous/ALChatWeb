@@ -80,6 +80,7 @@ func main() {
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
 	adminHandler := handlers.NewAdminHandler(db, aiService, memberService)
+	locationHandler := handlers.NewLocationHandler()
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
 
@@ -131,6 +132,9 @@ func main() {
 
 			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
 			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
+
+			// Location route
+			protected.POST("/location/resolve", locationHandler.Resolve)
 
 			// Admin routes
 			admin := protected.Group("/admin")

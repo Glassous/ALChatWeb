@@ -312,6 +312,25 @@
   color: var(--button-bg);
 }
 
+.location-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.location-icon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 .prompt-save-actions {
   display: flex;
   width: 100%;

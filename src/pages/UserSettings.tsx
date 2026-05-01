@@ -5,6 +5,7 @@ import Cropper from 'react-easy-crop';
 import type { Point, Area } from 'react-easy-crop';
 import { motion } from 'framer-motion';
 import { apiClient } from '../services/api';
+import { getCurrentPosition, formatCoordsAsString } from '../utils/location';
 import getCroppedImg from '../utils/cropImage';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/list/list.js';
@@ -34,6 +35,8 @@ export function UserSettings() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [includeDateTime, setIncludeDateTime] = useState(false);
   const [includeLocation, setIncludeLocation] = useState(false);
+  const [locationPreview, setLocationPreview] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSavingSystemPrompt, setIsSavingSystemPrompt] = useState(false);
   const [isLoadingSystemPrompt, setIsLoadingSystemPrompt] = useState(true);
   const [invitationCode, setInvitationCode] = useState('');
@@ -50,6 +53,27 @@ export function UserSettings() {
     window.addEventListener('user-profile-updated', handleProfileUpdate);
     return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
   }, []);
+
+  useEffect(() => {
+    if (!includeLocation) return;
+    let cancelled = false;
+    const fetchPreview = async () => {
+      setIsLoadingLocation(true);
+      const pos = await getCurrentPosition();
+      if (cancelled) return;
+      if (!pos) {
+        setLocationPreview('无法获取位置');
+        setIsLoadingLocation(false);
+        return;
+      }
+      const addr = await apiClient.resolveLocation(pos.lat, pos.lng);
+      if (cancelled) return;
+      setLocationPreview(addr || formatCoordsAsString(pos.lat, pos.lng));
+      setIsLoadingLocation(false);
+    };
+    fetchPreview();
+    return () => { cancelled = true; };
+  }, [includeLocation]);
 
   const loadUserProfile = async () => {
     try {
@@ -321,6 +345,12 @@ export function UserSettings() {
                         <span>包含地理位置</span>
                       </div>
                     </div>
+                    {includeLocation && (
+                      <div className="location-preview">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor" className="location-icon"><path d="M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Zm0-480Z"/></svg>
+                        {isLoadingLocation ? '获取位置中...' : locationPreview || '无法获取位置'}
+                      </div>
+                    )}
                     <div className="prompt-save-actions">
                       <md-filled-button onClick={handleSaveSystemPrompt} disabled={isSavingSystemPrompt}>
                         {isSavingSystemPrompt ? '保存中...' : '保存配置'}

@@ -200,6 +200,21 @@ class APIClient {
     return response.json();
   }
 
+  async resolveLocation(lat: number, lng: number): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.baseURL}/api/location/resolve`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ lat, lng }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.address || null;
+    } catch {
+      return null;
+    }
+  }
+
   // Conversation APIs
   async getConversations(): Promise<Conversation[]> {
     try {
