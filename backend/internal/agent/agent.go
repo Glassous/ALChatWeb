@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/genkit"
@@ -225,43 +227,70 @@ func (r *Runner) generateSync(ctx context.Context, messages []*ai.Message, enabl
 }
 
 func (r *Runner) generateStreaming(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, reasoningCb func(string), tokenCb func(string), allReasoning *string) (*ai.ModelResponse, error) {
-	var finalResp *ai.ModelResponse
+	const maxRetries = 2
+	var lastErr error
 
-	for sv, err := range genkit.GenerateStream(ctx, r.g,
-		ai.WithModelName("openai-agent/"+r.model),
-		ai.WithMessages(messages...),
-		ai.WithTools(enabledTools...),
-		ai.WithReturnToolRequests(true),
-	) {
-		if err != nil {
-			return nil, err
-		}
-
-		if sv.Done {
-			finalResp = sv.Response
-			break
-		}
-
-		if sv.Chunk != nil {
-			if reasoningCb != nil {
-				if r := sv.Chunk.Reasoning(); r != "" {
-					*allReasoning += r
-					reasoningCb(r)
-				}
-			}
-			if tokenCb != nil {
-				if t := sv.Chunk.Text(); t != "" {
-					tokenCb(t)
-				}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(1<<uint(attempt-1)) * time.Second
+			log.Printf("[Agent] Stream error, retry %d/%d after %v: %v", attempt, maxRetries, delay, lastErr)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
 			}
 		}
+
+		var finalResp *ai.ModelResponse
+		var streamErr error
+
+		for sv, err := range genkit.GenerateStream(ctx, r.g,
+			ai.WithModelName("openai-agent/"+r.model),
+			ai.WithMessages(messages...),
+			ai.WithTools(enabledTools...),
+			ai.WithReturnToolRequests(true),
+		) {
+			if err != nil {
+				streamErr = err
+				break
+			}
+
+			if sv.Done {
+				finalResp = sv.Response
+				break
+			}
+
+			if sv.Chunk != nil {
+				if reasoningCb != nil {
+					if r := sv.Chunk.Reasoning(); r != "" {
+						*allReasoning += r
+						reasoningCb(r)
+					}
+				}
+				if tokenCb != nil {
+					if t := sv.Chunk.Text(); t != "" {
+						tokenCb(t)
+					}
+				}
+			}
+		}
+
+		if streamErr != nil {
+			if isTransientStreamError(streamErr) && attempt < maxRetries {
+				lastErr = streamErr
+				continue
+			}
+			return nil, streamErr
+		}
+
+		if finalResp == nil {
+			return nil, fmt.Errorf("streaming completed without final response")
+		}
+
+		return finalResp, nil
 	}
 
-	if finalResp == nil {
-		return nil, fmt.Errorf("streaming completed without final response")
-	}
-
-	return finalResp, nil
+	return nil, fmt.Errorf("all %d retry attempts exhausted, last error: %w", maxRetries, lastErr)
 }
 
 func parseToolInput(input any) map[string]any {
@@ -418,4 +447,29 @@ func (r *Runner) LoadToolStates(ctx context.Context) {
 
 func (r *Runner) GetRegistry() *tools.Registry {
 	return r.registry
+}
+
+func isTransientStreamError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	transientPatterns := []string{
+		"unexpected end of JSON input",
+		"unexpected EOF",
+		"connection reset",
+		"broken pipe",
+		"stream error",
+		"i/o timeout",
+		"connection refused",
+		"use of closed network connection",
+		"server sent close",
+	}
+	lower := strings.ToLower(msg)
+	for _, p := range transientPatterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
