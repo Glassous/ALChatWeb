@@ -127,6 +127,7 @@ func main() {
 			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
 			protected.GET("/auth/system-prompt", authHandler.GetSystemPrompt)
 			protected.PUT("/auth/system-prompt", authHandler.UpdateSystemPrompt)
+			protected.PUT("/auth/theme", authHandler.UpdateTheme)
 			protected.POST("/auth/upgrade", authHandler.Upgrade)
 
 			// Conversation routes

@@ -23,6 +23,37 @@
   position: relative;
 }
 
+/* Unified Theme Frame */
+.main-content::before {
+  content: '';
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--custom-divider-width, 2px);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  background: var(--custom-divider-bg, transparent);
+  -webkit-mask: 
+     linear-gradient(#fff 0 0) content-box, 
+     linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  z-index: 10;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .main-content::before {
+    top: 56px;
+    border-left: none;
+    border-right: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
 .loading-bar {
   height: 2px;
   width: 100%;

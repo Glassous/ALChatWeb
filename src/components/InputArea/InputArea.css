@@ -34,11 +34,12 @@
   flex-direction: column;
   width: 100%;
   max-width: 860px;
-  background-color: var(--bg-color);
+  background: linear-gradient(var(--bg-color), var(--bg-color)) padding-box,
+              var(--custom-divider-bg, transparent) border-box;
   border-radius: 28px;
   padding: 12px 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--border-color);
+  border: var(--custom-divider-width, 2px) solid transparent;
   position: relative;
   transition: box-shadow 0.3s ease;
 }

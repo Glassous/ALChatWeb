@@ -6,9 +6,9 @@
   transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
   box-sizing: border-box;
   padding: 16px 12px;
-  border-right: 1px solid var(--border-color);
   overflow: hidden;
   align-items: stretch;
+  position: relative;
 }
 
 .sidebar.collapsed {
@@ -883,4 +883,19 @@ md-outlined-text-field {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.settings-row.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pro-badge-mini {
+  font-size: 10px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ff7eb3 0%, #ff758c 100%);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
 }

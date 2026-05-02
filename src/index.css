@@ -15,6 +15,7 @@
   --button-bg-hover: #374151;
   --button-disabled-bg: #d1d5db;
   --logo-invert: 0;
+  --dialog-bg: #f5f5f5; /* Slightly deeper white/light gray */
 
   /* Material Web Variables override for simple B/W/G */
   --md-sys-color-surface-container-low: var(--surface-color);
@@ -49,6 +50,7 @@
   --button-bg-hover: #e0e0e0;
   --button-disabled-bg: #444444;
   --logo-invert: 1;
+  --dialog-bg: #222222; /* Slightly lighter black/dark gray */
 
   color-scheme: dark;
 }
@@ -67,6 +69,7 @@
     --button-bg-hover: #e0e0e0;
     --button-disabled-bg: #444444;
     --logo-invert: 1;
+    --dialog-bg: #222222;
 
     color-scheme: dark;
   }
@@ -79,6 +82,65 @@ body {
   min-height: 100vh;
   background-color: var(--bg-color);
   color: var(--text-color);
+}
+
+#root {
+  transition: filter 0.3s ease;
+}
+
+/* Global Material Dialog Optimizations */
+md-dialog {
+  --md-dialog-container-color: var(--dialog-bg);
+  --md-dialog-divider-color: transparent;
+  --md-dialog-container-max-width: 560px;
+}
+
+md-dialog [slot="content"] {
+  padding: 16px 24px !important;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Unified Extra Thin Scrollbar for all dialogs */
+md-dialog ::-webkit-scrollbar {
+  width: 2px !important;
+  height: 2px !important;
+}
+
+md-dialog ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+md-dialog ::-webkit-scrollbar-thumb {
+  background-color: var(--border-color) !important;
+  border-radius: 10px !important;
+}
+
+md-dialog ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted) !important;
+}
+
+/* Firefox scrollbar for dialogs */
+md-dialog, 
+md-dialog * {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--border-color) transparent !important;
+}
+
+/* Global Backdrop/Blur Logic */
+body.dialog-open-blur #root {
+  filter: blur(8px);
+  transition: filter 0.3s ease;
+  pointer-events: none;
+}
+
+body.dialog-open-blur {
+  background-color: rgba(0, 0, 0, 0.4);
+  transition: background-color 0.3s ease;
+}
+
+body.dialog-open-blur md-dialog {
+  pointer-events: auto;
 }
 
 #root {

@@ -9,7 +9,7 @@
   position: relative;
 }
 
-.topbar-left {
+.topbar-content {
   display: flex;
   align-items: center;
   gap: 8px;

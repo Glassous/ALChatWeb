@@ -389,43 +389,86 @@
   animation: spin 1s linear infinite;
 }
 
+/* Dark Theme Overrides for Plan Card - Using deep off-white as requested */
 @media (prefers-color-scheme: dark) {
   .agent-step-panel {
-    border-color: #374151;
-    background: #1f2937;
+    border-color: #b0ada5;
+    background: #dcdad5;
+    color: #1a1a1a;
+  }
+
+  .agent-panel-header {
+    color: #1a1a1a;
   }
 
   .agent-panel-header:hover {
-    background: #2d3748;
+    background: rgba(0, 0, 0, 0.05);
   }
 
   .step-count {
-    background: #374151;
-    color: #9ca3af;
+    background: rgba(0, 0, 0, 0.1);
+    color: #444;
   }
 
   .step-item {
-    background: #111827;
-    border-color: #374151;
+    background: #e5e3de;
+    border-color: #cbc8c0;
   }
 
   .step-item:hover {
-    border-color: #4b5563;
+    border-color: #b0ada5;
   }
 
   .step-header.clickable:hover {
-    background: #2d3748;
+    background: rgba(0, 0, 0, 0.05);
   }
 
-  .weather-inline-card {
-    background: linear-gradient(135deg, rgba(74, 144, 217, 0.1) 0%, rgba(45, 106, 160, 0.05) 100%);
+  .step-title, .plan-description {
+    color: #1a1a1a;
   }
 
-  .search-inline-results {
-    border-color: #374151;
+  .plan-item.completed .plan-description {
+    color: #777;
   }
 
-  .weather-inline-forecast {
-    border-color: #374151;
+  .plan-tool, .plan-tool-icon, .step-icon {
+    color: #555;
   }
+}
+
+/* Manual Dark Theme Support Overrides */
+[data-theme="dark"] .agent-step-panel {
+  border-color: #b0ada5;
+  background: #dcdad5;
+  color: #1a1a1a;
+}
+
+[data-theme="dark"] .agent-panel-header {
+  color: #1a1a1a;
+}
+
+[data-theme="dark"] .agent-panel-header:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .step-item {
+  background: #e5e3de;
+  border-color: #cbc8c0;
+}
+
+[data-theme="dark"] .step-item:hover {
+  border-color: #b0ada5;
+}
+
+[data-theme="dark"] .step-header.clickable:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="dark"] .step-title, [data-theme="dark"] .plan-description {
+  color: #1a1a1a;
+}
+
+[data-theme="dark"] .step-count {
+  background: rgba(0, 0, 0, 0.1);
+  color: #444;
 }

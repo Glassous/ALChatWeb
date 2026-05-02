@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
@@ -47,8 +48,44 @@ function ChatApp() {
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(() => {
+    try {
+      const saved = localStorage.getItem('al-chat-theme-config');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
+
+  // Global blur logic for Edit Dialog
+  useEffect(() => {
+    if (isEditOpen) {
+      document.body.classList.add('dialog-open-blur');
+    } else {
+      document.body.classList.remove('dialog-open-blur');
+    }
+    return () => document.body.classList.remove('dialog-open-blur');
+  }, [isEditOpen]);
+
+  const applyThemeConfig = (config: ThemeConfig | null) => {
+    const root = document.documentElement;
+    if (config?.enabled && config.divider) {
+      root.style.setProperty('--custom-divider-bg', config.divider.value);
+      root.style.setProperty('--custom-divider-width', '2px');
+      root.setAttribute('data-custom-theme', 'enabled');
+    } else {
+      // When disabled, keep dividers transparent and bold as requested
+      root.style.setProperty('--custom-divider-bg', 'transparent');
+      root.style.setProperty('--custom-divider-width', '2px');
+      root.removeAttribute('data-custom-theme');
+    }
+  };
+
+  useEffect(() => {
+    applyThemeConfig(themeConfig);
+  }, [themeConfig]);
 
   // Load conversations on mount
   useEffect(() => {
@@ -64,6 +101,10 @@ function ChatApp() {
           const user = JSON.parse(userStr);
           setUserCredits(user.credits ?? 1000);
           setUserMemberType(user.member_type || 'free');
+          if (user.theme_config) {
+            setThemeConfig(user.theme_config);
+            localStorage.setItem('al-chat-theme-config', JSON.stringify(user.theme_config));
+          }
         }
       } catch (error) {
         console.error('Failed to parse user profile from storage:', error);
@@ -79,6 +120,10 @@ function ChatApp() {
       const user = await apiClient.getProfile();
       setUserCredits(user.credits ?? 1000);
       setUserMemberType(user.member_type || 'free');
+      if (user.theme_config) {
+        setThemeConfig(user.theme_config);
+        localStorage.setItem('al-chat-theme-config', JSON.stringify(user.theme_config));
+      }
       localStorage.setItem('user', JSON.stringify(user));
       // Notify other components (like Sidebar) if they use local storage
       window.dispatchEvent(new Event('user-profile-updated'));
@@ -693,6 +738,11 @@ function ChatApp() {
         isLoading={isLoadingConversations}
         isMobileDrawerOpen={isMobileDrawerOpen}
         onMobileDrawerClose={() => setIsMobileDrawerOpen(false)}
+        themeConfig={themeConfig || undefined}
+        onThemeConfigUpdated={(config) => {
+          setThemeConfig(config);
+          localStorage.setItem('al-chat-theme-config', JSON.stringify(config));
+        }}
       />
       <div className={`main-content ${isSearchSidebarOpen ? 'sidebar-open' : ''}`}>
         <TopBar 
@@ -762,12 +812,15 @@ function ChatApp() {
         searchData={searchData} 
         onClose={() => setIsSearchSidebarOpen(false)} 
       />
-      <EditMessageDialog 
-        open={isEditOpen}
-        initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
-        onClose={() => setIsEditOpen(false)}
-        onConfirm={handleConfirmEdit}
-      />
+      {createPortal(
+        <EditMessageDialog 
+          open={isEditOpen}
+          initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
+          onClose={() => setIsEditOpen(false)}
+          onConfirm={handleConfirmEdit}
+        />,
+        document.body
+      )}
     </div>
   );
 }

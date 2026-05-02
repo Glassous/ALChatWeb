@@ -60,6 +60,23 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
+export interface ThemePreset {
+  id: string;
+  name: string;
+  value: string;
+  type: 'color' | 'gradient';
+}
+
+export interface ThemeConfig {
+  enabled: boolean;
+  custom_presets?: ThemePreset[];
+  divider: {
+    type: 'color' | 'gradient';
+    value: string;
+    preset: string;
+  };
+}
+
 class APIClient {
   private baseURL: string;
   private conversationCache = new Map<string, CacheEntry<ConversationWithMessages>>();
@@ -214,6 +231,19 @@ class APIClient {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.error || 'Failed to update system prompt');
+    }
+    return response.json();
+  }
+
+  async updateTheme(data: ThemeConfig) {
+    const response = await fetch(`${this.baseURL}/api/auth/theme`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update theme');
     }
     return response.json();
   }

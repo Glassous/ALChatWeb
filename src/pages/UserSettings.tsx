@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar/TopBar';
 import Cropper from 'react-easy-crop';
@@ -43,6 +44,16 @@ export function UserSettings() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
+
+  // Global blur logic for settings dialogs
+  useEffect(() => {
+    if (isCropping || showUpgradeSuccess) {
+      document.body.classList.add('dialog-open-blur');
+    } else {
+      document.body.classList.remove('dialog-open-blur');
+    }
+    return () => document.body.classList.remove('dialog-open-blur');
+  }, [isCropping, showUpgradeSuccess]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -381,60 +392,65 @@ export function UserSettings() {
       </div>
 
       {/* Shared Dialogs */}
-      {isCropping && imageToCrop && (
-        <md-dialog open={isCropping} onClose={() => setIsCropping(false)} className="crop-dialog">
-          <div slot="headline">裁剪头像</div>
-          <div slot="content" className="crop-container">
-            <Cropper
-              image={imageToCrop}
-              crop={crop}
-              zoom={zoom}
-              aspect={1}
-              onCropChange={setCrop}
-              onCropComplete={onCropComplete}
-              onZoomChange={setZoom}
-            />
-          </div>
-          <div slot="actions">
-            <md-text-button onClick={() => { setIsCropping(false); setImageToCrop(null); }}>取消</md-text-button>
-            <md-filled-button onClick={handleConfirmCrop}>确定</md-filled-button>
-          </div>
-        </md-dialog>
-      )}
+      {createPortal(
+        <>
+          {isCropping && imageToCrop && (
+            <md-dialog open={isCropping} onClose={() => setIsCropping(false)} className="crop-dialog">
+              <div slot="headline">裁剪头像</div>
+              <div slot="content" className="crop-container">
+                <Cropper
+                  image={imageToCrop}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                />
+              </div>
+              <div slot="actions">
+                <md-text-button onClick={() => { setIsCropping(false); setImageToCrop(null); }}>取消</md-text-button>
+                <md-filled-button onClick={handleConfirmCrop}>确定</md-filled-button>
+              </div>
+            </md-dialog>
+          )}
 
-      {showUpgradeSuccess && upgradeInfo && (
-        <md-dialog open={showUpgradeSuccess} onClose={() => setShowUpgradeSuccess(false)} className="upgrade-success-dialog">
-          <div slot="content" className="upgrade-success-content">
-            <motion.div 
-              initial={{ scale: 0.5, opacity: 0 }} 
-              animate={{ scale: 1, opacity: 1 }} 
-              transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
-            >
-              <div className="success-icon-wrapper">
-                <svg viewBox="0 0 52 52" className="success-check-svg">
-                  <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
-                  <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-                </svg>
-              </div>
-              <h2>兑换成功！</h2>
-              <div className="success-details">
-                <div className="success-detail-item">
-                  <span className="detail-label">当前等级</span>
-                  <img src={`/badge-${upgradeInfo.type}.svg`} alt={upgradeInfo.type} className="member-badge-icon large" />
-                </div>
-                {upgradeInfo.expiry && (
-                  <div className="success-detail-item">
-                    <span className="detail-label">有效期至</span>
-                    <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
+          {showUpgradeSuccess && upgradeInfo && (
+            <md-dialog open={showUpgradeSuccess} onClose={() => setShowUpgradeSuccess(false)} className="upgrade-success-dialog">
+              <div slot="content" className="upgrade-success-content">
+                <motion.div 
+                  initial={{ scale: 0.5, opacity: 0 }} 
+                  animate={{ scale: 1, opacity: 1 }} 
+                  transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
+                >
+                  <div className="success-icon-wrapper">
+                    <svg viewBox="0 0 52 52" className="success-check-svg">
+                      <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
+                      <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                    </svg>
                   </div>
-                )}
+                  <h2>兑换成功！</h2>
+                  <div className="success-details">
+                    <div className="success-detail-item">
+                      <span className="detail-label">当前等级</span>
+                      <img src={`/badge-${upgradeInfo.type}.svg`} alt={upgradeInfo.type} className="member-badge-icon large" />
+                    </div>
+                    {upgradeInfo.expiry && (
+                      <div className="success-detail-item">
+                        <span className="detail-label">有效期至</span>
+                        <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
               </div>
-            </motion.div>
-          </div>
-          <div slot="actions">
-            <md-filled-button onClick={() => setShowUpgradeSuccess(false)}>太棒了</md-filled-button>
-          </div>
-        </md-dialog>
+              <div slot="actions">
+                <md-filled-button onClick={() => setShowUpgradeSuccess(false)}>太棒了</md-filled-button>
+              </div>
+            </md-dialog>
+          )}
+        </>,
+        document.body
       )}
     </div>
   );

@@ -10,7 +10,8 @@ import '@material/web/button/filled-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/progress/circular-progress.js';
 import './Sidebar.css';
-import { apiClient } from '../../services/api';
+import { apiClient, type ThemeConfig } from '../../services/api';
+import { ThemeSettingsDialog } from './ThemeSettingsDialog';
 
 interface Conversation {
   id: string;
@@ -30,6 +31,8 @@ interface SidebarProps {
   isLoading?: boolean;
   isMobileDrawerOpen?: boolean;
   onMobileDrawerClose?: () => void;
+  themeConfig?: ThemeConfig;
+  onThemeConfigUpdated?: (config: ThemeConfig) => void;
 }
 
 const AI_ICON = (
@@ -52,9 +55,12 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
+  onSystemPromptUpdated,
   isLoading = false,
   isMobileDrawerOpen = false,
-  onMobileDrawerClose
+  onMobileDrawerClose,
+  themeConfig,
+  onThemeConfigUpdated
 }: SidebarProps) {
   const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -71,6 +77,18 @@ export function Sidebar({
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   const [userMemberType, setUserMemberType] = useState('free');
   const [userCredits, setUserCredits] = useState<number | null>(null);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  // Helper to manage global dialog blur
+  useEffect(() => {
+    const isAnyDialogOpen = showDeleteDialog || showEditDialog || showThemeSettings;
+    if (isAnyDialogOpen) {
+      document.body.classList.add('dialog-open-blur');
+    } else {
+      document.body.classList.remove('dialog-open-blur');
+    }
+    return () => document.body.classList.remove('dialog-open-blur');
+  }, [showDeleteDialog, showEditDialog, showThemeSettings]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -78,6 +96,9 @@ export function Sidebar({
         const user = await apiClient.getProfile();
         setUserMemberType(user.member_type || 'free');
         setUserCredits(user.credits ?? 1000);
+        if (user.theme_config && onThemeConfigUpdated) {
+          onThemeConfigUpdated(user.theme_config);
+        }
         localStorage.setItem('user', JSON.stringify(user));
       } catch (error) {
         console.error('Failed to fetch profile', error);
@@ -335,6 +356,26 @@ export function Sidebar({
               </div>
               <div className="settings-divider"></div>
               <div 
+                className={`settings-row clickable ${!['pro', 'max', 'ultra'].includes(userMemberType) ? 'disabled' : ''}`}
+                onClick={() => {
+                  if (['pro', 'max', 'ultra'].includes(userMemberType)) {
+                    setShowSettings(false);
+                    setShowThemeSettings(true);
+                  }
+                }}
+              >
+                <div className="settings-row-content">
+                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                    <path d="M480-80q-82 0-155-31.5t-127.5-86Q144-252 112-325T80-480q0-83 31.5-156t86-127Q252-817 325-848.5T480-880q83 0 156 31.5t127 86q54 54.5 85.5 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
+                  </svg>
+                  <span className="settings-label">个性装扮</span>
+                </div>
+                {!['pro', 'max', 'ultra'].includes(userMemberType) && (
+                  <span className="pro-badge-mini">PRO</span>
+                )}
+              </div>
+              <div className="settings-divider"></div>
+              <div 
                 className="settings-row user-info-row clickable"
                 onClick={() => {
                   setShowSettings(false);
@@ -420,38 +461,54 @@ export function Sidebar({
             document.body
           )}
 
-          {showDeleteDialog && selectedConversation && (
-            <md-dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>
-              <div slot="headline">删除对话</div>
-              <div slot="content">确定要删除对话 "{selectedConversation.title}" 吗？此操作无法撤销。</div>
-              <div slot="actions">
-                <md-text-button onClick={() => setShowDeleteDialog(false)}>取消</md-text-button>
-                <md-filled-button onClick={handleConfirmDelete} style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}>删除</md-filled-button>
-              </div>
-            </md-dialog>
-          )}
+          {createPortal(
+            <>
+              {showDeleteDialog && selectedConversation && (
+                <md-dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>
+                  <div slot="headline">删除对话</div>
+                  <div slot="content">确定要删除对话 "{selectedConversation.title}" 吗？此操作无法撤销。</div>
+                  <div slot="actions">
+                    <md-text-button onClick={() => setShowDeleteDialog(false)}>取消</md-text-button>
+                    <md-filled-button onClick={handleConfirmDelete} style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}>删除</md-filled-button>
+                  </div>
+                </md-dialog>
+              )}
 
-          {showEditDialog && selectedConversation && (
-            <md-dialog open={showEditDialog} onClose={() => setShowEditDialog(false)}>
-              <div slot="headline">编辑对话标题</div>
-              <div slot="content" style={{ paddingTop: '16px' }}>
-                <md-outlined-text-field
-                  label="对话标题"
-                  value={editTitle}
-                  onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
-                  onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') handleConfirmEdit(); }}
-                  style={{ width: '100%' }}
-                >
-                  <md-icon-button slot="trailing-icon" onClick={handleAIGenerateTitle} disabled={isGeneratingTitle} title="AI 生成标题">
-                    {isGeneratingTitle ? <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '24px' }} /> : AI_ICON}
-                  </md-icon-button>
-                </md-outlined-text-field>
-              </div>
-              <div slot="actions">
-                <md-text-button onClick={() => setShowEditDialog(false)}>取消</md-text-button>
-                <md-filled-button onClick={handleConfirmEdit} disabled={!editTitle.trim()}>保存</md-filled-button>
-              </div>
-            </md-dialog>
+              {showEditDialog && selectedConversation && (
+                <md-dialog open={showEditDialog} onClose={() => setShowEditDialog(false)}>
+                  <div slot="headline">编辑对话标题</div>
+                  <div slot="content" style={{ paddingTop: '16px' }}>
+                    <md-outlined-text-field
+                      label="对话标题"
+                      value={editTitle}
+                      onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
+                      onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') handleConfirmEdit(); }}
+                      style={{ width: '100%' }}
+                    >
+                      <md-icon-button slot="trailing-icon" onClick={handleAIGenerateTitle} disabled={isGeneratingTitle} title="AI 生成标题">
+                        {isGeneratingTitle ? <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '24px' }} /> : AI_ICON}
+                      </md-icon-button>
+                    </md-outlined-text-field>
+                  </div>
+                  <div slot="actions">
+                    <md-text-button onClick={() => setShowEditDialog(false)}>取消</md-text-button>
+                    <md-filled-button onClick={handleConfirmEdit} disabled={!editTitle.trim()}>保存</md-filled-button>
+                  </div>
+                </md-dialog>
+              )}
+
+              <ThemeSettingsDialog 
+                open={showThemeSettings}
+                onClose={() => setShowThemeSettings(false)}
+                initialConfig={themeConfig}
+                onConfigUpdated={(config) => {
+                  if (onThemeConfigUpdated) {
+                    onThemeConfigUpdated(config);
+                  }
+                }}
+              />
+            </>,
+            document.body
           )}
         </div>
       </div>
