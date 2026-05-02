@@ -431,6 +431,10 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 			"credits":              newCredits,
 		},
 	})
+
+	time.AfterFunc(10*time.Second, func() {
+		h.streamManager.CloseConversation(req.ConversationID)
+	})
 }
 
 func (h *ChatHandler) Stream(c *gin.Context) {
