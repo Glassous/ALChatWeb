@@ -662,7 +662,7 @@ export function InputArea({
           <div className="input-bottom-row">
             <motion.div className="tools-left" layout>
               <AnimatePresence initial={false}>
-                {!isImageMode && !isSearchMode && attachments.length === 0 && (
+                {!isImageMode && !isSearchMode && !isAgentMode && attachments.length === 0 && (
                   <motion.div
                     key="mode-toggle"
                     layout
@@ -681,7 +681,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isSearchMode && attachments.length === 0 && (
+                {!isSearchMode && !isAgentMode && attachments.length === 0 && (
                   <motion.div
                     key="image-mode"
                     layout
@@ -705,7 +705,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isImageMode && attachments.length === 0 && (
+                {!isImageMode && !isAgentMode && attachments.length === 0 && (
                   <motion.div
                     key="search-mode"
                     layout
@@ -741,9 +741,7 @@ export function InputArea({
                       onClick={() => onAgentModeChange?.(!isAgentMode)}
                       title={isAgentMode ? '关闭 Agent 模式' : '开启 Agent 模式'}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                        <path d="M240-400h320v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v527l46-47Zm-46 0v-480 480Z"/>
-                      </svg>
+                      Agent
                     </button>
                   </motion.div>
                 )}
@@ -864,7 +862,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isImageMode && !isSearchMode && (
+                {!isImageMode && !isSearchMode && !isAgentMode && (
                   <motion.div
                     key="attachment"
                     layout

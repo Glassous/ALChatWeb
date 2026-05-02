@@ -225,14 +225,21 @@ func (s *ConversationService) GetMessageBranch(ctx context.Context, conversation
 }
 
 func (s *ConversationService) UpdateMessage(ctx context.Context, message *models.Message) error {
+	updateFields := bson.M{
+		"content":   message.Content,
+		"reasoning": message.Reasoning,
+		"search":    message.Search,
+	}
+	if message.AgentSteps != nil {
+		updateFields["agent_steps"] = message.AgentSteps
+	}
+	if message.AgentPlan != nil {
+		updateFields["agent_plan"] = message.AgentPlan
+	}
 	_, err := s.db.Messages().UpdateOne(
 		ctx,
 		bson.M{"_id": message.ID},
-		bson.M{"$set": bson.M{
-			"content":   message.Content,
-			"reasoning": message.Reasoning,
-			"search":    message.Search,
-		}},
+		bson.M{"$set": updateFields},
 	)
 	return err
 }

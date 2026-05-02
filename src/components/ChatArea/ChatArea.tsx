@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
 import { AgentStepPanel } from '../AgentStepPanel/AgentStepPanel';
+import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import type { AgentStepData, AgentPlanItemData } from '../../services/api';
 import './ChatArea.css';
 
@@ -207,8 +208,18 @@ function MessageItem({
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
       .replace(/\n?<search>[\s\S]*?<\/search>\n?/g, '') // Remove completed search tag and surrounding newlines
       .replace(/\n?<search>[\s\S]*/g, '') // Remove partial search tag during streaming and leading newline
+      .replace(/\n?<weather>[\s\S]*?<\/weather>\n?/g, '') // Remove weather tag
       .replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`);
 
+    let displayWeather: WeatherData | null = null;
+    const weatherMatch = msg.content.match(/<weather>([\s\S]*?)<\/weather>/);
+    if (weatherMatch && weatherMatch[1]) {
+      try {
+        displayWeather = JSON.parse(weatherMatch[1].trim());
+      } catch (e) {
+        console.error('Failed to parse weather data:', e);
+      }
+    }
     // Fallback search data if msg.search is missing but exists in content
     let displaySearch = msg.search;
     if (!displaySearch && msg.content.includes('<search>')) {
@@ -297,6 +308,7 @@ function MessageItem({
             </div>
           </div>
         )}
+        {displayWeather && <WeatherCard data={displayWeather} />}
         {msg.reasoning && (
           <div className="reasoning-container">
             <div 
@@ -431,11 +443,12 @@ function MessageItem({
           </>
         ) : (
           <div className="assistant-message-content">
-            {msg.agent_plan && msg.agent_plan.length > 0 && (
+            {((msg.agent_plan && msg.agent_plan.length > 0) || (msg.agent_steps && msg.agent_steps.length > 0)) && (
               <AgentStepPanel 
                 steps={msg.agent_steps || []} 
                 plan={msg.agent_plan}
                 isStreaming={msg.status === 'loading'}
+                onShowSearch={onShowSearch}
               />
             )}
             <div className="message-text assistant-text">
@@ -642,11 +655,13 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     // Check if it's purely a file or image message
     const hasFile = content.includes('<file');
     const hasImage = content.includes('<image');
+    const hasWeather = content.includes('<weather>');
 
-    // Strip <file ...> and <image ...> tags
+    // Strip <file ...>, <image ...>, <weather>...</weather> tags
     const filtered = content
       .replace(/<file[^>]*>/g, '')
       .replace(/<image[^>]*>/g, '')
+      .replace(/\n?<weather>[\s\S]*?<\/weather>\n?/g, '')
       .trim();
 
     // If empty after filtering, show placeholder
@@ -654,6 +669,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       if (hasFile && hasImage) return '[文件与图片]';
       if (hasFile) return '[文件]';
       if (hasImage) return '[图片]';
+      if (hasWeather) return '[天气]';
       return '消息';
     }
 

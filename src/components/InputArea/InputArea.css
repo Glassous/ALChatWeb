@@ -500,22 +500,16 @@
   border: 1px solid transparent;
   background-color: transparent;
   transition: all 0.2s ease;
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px 4px;
 }
 
 .agent-toggle-btn.active {
   color: #8b5cf6 !important;
   background-color: transparent;
   font-weight: 600;
-}
-
-.agent-toggle-btn.active svg {
-  color: #8b5cf6 !important;
-  filter: drop-shadow(0 0 2px rgba(139, 92, 246, 0.3));
-}
-
-.agent-toggle-btn svg {
-  width: 24px;
-  height: 24px;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.25);
 }
 
 .tool-btn:hover {

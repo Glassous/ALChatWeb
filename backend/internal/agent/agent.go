@@ -17,6 +17,11 @@ import (
 
 type StepCallback func(step AgentStep)
 
+type AgentResult struct {
+	Answer    string
+	Reasoning string
+}
+
 type Runner struct {
 	g        *genkit.Genkit
 	registry *tools.Registry
@@ -33,19 +38,19 @@ func NewRunner(g *genkit.Genkit, registry *tools.Registry, db *database.MongoDB,
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, messages []*ai.Message, callbackI interface{}) (string, error) {
+func (r *Runner) Run(ctx context.Context, messages []*ai.Message, callbackI interface{}) (*AgentResult, error) {
 	callback, ok := callbackI.(StepCallback)
 	if !ok {
-		return "", fmt.Errorf("invalid callback type")
+		return nil, fmt.Errorf("invalid callback type")
 	}
 
 	if r.model == "" {
-		return "", fmt.Errorf("agent model not configured")
+		return nil, fmt.Errorf("agent model not configured")
 	}
 
 	enabledTools := r.registry.GetEnabledTools()
 	if len(enabledTools) == 0 {
-		return "", fmt.Errorf("no tools available")
+		return nil, fmt.Errorf("no tools available")
 	}
 
 	var allMessages []*ai.Message
@@ -61,34 +66,71 @@ func (r *Runner) Run(ctx context.Context, messages []*ai.Message, callbackI inte
 		return r.runWithPlan(ctx, allMessages, plan, enabledTools, callback)
 	}
 
-	return r.runLoop(ctx, allMessages, enabledTools, callback, nil)
+	return r.runLoop(ctx, allMessages, enabledTools, callback, nil, nil, nil)
 }
 
-func (r *Runner) runWithPlan(ctx context.Context, messages []*ai.Message, plan *PlanResponse, enabledTools []ai.ToolRef, callback StepCallback) (string, error) {
-	return r.runLoop(ctx, messages, enabledTools, callback, plan)
+func (r *Runner) RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
+	if r.model == "" {
+		return nil, fmt.Errorf("agent model not configured")
+	}
+
+	enabledTools := r.registry.GetEnabledTools()
+	if len(enabledTools) == 0 {
+		return nil, fmt.Errorf("no tools available")
+	}
+
+	var allMessages []*ai.Message
+	allMessages = append(allMessages, messages...)
+
+	plan, err := r.generatePlan(ctx, allMessages, enabledTools)
+	if err != nil {
+		log.Printf("[Agent] Plan generation failed, falling back to no-plan mode: %v", err)
+	}
+
+	if plan != nil && len(plan.Items) > 0 {
+		stepCb(AgentStep{Plan: plan})
+		return r.runWithPlanStreaming(ctx, allMessages, plan, enabledTools, stepCb, tokenCb, reasoningCb)
+	}
+
+	return r.runLoop(ctx, allMessages, enabledTools, stepCb, nil, tokenCb, reasoningCb)
 }
 
-func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, callback StepCallback, plan *PlanResponse) (string, error) {
+func (r *Runner) runWithPlan(ctx context.Context, messages []*ai.Message, plan *PlanResponse, enabledTools []ai.ToolRef, callback StepCallback) (*AgentResult, error) {
+	return r.runLoop(ctx, messages, enabledTools, callback, plan, nil, nil)
+}
+
+func (r *Runner) runWithPlanStreaming(ctx context.Context, messages []*ai.Message, plan *PlanResponse, enabledTools []ai.ToolRef, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
+	return r.runLoop(ctx, messages, enabledTools, stepCb, plan, tokenCb, reasoningCb)
+}
+
+func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, callback StepCallback, plan *PlanResponse, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
 	maxIterations := 10
 	iteration := 0
 	planIndex := 0
+	var allReasoning string
 
 	for iteration < maxIterations {
 		iteration++
 
-		resp, err := genkit.Generate(ctx, r.g,
-			ai.WithModelName("openai-agent/"+r.model),
-			ai.WithMessages(messages...),
-			ai.WithTools(enabledTools...),
-			ai.WithReturnToolRequests(true),
-		)
-		if err != nil {
-			return "", fmt.Errorf("generation error: %w", err)
+		var resp *ai.ModelResponse
+		var streamErr error
+
+		if reasoningCb != nil || tokenCb != nil {
+			resp, streamErr = r.generateStreaming(ctx, messages, enabledTools, reasoningCb, tokenCb, &allReasoning)
+		} else {
+			resp, streamErr = r.generateSync(ctx, messages, enabledTools)
+		}
+		if streamErr != nil {
+			return nil, fmt.Errorf("generation error: %w", streamErr)
 		}
 
 		toolRequests := resp.ToolRequests()
 		if len(toolRequests) == 0 {
-			return resp.Text(), nil
+			finalText := resp.Text()
+			return &AgentResult{
+				Answer:    finalText,
+				Reasoning: allReasoning,
+			}, nil
 		}
 
 		if plan != nil && planIndex < len(plan.Items) {
@@ -99,38 +141,20 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 			})
 		}
 
-		for _, tr := range toolRequests {
-			step := AgentStep{
-				Index:     iteration,
-				ToolName:  tr.Name,
-				ToolInput: nil,
-			}
-			if plan != nil && planIndex < len(plan.Items) {
-				step.PlanIndex = &planIndex
-			}
-
-			if inputMap, ok := tr.Input.(map[string]any); ok {
-				step.ToolInput = inputMap
-			} else {
-				inputBytes, _ := json.Marshal(tr.Input)
-				var inputMap map[string]any
-				json.Unmarshal(inputBytes, &inputMap)
-				step.ToolInput = inputMap
-			}
-
-			callback(step)
-		}
-
 		var toolResponseParts []*ai.Part
 		for _, tr := range toolRequests {
+			inputMap := parseToolInput(tr.Input)
+
 			tool := genkit.LookupTool(r.g, tr.Name)
 			if tool == nil {
 				errOutput := map[string]any{"error": fmt.Sprintf("tool %s not found", tr.Name)}
 				callback(AgentStep{
 					Index:      iteration,
 					ToolName:   tr.Name,
-					ToolOutput: fmt.Sprintf("%v", errOutput),
+					ToolInput:  inputMap,
+					ToolOutput: formatOutput(errOutput),
 					Err:        fmt.Sprintf("tool %s not found", tr.Name),
+					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
 				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
 					Name:   tr.Name,
@@ -140,22 +164,16 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 				continue
 			}
 
-			var toolInput map[string]any
-			if inputMap, ok := tr.Input.(map[string]any); ok {
-				toolInput = inputMap
-			} else {
-				inputBytes, _ := json.Marshal(tr.Input)
-				json.Unmarshal(inputBytes, &toolInput)
-			}
-
-			output, err := tool.RunRaw(ctx, toolInput)
+			output, err := tool.RunRaw(ctx, inputMap)
 			if err != nil {
 				errOutput := map[string]any{"error": err.Error()}
 				callback(AgentStep{
 					Index:      iteration,
 					ToolName:   tr.Name,
-					ToolOutput: fmt.Sprintf("%v", errOutput),
+					ToolInput:  inputMap,
+					ToolOutput: formatOutput(errOutput),
 					Err:        err.Error(),
+					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
 				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
 					Name:   tr.Name,
@@ -166,7 +184,9 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 				callback(AgentStep{
 					Index:      iteration,
 					ToolName:   tr.Name,
-					ToolOutput: fmt.Sprintf("%v", output),
+					ToolInput:  inputMap,
+					ToolOutput: formatOutput(output),
+					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
 				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
 					Name:   tr.Name,
@@ -192,7 +212,87 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 		messages = append(messages, resp.Message, toolMsg)
 	}
 
-	return "", fmt.Errorf("agent exceeded maximum iterations (%d)", maxIterations)
+	return nil, fmt.Errorf("agent exceeded maximum iterations (%d)", maxIterations)
+}
+
+func (r *Runner) generateSync(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef) (*ai.ModelResponse, error) {
+	return genkit.Generate(ctx, r.g,
+		ai.WithModelName("openai-agent/"+r.model),
+		ai.WithMessages(messages...),
+		ai.WithTools(enabledTools...),
+		ai.WithReturnToolRequests(true),
+	)
+}
+
+func (r *Runner) generateStreaming(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, reasoningCb func(string), tokenCb func(string), allReasoning *string) (*ai.ModelResponse, error) {
+	var finalResp *ai.ModelResponse
+
+	for sv, err := range genkit.GenerateStream(ctx, r.g,
+		ai.WithModelName("openai-agent/"+r.model),
+		ai.WithMessages(messages...),
+		ai.WithTools(enabledTools...),
+		ai.WithReturnToolRequests(true),
+	) {
+		if err != nil {
+			return nil, err
+		}
+
+		if sv.Done {
+			finalResp = sv.Response
+			break
+		}
+
+		if sv.Chunk != nil {
+			if reasoningCb != nil {
+				if r := sv.Chunk.Reasoning(); r != "" {
+					*allReasoning += r
+					reasoningCb(r)
+				}
+			}
+			if tokenCb != nil {
+				if t := sv.Chunk.Text(); t != "" {
+					tokenCb(t)
+				}
+			}
+		}
+	}
+
+	if finalResp == nil {
+		return nil, fmt.Errorf("streaming completed without final response")
+	}
+
+	return finalResp, nil
+}
+
+func parseToolInput(input any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	if inputMap, ok := input.(map[string]any); ok {
+		return inputMap
+	}
+	inputBytes, _ := json.Marshal(input)
+	var inputMap map[string]any
+	json.Unmarshal(inputBytes, &inputMap)
+	return inputMap
+}
+
+func formatOutput(output any) string {
+	if output == nil {
+		return ""
+	}
+	if s, ok := output.(string); ok {
+		return s
+	}
+	b, _ := json.Marshal(output)
+	return string(b)
+}
+
+func getPlanIndex(plan *PlanResponse, planIndex int) *int {
+	if plan != nil && planIndex < len(plan.Items) {
+		return &planIndex
+	}
+	return nil
 }
 
 func (r *Runner) generatePlan(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef) (*PlanResponse, error) {

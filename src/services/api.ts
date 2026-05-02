@@ -20,7 +20,7 @@ export interface AgentPlanItemData {
   id: number;
   description: string;
   tool_name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'completed' | 'error';
 }
 
 export interface Message {

@@ -7,7 +7,7 @@ import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
-import { apiClient, type Conversation } from './services/api';
+import { apiClient, type Conversation, type AgentPlanItemData } from './services/api';
 import { Welcome } from './pages/Welcome';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -471,12 +471,15 @@ function ChatApp() {
             )
           );
         },
-        (planIndex) => {
+        (planItemData) => {
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg): Message => {
               if (msg.id !== assistantMsgId || !msg.agent_plan) return msg;
+              const isObject = typeof planItemData === 'object' && planItemData !== null;
+              const planIndex = isObject ? (planItemData as any).index : planItemData;
+              const status = isObject ? (planItemData as any).status : 'completed';
               const updatedPlan = msg.agent_plan.map((item, i) =>
-                i === planIndex ? { ...item, status: 'completed' as const } : item
+                i === planIndex ? { ...item, status: status as AgentPlanItemData['status'] } : item
               );
               return { ...msg, agent_plan: updatedPlan };
             })

@@ -1,61 +1,107 @@
 package tools
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 
 	"github.com/firebase/genkit/go/ai"
 )
 
-const WebSearchDescription = "Search the web for information. Use this when you need to find current information, news, or facts that may not be in your training data. Input: {\"query\": \"search keywords\"}"
+const WebSearchDescription = "Search the web for information using Bocha AI. Use this when you need to find current information, news, travel guides, or facts. Input: {\"query\": \"search keywords\"}. Returns search results with titles, URLs, and snippets."
 
-func WebSearchFn(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
-	query, _ := input["query"].(string)
-	if query == "" {
-		return map[string]any{"error": "query is required"}, nil
+func NewWebSearchFn(apiKey string) func(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+	return func(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+		query, _ := input["query"].(string)
+		if query == "" {
+			return map[string]any{"error": "query is required"}, nil
+		}
+
+		if apiKey == "" {
+			return map[string]any{
+				"query":   query,
+				"results": "Search unavailable: API key not configured",
+			}, nil
+		}
+
+		results, err := bochaSearch(ctx, apiKey, query, 8)
+		if err != nil {
+			return map[string]any{
+				"query":   query,
+				"results": fmt.Sprintf("Search error: %v", err),
+			}, nil
+		}
+
+		return map[string]any{
+			"query":   query,
+			"results": results,
+		}, nil
 	}
+}
 
-	searchURL := fmt.Sprintf("https://duckduckgo.com/html/?q=%s", url.QueryEscape(query))
+type bochaSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+func bochaSearch(ctx context.Context, apiKey, query string, count int) ([]bochaSearchResult, error) {
+	url := "https://api.bochaai.com/v1/web-search"
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query": query,
+		"count": count,
+	})
 	if err != nil {
-		return map[string]any{"error": err.Error()}, nil
+		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return map[string]any{"error": err.Error()}, nil
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return map[string]any{"error": err.Error()}, nil
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("Bocha AI API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	type SearchResult struct {
-		Title   string `json:"title"`
-		URL     string `json:"url"`
-		Snippet string `json:"snippet"`
+	var result struct {
+		Data struct {
+			WebPages struct {
+				Value []struct {
+					Name    string `json:"name"`
+					URL     string `json:"url"`
+					Snippet string `json:"snippet"`
+				} `json:"value"`
+			} `json:"webPages"`
+		} `json:"data"`
 	}
 
-	var results []SearchResult
-	_ = json.Unmarshal(body, &results)
-
-	if len(results) == 0 {
-		return map[string]any{
-			"query":   query,
-			"results": "No results found",
-		}, nil
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
 	}
 
-	return map[string]any{
-		"query":   query,
-		"results": results,
-	}, nil
+	searchResults := make([]bochaSearchResult, 0, len(result.Data.WebPages.Value))
+	for _, v := range result.Data.WebPages.Value {
+		searchResults = append(searchResults, bochaSearchResult{
+			Title:   v.Name,
+			URL:     v.URL,
+			Snippet: v.Snippet,
+		})
+	}
+
+	return searchResults, nil
 }

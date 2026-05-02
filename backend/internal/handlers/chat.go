@@ -28,7 +28,8 @@ type ChatHandler struct {
 	db                  *database.MongoDB
 	streamManager       *services.StreamManager
 	agentRunner         interface {
-		Run(ctx context.Context, messages []*ai.Message, callback interface{}) (string, error)
+		Run(ctx context.Context, messages []*ai.Message, callback interface{}) (*agent.AgentResult, error)
+		RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
 	}
 }
 
@@ -43,7 +44,8 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 }
 
 func (h *ChatHandler) SetAgentRunner(runner interface {
-	Run(ctx context.Context, messages []*ai.Message, callback interface{}) (string, error)
+	Run(ctx context.Context, messages []*ai.Message, callback interface{}) (*agent.AgentResult, error)
+	RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
 }) {
 	h.agentRunner = runner
 }
@@ -284,8 +286,12 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 
 	var allSteps []models.AgentStepData
 	var allPlan []models.AgentPlanItemData
+	var accumulatedReasoning string
+	var accumulatedAnswer string
+	startSent := false
+	textSent := false
 
-	finalAnswer, err := h.agentRunner.Run(ctx, aiMessages, agent.StepCallback(func(step agent.AgentStep) {
+	agentResult, err := h.agentRunner.RunWithStreaming(ctx, aiMessages, agent.StepCallback(func(step agent.AgentStep) {
 
 		if step.Plan != nil && len(step.Plan.Items) > 0 {
 			allPlan = make([]models.AgentPlanItemData, len(step.Plan.Items))
@@ -307,7 +313,7 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 		if step.ToolName == "plan_progress" {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 				Type: "plan_item",
-				Data: step.PlanIndex,
+				Data: map[string]interface{}{"index": step.PlanIndex, "status": "in_progress"},
 			})
 			return
 		}
@@ -315,7 +321,7 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 		if step.ToolName == "plan_item" {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 				Type: "plan_item",
-				Data: step.PlanIndex,
+				Data: map[string]interface{}{"index": step.PlanIndex, "status": "completed"},
 			})
 			return
 		}
@@ -336,8 +342,38 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 				Type: "agent_step",
 				Data: stepData,
 			})
+
+			if textSent {
+				accumulatedAnswer = ""
+				textSent = false
+			}
 		}
-	}))
+	}), func(token string) {
+		if !startSent {
+			startSent = true
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "start",
+			})
+		}
+		textSent = true
+		accumulatedAnswer += token
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "token",
+			Content: token,
+		})
+	}, func(reasoningChunk string) {
+		if !startSent {
+			startSent = true
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "start",
+			})
+		}
+		accumulatedReasoning += reasoningChunk
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "reasoning",
+			Content: reasoningChunk,
+		})
+	})
 
 	if err != nil {
 		log.Printf("[Agent] Run failed: %v", err)
@@ -348,14 +384,34 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 		return
 	}
 
-	log.Printf("[Agent] Run completed, answer length: %d", len(finalAnswer))
+	if agentResult == nil {
+		agentResult = &agent.AgentResult{}
+	}
 
-	assistantMsg.Content = finalAnswer
+	if accumulatedAnswer == "" {
+		accumulatedAnswer = agentResult.Answer
+	}
+	if accumulatedReasoning == "" {
+		accumulatedReasoning = agentResult.Reasoning
+	}
+
+	log.Printf("[Agent] Run completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
+
+	assistantMsg.Content = accumulatedAnswer
+	assistantMsg.Reasoning = accumulatedReasoning
 	assistantMsg.AgentSteps = allSteps
 	assistantMsg.AgentPlan = allPlan
 	h.conversationService.UpdateMessage(ctx, assistantMsg)
 
-	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(finalAnswer))
+	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(agentResult.Answer))
+
+	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
+	if titleErr == nil && title != "" {
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "title",
+			Content: title,
+		})
+	}
 
 	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 		Type: "done",

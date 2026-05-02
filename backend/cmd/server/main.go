@@ -90,7 +90,7 @@ func main() {
 	adminHandler.LoadConfigs(context.Background())
 
 	registry := tools.NewRegistry(aiService.GetGenkit())
-	registry.Register("web_search", tools.WebSearchDescription, tools.WebSearchFn)
+	registry.Register("web_search", tools.WebSearchDescription, tools.NewWebSearchFn(cfg.BochaAPIKey))
 	registry.Register("weather", tools.WeatherDescription, tools.WeatherFn)
 	registry.Register("calculator", tools.CalculatorDescription, tools.CalculatorFn)
 	registry.Register("get_time", tools.GetTimeDescription, tools.GetTimeFn)
