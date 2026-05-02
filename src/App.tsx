@@ -419,7 +419,10 @@ function ChatApp() {
             setMessages((prev) => {
               const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                 if (msg.id === assistantMsgId) {
-                  return { ...msg, id: realAssistantId, status: 'completed' };
+                  const finalizedPlan = msg.agent_plan?.map((item) =>
+                    item.status !== 'completed' ? { ...item, status: 'completed' as const } : item
+                  );
+                  return { ...msg, id: realAssistantId, status: 'completed', ...(finalizedPlan ? { agent_plan: finalizedPlan } : {}) };
                 }
                 if (msg.id === userMsgId) {
                   return { ...msg, id: realUserId };
@@ -453,11 +456,13 @@ function ChatApp() {
           console.error('SSE Error:', error);
           setIsLoading(false);
           setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg): Message =>
-              msg.id === assistantMsgId
-                ? { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error' }
-                : msg
-            )
+            (Array.isArray(prev) ? prev : []).map((msg): Message => {
+              if (msg.id !== assistantMsgId) return msg;
+              const finalizedPlan = msg.agent_plan?.map((item) =>
+                item.status !== 'completed' ? { ...item, status: 'completed' as const } : item
+              );
+              return { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error', ...(finalizedPlan ? { agent_plan: finalizedPlan } : {}) };
+            })
           );
         },
         location,

@@ -397,6 +397,16 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 
 	log.Printf("[Agent] Run completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
 
+	for i, item := range allPlan {
+		if item.Status != string(agent.PlanStatusCompleted) {
+			allPlan[i].Status = string(agent.PlanStatusCompleted)
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "plan_item",
+				Data: map[string]interface{}{"index": i, "status": "completed"},
+			})
+		}
+	}
+
 	assistantMsg.Content = accumulatedAnswer
 	assistantMsg.Reasoning = accumulatedReasoning
 	assistantMsg.AgentSteps = allSteps
