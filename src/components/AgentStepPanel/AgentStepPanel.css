@@ -350,6 +350,7 @@
 
 .weather-inline-forecast {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-top: 6px;
   border-top: 1px solid var(--border-color, #e5e7eb);

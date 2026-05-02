@@ -90,13 +90,8 @@
 
 .forecast-list {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.forecast-list::-webkit-scrollbar {
-  display: none;
 }
 
 .forecast-item {
@@ -105,7 +100,7 @@
   align-items: center;
   gap: 4px;
   min-width: 52px;
-  padding: 8px 4px;
+  padding: 8px 6px;
   border-radius: 10px;
   transition: background 0.2s;
 }
