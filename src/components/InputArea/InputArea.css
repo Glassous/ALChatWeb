@@ -44,6 +44,11 @@
   transition: box-shadow 0.3s ease;
 }
 
+:root:not([data-custom-theme="enabled"]) .input-container-square {
+  border: 2px solid var(--border-color);
+  background: var(--bg-color);
+}
+
 .textarea-wrapper {
   position: relative;
   flex-grow: 1;

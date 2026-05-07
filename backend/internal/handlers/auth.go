@@ -12,7 +12,6 @@ import (
 	"alchat-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -24,24 +23,21 @@ type AuthHandler struct {
 	jwtSecret     string
 	ossService    *services.OSSService
 	memberService *services.MemberService
+	tokenService  *services.TokenService
 }
 
-func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService) *AuthHandler {
 	return &AuthHandler{
 		db:            db,
 		jwtSecret:     jwtSecret,
 		ossService:    ossService,
 		memberService: memberService,
+		tokenService:  tokenService,
 	}
 }
 
 func (h *AuthHandler) generateToken(userID primitive.ObjectID, role string) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": userID.Hex(),
-		"role":    role,
-		"exp":     time.Now().Add(time.Hour * 24 * 7).Unix(), // 7 days
-	})
-	return token.SignedString([]byte(h.jwtSecret))
+	return h.tokenService.GenerateToken(userID.Hex(), role)
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {

@@ -1,16 +1,17 @@
 package middleware
 
 import (
+	"alchat-backend/internal/services"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const UserIDKey = "user_id"
 
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func AuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -27,12 +28,9 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		}
 
 		tokenStr := parts[1]
-		claims := jwt.MapClaims{}
-		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte(jwtSecret), nil
-		})
+		claims, err := tokenService.ParseToken(tokenStr)
 
-		if err != nil || !token.Valid {
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return
@@ -46,6 +44,18 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		}
 
 		role, _ := claims["role"].(string)
+
+		// Sliding expiration: if token expires in less than 2 days, issue a new one
+		if exp, ok := claims["exp"].(float64); ok {
+			expiryTime := time.Unix(int64(exp), 0)
+			if time.Until(expiryTime) < 24*2*time.Hour {
+				newToken, err := tokenService.GenerateToken(userIDStr, role)
+				if err == nil {
+					c.Header("X-New-Token", newToken)
+					c.Header("Access-Control-Expose-Headers", "X-New-Token")
+				}
+			}
+		}
 
 		c.Set(UserIDKey, userIDStr)
 		c.Set("role", role)

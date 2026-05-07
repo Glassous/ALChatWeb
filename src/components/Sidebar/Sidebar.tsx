@@ -55,7 +55,6 @@ export function Sidebar({
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
-  onSystemPromptUpdated,
   isLoading = false,
   isMobileDrawerOpen = false,
   onMobileDrawerClose,

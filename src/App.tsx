@@ -8,7 +8,7 @@ import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
-import { apiClient, type Conversation, type AgentPlanItemData } from './services/api';
+import { apiClient, type Conversation, type AgentPlanItemData, type ThemeConfig } from './services/api';
 import { Welcome } from './pages/Welcome';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -102,8 +102,9 @@ function ChatApp() {
           setUserCredits(user.credits ?? 1000);
           setUserMemberType(user.member_type || 'free');
           if (user.theme_config) {
-            setThemeConfig(user.theme_config);
-            localStorage.setItem('al-chat-theme-config', JSON.stringify(user.theme_config));
+            const finalTheme = checkAndDisableExpiredTheme(user.theme_config, user.member_type, user.member_expiry);
+            setThemeConfig(finalTheme);
+            localStorage.setItem('al-chat-theme-config', JSON.stringify(finalTheme));
           }
         }
       } catch (error) {
@@ -115,17 +116,33 @@ function ChatApp() {
     return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
   }, []);
 
+  const checkAndDisableExpiredTheme = (themeCfg: ThemeConfig | null, memberType?: string, memberExpiry?: string | null) => {
+    if (!themeCfg?.enabled) return themeCfg;
+    const isPaid = memberType && memberType !== 'free';
+    if (isPaid && memberExpiry) {
+      const expiryDate = new Date(memberExpiry);
+      if (expiryDate.getTime() < Date.now()) {
+        const disabledTheme: ThemeConfig = { ...themeCfg, enabled: false };
+        setThemeConfig(disabledTheme);
+        localStorage.setItem('al-chat-theme-config', JSON.stringify(disabledTheme));
+        apiClient.updateTheme(disabledTheme).catch(() => {});
+        return disabledTheme;
+      }
+    }
+    return themeCfg;
+  };
+
   const loadUserProfile = async () => {
     try {
       const user = await apiClient.getProfile();
       setUserCredits(user.credits ?? 1000);
       setUserMemberType(user.member_type || 'free');
       if (user.theme_config) {
-        setThemeConfig(user.theme_config);
-        localStorage.setItem('al-chat-theme-config', JSON.stringify(user.theme_config));
+        const finalTheme = checkAndDisableExpiredTheme(user.theme_config, user.member_type, user.member_expiry);
+        setThemeConfig(finalTheme);
+        localStorage.setItem('al-chat-theme-config', JSON.stringify(finalTheme));
       }
       localStorage.setItem('user', JSON.stringify(user));
-      // Notify other components (like Sidebar) if they use local storage
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
       console.error('Failed to load user profile:', error);

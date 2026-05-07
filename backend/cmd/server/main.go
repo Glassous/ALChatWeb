@@ -72,6 +72,7 @@ func main() {
 
 	memberService := services.NewMemberService(db)
 	memberService.StartExpiryChecker(context.Background())
+	tokenService := services.NewTokenService(cfg.JWTSecret)
 	streamManager := services.NewStreamManager()
 
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
@@ -80,7 +81,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService)
+	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService, tokenService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
@@ -119,7 +120,7 @@ func main() {
 
 		// Protected routes
 		protected := api.Group("/")
-		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+		protected.Use(middleware.AuthMiddleware(tokenService))
 		{
 			// Auth protected routes
 			protected.GET("/auth/profile", authHandler.GetProfile)

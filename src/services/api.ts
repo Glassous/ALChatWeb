@@ -105,6 +105,26 @@ class APIClient {
     return headers;
   }
 
+  private async handleResponse(response: Response) {
+    // Check for new token in headers
+    const newToken = response.headers.get('X-New-Token');
+    if (newToken) {
+      localStorage.setItem('token', newToken);
+    }
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/welcome';
+        return;
+      }
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || 'API request failed');
+    }
+    return response.json();
+  }
+
   // Auth APIs
   async register(data: any) {
     const response = await fetch(`${this.baseURL}/api/auth/register`, {
@@ -112,11 +132,7 @@ class APIClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to register');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async login(data: any) {
@@ -125,20 +141,12 @@ class APIClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to login');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async getSecurityQuestion(username: string) {
     const response = await fetch(`${this.baseURL}/api/auth/security-question?username=${encodeURIComponent(username)}`);
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch security question');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async resetPassword(data: any) {
@@ -147,11 +155,7 @@ class APIClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to reset password');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   // Profile APIs
@@ -159,11 +163,7 @@ class APIClient {
     const response = await fetch(`${this.baseURL}/api/auth/profile`, {
       headers: this.getHeaders(),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch profile');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async upgrade(code: string) {
@@ -172,11 +172,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ code }),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to upgrade');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async updateProfile(data: { nickname: string }) {
@@ -185,11 +181,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update profile');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async updateAvatar(file: File) {
@@ -204,22 +196,14 @@ class APIClient {
       headers: headers,
       body: formData,
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update avatar');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async getSystemPrompt() {
     const response = await fetch(`${this.baseURL}/api/auth/system-prompt`, {
       headers: this.getHeaders(),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch system prompt');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async updateSystemPrompt(data: { system_prompt: string; include_datetime: boolean; include_location: boolean }) {
@@ -228,11 +212,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update system prompt');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async updateTheme(data: ThemeConfig) {
@@ -241,11 +221,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify(data),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update theme');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async resolveLocation(lat: number, lng: number): Promise<string | null> {
@@ -255,7 +231,18 @@ class APIClient {
         headers: this.getHeaders(),
         body: JSON.stringify({ lat, lng }),
       });
-      if (!response.ok) return null;
+      // Still update token even for location resolution
+      const newToken = response.headers.get('X-New-Token');
+      if (newToken) localStorage.setItem('token', newToken);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/welcome';
+        }
+        return null;
+      }
       const data = await response.json();
       return data.address || null;
     } catch {
@@ -269,10 +256,7 @@ class APIClient {
       const response = await fetch(`${this.baseURL}/api/conversations`, {
         headers: this.getHeaders(),
       });
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversations');
-      }
-      const data = await response.json();
+      const data = await this.handleResponse(response);
       return Array.isArray(data) ? data : [];
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -286,10 +270,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ title }),
     });
-    if (!response.ok) {
-      throw new Error('Failed to create conversation');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   async getConversation(id: string): Promise<ConversationWithMessages> {
@@ -303,10 +284,7 @@ class APIClient {
       const response = await fetch(`${this.baseURL}/api/conversations/${id}`, {
         headers: this.getHeaders(),
       });
-      if (!response.ok) {
-        throw new Error('Failed to fetch conversation');
-      }
-      const data = await response.json();
+      const data = await this.handleResponse(response);
       // Ensure messages is always an array
       const result = {
         ...data,
@@ -331,9 +309,7 @@ class APIClient {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
-    if (!response.ok) {
-      throw new Error('Failed to delete conversation');
-    }
+    await this.handleResponse(response);
   }
 
   async truncateMessages(conversationId: string, messageId: string): Promise<void> {
@@ -342,9 +318,7 @@ class APIClient {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
-    if (!response.ok) {
-      throw new Error('Failed to truncate messages');
-    }
+    await this.handleResponse(response);
   }
 
   async updateConversationTitle(id: string, title: string): Promise<void> {
@@ -354,9 +328,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ title }),
     });
-    if (!response.ok) {
-      throw new Error('Failed to update conversation title');
-    }
+    await this.handleResponse(response);
   }
 
   async generateTitle(id: string): Promise<string> {
@@ -365,10 +337,7 @@ class APIClient {
       method: 'POST',
       headers: this.getHeaders(),
     });
-    if (!response.ok) {
-      throw new Error('Failed to generate title');
-    }
-    const data = await response.json();
+    const data = await this.handleResponse(response);
     return data.title;
   }
 
@@ -398,10 +367,7 @@ class APIClient {
       }),
     });
 
-    if (!triggerResponse.ok) {
-      const error = await triggerResponse.json();
-      throw new Error(error.error || 'Failed to trigger image generation');
-    }
+    await this.handleResponse(triggerResponse);
 
     // Step 2: Connect to the stream
     const streamUrl = `${this.baseURL}/api/chat/stream?conversation_id=${encodeURIComponent(conversationId)}`;
@@ -409,7 +375,15 @@ class APIClient {
       headers: this.getHeaders(),
     });
 
+    const newToken = response.headers.get('X-New-Token');
+    if (newToken) localStorage.setItem('token', newToken);
+
     if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/welcome';
+      }
       throw new Error('Failed to connect to stream');
     }
 
@@ -467,11 +441,7 @@ class APIClient {
       headers: headers,
       body: formData,
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to upload file');
-    }
-    const data = await response.json();
+    const data = await this.handleResponse(response);
     return data.url;
   }
 
@@ -481,11 +451,7 @@ class APIClient {
       headers: this.getHeaders(),
       body: JSON.stringify({ url }),
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to delete file');
-    }
-    return response.json();
+    return this.handleResponse(response);
   }
 
   // Chat API with SSE streaming
@@ -520,10 +486,7 @@ class APIClient {
       }),
     });
 
-    if (!triggerResponse.ok) {
-      const error = await triggerResponse.json();
-      throw new Error(error.error || 'Failed to trigger chat');
-    }
+    await this.handleResponse(triggerResponse);
 
     // Step 2: Connect to the stream
     const streamUrl = `${this.baseURL}/api/chat/stream?conversation_id=${encodeURIComponent(conversationId)}`;
@@ -531,7 +494,15 @@ class APIClient {
       headers: this.getHeaders(),
     });
 
+    const newToken = response.headers.get('X-New-Token');
+    if (newToken) localStorage.setItem('token', newToken);
+
     if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/welcome';
+      }
       throw new Error('Failed to connect to stream');
     }
 
