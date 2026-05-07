@@ -48,14 +48,8 @@ function ChatApp() {
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
-  const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(() => {
-    try {
-      const saved = localStorage.getItem('al-chat-theme-config');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
+  const [isThemeLoaded, setIsThemeLoaded] = useState(false);
   const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
@@ -95,21 +89,14 @@ function ChatApp() {
 
     // Listen for profile updates from other components (like Sidebar upgrade)
     const handleProfileUpdate = () => {
-      try {
-        const userStr = localStorage.getItem('user');
-        if (userStr) {
-          const user = JSON.parse(userStr);
-          setUserCredits(user.credits ?? 1000);
-          setUserMemberType(user.member_type || 'free');
-          if (user.theme_config) {
-            const finalTheme = checkAndDisableExpiredTheme(user.theme_config, user.member_type, user.member_expiry);
-            setThemeConfig(finalTheme);
-            localStorage.setItem('al-chat-theme-config', JSON.stringify(finalTheme));
-          }
-        }
-      } catch (error) {
-        console.error('Failed to parse user profile from storage:', error);
-      }
+      apiClient.getProfile().then(user => {
+        setUserCredits(user.credits ?? 1000);
+        setUserMemberType(user.member_type || 'free');
+        const serverTheme = user.theme_config || null;
+        const finalTheme = checkAndDisableExpiredTheme(serverTheme, user.member_type, user.member_expiry);
+        setThemeConfig(finalTheme);
+        localStorage.setItem('user', JSON.stringify(user));
+      }).catch(() => {});
     };
 
     window.addEventListener('user-profile-updated', handleProfileUpdate);
@@ -118,13 +105,17 @@ function ChatApp() {
 
   const checkAndDisableExpiredTheme = (themeCfg: ThemeConfig | null, memberType?: string, memberExpiry?: string | null) => {
     if (!themeCfg?.enabled) return themeCfg;
-    const isPaid = memberType && memberType !== 'free';
-    if (isPaid && memberExpiry) {
+    if (!memberType || memberType === 'free') {
+      const disabledTheme: ThemeConfig = { ...themeCfg, enabled: false };
+      setThemeConfig(disabledTheme);
+      apiClient.updateTheme(disabledTheme).catch(() => {});
+      return disabledTheme;
+    }
+    if (memberExpiry) {
       const expiryDate = new Date(memberExpiry);
       if (expiryDate.getTime() < Date.now()) {
         const disabledTheme: ThemeConfig = { ...themeCfg, enabled: false };
         setThemeConfig(disabledTheme);
-        localStorage.setItem('al-chat-theme-config', JSON.stringify(disabledTheme));
         apiClient.updateTheme(disabledTheme).catch(() => {});
         return disabledTheme;
       }
@@ -137,15 +128,15 @@ function ChatApp() {
       const user = await apiClient.getProfile();
       setUserCredits(user.credits ?? 1000);
       setUserMemberType(user.member_type || 'free');
-      if (user.theme_config) {
-        const finalTheme = checkAndDisableExpiredTheme(user.theme_config, user.member_type, user.member_expiry);
-        setThemeConfig(finalTheme);
-        localStorage.setItem('al-chat-theme-config', JSON.stringify(finalTheme));
-      }
+      const serverTheme = user.theme_config || null;
+      const finalTheme = checkAndDisableExpiredTheme(serverTheme, user.member_type, user.member_expiry);
+      setThemeConfig(finalTheme);
+      setIsThemeLoaded(true);
       localStorage.setItem('user', JSON.stringify(user));
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
       console.error('Failed to load user profile:', error);
+      setIsThemeLoaded(true);
     }
   };
 
@@ -758,7 +749,6 @@ function ChatApp() {
         themeConfig={themeConfig || undefined}
         onThemeConfigUpdated={(config) => {
           setThemeConfig(config);
-          localStorage.setItem('al-chat-theme-config', JSON.stringify(config));
         }}
       />
       <div className={`main-content ${isSearchSidebarOpen ? 'sidebar-open' : ''}`}>
