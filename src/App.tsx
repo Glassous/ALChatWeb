@@ -16,7 +16,7 @@ import { ResetPassword } from './pages/ResetPassword';
 import { UserSettings } from './pages/UserSettings';
 import './App.css';
 
-const isTempID = (id: string | null) => id?.startsWith('temp_');
+const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
 
 // Protected Route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -61,7 +61,7 @@ function ChatApp({
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
-  const [isThemeLoaded, setIsThemeLoaded] = useState(false);
+
   const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
@@ -143,12 +143,10 @@ function ChatApp({
       const serverTheme = user.theme_config || null;
       const finalTheme = checkAndDisableExpiredTheme(serverTheme, user.member_type, user.member_expiry);
       setThemeConfig(finalTheme);
-      setIsThemeLoaded(true);
       localStorage.setItem('user', JSON.stringify(user));
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
       console.error('Failed to load user profile:', error);
-      setIsThemeLoaded(true);
     }
   };
 
