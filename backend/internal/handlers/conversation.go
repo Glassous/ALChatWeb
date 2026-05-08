@@ -2,14 +2,16 @@ package handlers
 
 import (
 	"alchat-backend/internal/services"
+	"alchat-backend/internal/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type ConversationHandler struct {
-	service   *services.ConversationService
-	aiService *services.AIService
+	service     *services.ConversationService
+	tempService *services.TempConversationService
+	aiService   *services.AIService
 }
 
 func NewConversationHandler(service *services.ConversationService, aiService *services.AIService) *ConversationHandler {
@@ -17,6 +19,10 @@ func NewConversationHandler(service *services.ConversationService, aiService *se
 		service:   service,
 		aiService: aiService,
 	}
+}
+
+func (h *ConversationHandler) SetTempConversationService(tempService *services.TempConversationService) {
+	h.tempService = tempService
 }
 
 func (h *ConversationHandler) GenerateTitle(c *gin.Context) {
@@ -167,4 +173,69 @@ func (h *ConversationHandler) DeleteMessagesAfter(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Messages deleted successfully"})
+}
+
+func (h *ConversationHandler) GetTempConversation(c *gin.Context) {
+	convID := c.Param("id")
+
+	if !utils.IsTempID(convID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Not a temp conversation ID"})
+		return
+	}
+
+	messages, err := h.tempService.GetMessages(c.Request.Context(), convID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Temp conversation not found or expired"})
+		return
+	}
+
+	conv, err := h.tempService.GetConversation(c.Request.Context(), convID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":       conv.ID,
+		"title":    conv.Title,
+		"messages": messages,
+	})
+}
+
+func (h *ConversationHandler) DeleteTempConversation(c *gin.Context) {
+	convID := c.Param("id")
+
+	if !utils.IsTempID(convID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Not a temp conversation ID"})
+		return
+	}
+
+	err := h.tempService.DeleteConversation(c.Request.Context(), convID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Temp conversation deleted"})
+}
+
+func (h *ConversationHandler) PromoteTempConversation(c *gin.Context) {
+	userID := c.GetString("user_id")
+	convID := c.Param("id")
+
+	if !utils.IsTempID(convID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Not a temp conversation ID"})
+		return
+	}
+
+	conv, err := h.tempService.PromoteConversation(
+		c.Request.Context(), convID, userID,
+		h.service, h.aiService,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, conv)
 }

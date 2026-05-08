@@ -16,6 +16,8 @@ import { ResetPassword } from './pages/ResetPassword';
 import { UserSettings } from './pages/UserSettings';
 import './App.css';
 
+const isTempID = (id: string | null) => id?.startsWith('temp_');
+
 // Protected Route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token');
@@ -26,7 +28,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Chat Application component
-function ChatApp() {
+function ChatApp({ 
+  tempConversations, 
+  setTempConversations, 
+  isTempChat, 
+  setIsTempChat 
+}: { 
+  tempConversations: Conversation[], 
+  setTempConversations: React.Dispatch<React.SetStateAction<Conversation[]>>,
+  isTempChat: boolean,
+  setIsTempChat: React.Dispatch<React.SetStateAction<boolean>>
+}) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
@@ -174,7 +186,12 @@ function ChatApp() {
   const loadConversation = async (conversationId: string, targetNodeId?: string) => {
     setIsMessageLoading(true);
     try {
-      const conv = await apiClient.getConversation(conversationId);
+      let conv;
+      if (isTempID(conversationId)) {
+        conv = await apiClient.getTempConversation(conversationId);
+      } else {
+        conv = await apiClient.getConversation(conversationId);
+      }
       const messages = Array.isArray(conv.messages) ? conv.messages : [];
       setMessages(messages);
       setCurrentConversationId(conversationId);
@@ -228,14 +245,28 @@ function ChatApp() {
 
     // Create new conversation if needed
     if (!conversationId) {
-      try {
-        const newConv = await apiClient.createConversation(' ');
-        conversationId = newConv.id;
-        setCurrentConversationId(conversationId);
-        setConversations((prev) => [newConv, ...prev]);
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        return;
+      if (isTempChat) {
+        // Generate temporary ID for temporary chat
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        conversationId = tempId;
+        setCurrentConversationId(tempId);
+        const newTempConv: Conversation = {
+          id: tempId,
+          title: '临时对话',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setTempConversations(prev => [newTempConv, ...prev]);
+      } else {
+        try {
+          const newConv = await apiClient.createConversation(' ');
+          conversationId = newConv.id;
+          setCurrentConversationId(conversationId);
+          setConversations((prev) => [newConv, ...prev]);
+        } catch (error) {
+          console.error('Failed to create conversation:', error);
+          return;
+        }
       }
     }
 
@@ -571,23 +602,58 @@ function ChatApp() {
     setCurrentNodeId(null);
     setHasMessages(false);
     setCurrentConversationId(null);
+    setIsTempChat(false);
     setIsMobileDrawerOpen(false); // Close drawer on mobile
     setIsInitialLoad(false); // Disable animation for subsequent new chats
   };
 
+  const handleNewTempChat = () => {
+    setMessages([]);
+    setCurrentNodeId(null);
+    setHasMessages(false);
+    setCurrentConversationId(null);
+    setIsTempChat(true);
+    setIsMobileDrawerOpen(false);
+    setIsInitialLoad(false);
+  };
+
   const handleSelectConversation = (conversationId: string) => {
+    setIsTempChat(isTempID(conversationId));
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
     setIsInitialLoad(false);
   };
 
-  const handleDeleteConversation = (conversationId: string) => {
-    // Remove from local state
-    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-    
-    // If deleted conversation is current, reset
-    if (conversationId === currentConversationId) {
-      handleNewChat();
+  const handleDeleteConversation = async (conversationId: string) => {
+    try {
+      if (isTempID(conversationId)) {
+        await apiClient.deleteTempConversation(conversationId);
+        setTempConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      } else {
+        await apiClient.deleteConversation(conversationId);
+        setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      }
+
+      // If deleted conversation is current, reset
+      if (conversationId === currentConversationId) {
+        handleNewChat();
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  };
+
+  const handlePromoteTempChat = async (conversationId: string) => {
+    try {
+      const newConv = await apiClient.promoteTempConversation(conversationId);
+      // Remove from temp and add to permanent
+      setTempConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      setConversations((prev) => [newConv, ...prev]);
+      
+      // Select the new permanent conversation
+      handleSelectConversation(newConv.id);
+    } catch (error) {
+      console.error('Failed to promote temporary chat:', error);
     }
   };
 
@@ -730,18 +796,26 @@ function ChatApp() {
     return false;
   }, [messages]);
 
-  const currentConversation = conversations.find(c => c.id === currentConversationId);
+  const currentConversation = isTempID(currentConversationId) 
+    ? tempConversations.find(c => c.id === currentConversationId)
+    : conversations.find(c => c.id === currentConversationId);
   const conversationTitle = currentConversation?.title;
+
+  const sidebarConversations = useMemo(() => {
+    return [...tempConversations, ...conversations];
+  }, [tempConversations, conversations]);
 
   return (
     <div className="app-container">
       <Sidebar 
-        conversations={conversations}
+        conversations={sidebarConversations}
         currentConversationId={currentConversationId}
         onNewChat={handleNewChat}
+        onNewTempChat={handleNewTempChat}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onUpdateConversation={handleUpdateConversation}
+        onPromoteTempChat={handlePromoteTempChat}
         onSystemPromptUpdated={loadSystemPromptSettings}
         isLoading={isLoadingConversations}
         isMobileDrawerOpen={isMobileDrawerOpen}
@@ -754,6 +828,9 @@ function ChatApp() {
       <div className={`main-content ${isSearchSidebarOpen ? 'sidebar-open' : ''}`}>
         <TopBar 
           conversationTitle={conversationTitle}
+          isTempChat={isTempChat}
+          showPromote={isTempChat && hasMessages}
+          onPromote={() => currentConversationId && handlePromoteTempChat(currentConversationId)}
           onMenuClick={() => setIsMobileDrawerOpen(true)}
           onNewChat={handleNewChat}
           showOverviewButton={isTree}
@@ -833,6 +910,9 @@ function ChatApp() {
 }
 
 function App() {
+  const [tempConversations, setTempConversations] = useState<Conversation[]>([]);
+  const [isTempChat, setIsTempChat] = useState(false);
+
   return (
     <BrowserRouter>
       <Routes>
@@ -844,7 +924,12 @@ function App() {
           path="/" 
           element={
             <ProtectedRoute>
-              <ChatApp />
+              <ChatApp 
+                tempConversations={tempConversations} 
+                setTempConversations={setTempConversations}
+                isTempChat={isTempChat}
+                setIsTempChat={setIsTempChat}
+              />
             </ProtectedRoute>
           } 
         />

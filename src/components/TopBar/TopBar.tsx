@@ -3,8 +3,11 @@ import './TopBar.css';
 
 interface TopBarProps {
   conversationTitle?: string;
+  isTempChat?: boolean;
+  showPromote?: boolean;
   onMenuClick?: () => void;
   onNewChat?: () => void;
+  onPromote?: () => void;
   showOverviewButton?: boolean;
   onOverviewClick?: () => void;
   isTreeViewOpen?: boolean;
@@ -16,8 +19,11 @@ interface TopBarProps {
 
 export function TopBar({ 
   conversationTitle, 
+  isTempChat,
+  showPromote,
   onMenuClick, 
   onNewChat, 
+  onPromote,
   showOverviewButton, 
   onOverviewClick,
   isTreeViewOpen,
@@ -44,8 +50,11 @@ export function TopBar({
         )}
         <div className="topbar-logo-container">
           <h1 className="topbar-title">AL Chat</h1>
+          {isTempChat && <span className="temp-badge-logo">临时对话</span>}
           {conversationTitle && (
-            <span className="mobile-conversation-title">{conversationTitle}</span>
+            <div className="mobile-title-container">
+              <span className="mobile-conversation-title">{conversationTitle}</span>
+            </div>
           )}
         </div>
       </div>
@@ -55,6 +64,14 @@ export function TopBar({
         </div>
       )}
       <div className="topbar-right">
+        {showPromote && onPromote && (
+          <button className="topbar-promote-btn" onClick={onPromote}>
+            <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
+              <path d="M440-160v-326L337-383l-57-57 200-200 200 200-57 57-103-103v326h-80ZM160-600v-120q0-33 23.5-56.5T240-800h480q33 0 56.5 23.5T800-720v120h-80v-120H240v120h-80Z"/>
+            </svg>
+            转入正式对话
+          </button>
+        )}
         {showOverviewButton && (
           <md-icon-button 
             className={`overview-button ${isTreeViewOpen ? 'active' : ''}`} 

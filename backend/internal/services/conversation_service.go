@@ -323,7 +323,7 @@ func (s *ConversationService) AutoGenerateTitle(ctx context.Context, conversatio
 		return "", err
 	}
 
-	if conv.Title != "New Conversation" && conv.Title != " " && conv.Title != "" {
+	if conv.Title != "New Conversation" && conv.Title != " " && conv.Title != "" && conv.Title != "临时对话" {
 		return conv.Title, nil
 	}
 

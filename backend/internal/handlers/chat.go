@@ -27,6 +27,7 @@ type ChatHandler struct {
 	memberService       *services.MemberService
 	db                  *database.MongoDB
 	streamManager       *services.StreamManager
+	tempConvService     *services.TempConversationService
 	agentRunner         interface {
 		Run(ctx context.Context, messages []*ai.Message, callback interface{}) (*agent.AgentResult, error)
 		RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
@@ -48,6 +49,10 @@ func (h *ChatHandler) SetAgentRunner(runner interface {
 	RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
 }) {
 	h.agentRunner = runner
+}
+
+func (h *ChatHandler) SetTempConversationService(service *services.TempConversationService) {
+	h.tempConvService = service
 }
 
 func (h *ChatHandler) Chat(c *gin.Context) {
@@ -80,6 +85,12 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	// If credits already <= 0, deny request
 	if user.Credits <= 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
+		return
+	}
+
+	// Temporary conversation routing
+	if utils.IsTempID(req.ConversationID) {
+		h.handleTempChat(c, req, userID, userIDObj, &user)
 		return
 	}
 
@@ -435,6 +446,191 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 	time.AfterFunc(10*time.Second, func() {
 		h.streamManager.CloseConversation(req.ConversationID)
 	})
+}
+
+func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userID string, userIDObj primitive.ObjectID, user *models.User) {
+	// 1. Ensure temp conversation exists in Redis (metadata)
+	_, err := h.tempConvService.GetConversation(c.Request.Context(), req.ConversationID)
+	if err != nil {
+		// Create it if it doesn't exist
+		h.tempConvService.CreateConversation(c.Request.Context(), req.ConversationID, "临时对话")
+	}
+
+	// 2. Save user message to Redis
+	userMsgID := utils.GenerateTempID("msg_")
+	userMsg, err := h.tempConvService.SaveMessage(c.Request.Context(), req.ConversationID, userMsgID, "user", req.Message, req.ParentMessageID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save temporary user message"})
+		return
+	}
+
+	// 3. Create assistant message placeholder in Redis
+	assistantMsgID := utils.GenerateTempID("msg_")
+	assistantMsg, err := h.tempConvService.SaveMessage(c.Request.Context(), req.ConversationID, assistantMsgID, "assistant", "", userMsg.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temporary assistant message placeholder"})
+		return
+	}
+
+	// Respond immediately
+	c.JSON(http.StatusOK, gin.H{
+		"user_message_id":      userMsg.ID,
+		"assistant_message_id": assistantMsg.ID,
+	})
+
+	// Detached context for background processing
+	bgCtx := context.WithoutCancel(c.Request.Context())
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[TempChat] Panic in background generation: %v", r)
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+					Type:    "error",
+					Content: fmt.Sprintf("Internal error: %v", r),
+				})
+			}
+		}()
+
+		// Get conversation history (branch) from Redis
+		messages, err := h.tempConvService.GetMessageBranch(bgCtx, req.ConversationID, userMsg.ID)
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "error",
+				Content: "Failed to fetch temporary conversation history",
+			})
+			return
+		}
+
+		// Convert to Genkit format
+		genkitMessages := make([]struct {
+			Role    string
+			Content string
+		}, len(messages))
+		for i, msg := range messages {
+			genkitMessages[i] = struct {
+				Role    string
+				Content string
+			}{
+				Role:    msg.Role,
+				Content: msg.Content,
+			}
+		}
+
+		// Re-fetch user to get latest settings (system prompt, etc.)
+		var user models.User
+		if err := h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user); err != nil {
+			log.Printf("[TempChat] Failed to fetch user: %v", err)
+		}
+
+		// Agent mode not supported for temp chat in this version to keep it simple,
+		// but we could easily add it if needed.
+		if req.Mode == "agent" {
+			// Converting models.Message for agent mode
+			modelAssistantMsg := assistantMsg.ToModel()
+			modelUserMsg := userMsg.ToModel()
+			h.handleAgentMode(bgCtx, req, genkitMessages, &modelAssistantMsg, userIDObj, &modelUserMsg)
+
+			// Update back to TempMessage in Redis
+			assistantMsg.Content = modelAssistantMsg.Content
+			assistantMsg.Reasoning = modelAssistantMsg.Reasoning
+			assistantMsg.AgentSteps = modelAssistantMsg.AgentSteps
+			assistantMsg.AgentPlan = modelAssistantMsg.AgentPlan
+			h.tempConvService.UpdateMessage(bgCtx, assistantMsg)
+			return
+		}
+
+		// Construct system prompt (same as normal chat)
+		var systemPromptBuilder strings.Builder
+		if user.SystemPrompt != "" {
+			systemPromptBuilder.WriteString(user.SystemPrompt)
+		}
+		if user.IncludeDateTime {
+			currentTime := time.Now().Format("2006-01-02 15:04:05")
+			if systemPromptBuilder.Len() > 0 {
+				systemPromptBuilder.WriteString("\n\n")
+			}
+			fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
+		}
+		if user.IncludeLocation && req.Location != "" {
+			locationStr := req.Location
+			if IsCoordinateFormat(locationStr) {
+				locationStr = ReverseGeocodeFromCoords(locationStr)
+			}
+			if systemPromptBuilder.Len() > 0 {
+				systemPromptBuilder.WriteString("\n\n")
+			}
+			fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", locationStr)
+		}
+
+		// Stream AI response
+		var fullResponse strings.Builder
+		var fullReasoning strings.Builder
+		var lastSearchData *models.SearchData
+
+		extraInput, extraOutput, err := h.aiService.GenerateStream(
+			bgCtx,
+			services.ConvertToGenkitMessages(genkitMessages),
+			req.Mode,
+			systemPromptBuilder.String(),
+			func(token string, reasoning string) error {
+				if reasoning != "" {
+					fullReasoning.WriteString(reasoning)
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+						Type:    "reasoning",
+						Content: reasoning,
+					})
+				}
+				if token != "" {
+					fullResponse.WriteString(token)
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+						Type:    "token",
+						Content: token,
+					})
+				}
+				return nil
+			},
+			func(searchData models.SearchData) error {
+				lastSearchData = &searchData
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+					Type: "search",
+					Data: searchData,
+				})
+				return nil
+			},
+		)
+
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "error",
+				Content: err.Error(),
+			})
+			return
+		}
+
+		// Update assistant message in Redis
+		assistantMsg.Content = fullResponse.String()
+		assistantMsg.Reasoning = fullReasoning.String()
+		assistantMsg.Search = lastSearchData
+		h.tempConvService.UpdateMessage(bgCtx, assistantMsg)
+
+		// Deduct credits
+		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+
+		// Send done signal
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type: "done",
+			Data: gin.H{
+				"user_message_id":      userMsg.ID,
+				"assistant_message_id": assistantMsg.ID,
+				"credits":              newCredits,
+			},
+		})
+
+		time.AfterFunc(10*time.Second, func() {
+			h.streamManager.CloseConversation(req.ConversationID)
+		})
+	}()
 }
 
 func (h *ChatHandler) Stream(c *gin.Context) {

@@ -424,10 +424,11 @@ md-icon-button svg {
 
 .fab-container {
   display: flex;
+  flex-direction: column;
   margin-top: 4px;
   width: 100%;
   padding: 0;
-  justify-content: flex-start;
+  gap: 4px;
 }
 
 .new-chat-button {
@@ -465,6 +466,16 @@ md-icon-button svg {
 
 .new-chat-button:hover {
   background-color: var(--surface-hover);
+}
+
+.new-chat-button.temp-chat-button {
+  background-color: transparent;
+  color: var(--text-muted);
+}
+
+.new-chat-button.temp-chat-button:hover {
+  background-color: var(--border-color);
+  color: var(--text-color);
 }
 
 .new-chat-button .label {
@@ -540,6 +551,22 @@ md-list.hidden {
 
 .history-item.active {
   background-color: var(--surface-hover);
+}
+
+.history-item.temp-item {
+  border: 1px dashed var(--border-color);
+  margin-bottom: 4px;
+}
+
+.temp-badge {
+  font-size: 10px;
+  background-color: var(--surface-hover);
+  color: var(--text-muted);
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-right: 6px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
 }
 
 .history-item-content {

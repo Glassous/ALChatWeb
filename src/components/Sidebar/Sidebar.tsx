@@ -24,9 +24,11 @@ interface SidebarProps {
   conversations: Conversation[];
   currentConversationId: string | null;
   onNewChat: () => void;
+  onNewTempChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
   onUpdateConversation: (id: string, title: string) => void;
+  onPromoteTempChat: (id: string) => void;
   onSystemPromptUpdated?: () => void;
   isLoading?: boolean;
   isMobileDrawerOpen?: boolean;
@@ -52,9 +54,11 @@ export function Sidebar({
   conversations, 
   currentConversationId, 
   onNewChat, 
+  onNewTempChat,
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
+  onPromoteTempChat,
   isLoading = false,
   isMobileDrawerOpen = false,
   onMobileDrawerClose,
@@ -280,9 +284,15 @@ export function Sidebar({
           <div className="fab-container">
             <button className="new-chat-button" onClick={onNewChat} aria-label="新对话">
               <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
+                <path d="M80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z"/>
               </svg>
               <span className="label">新对话</span>
+            </button>
+            <button className="new-chat-button temp-chat-button" onClick={onNewTempChat} aria-label="临时对话">
+              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                <path d="M80-480v-160h80v160H80Zm0 400v-320h80v125l46-45h114v80h-80L80-80Zm320-160v-80h160v80H400Zm240 0v-80h160v-80h80v80q0 33-23.5 56.5T800-240H640Zm160-240v-160h80v160h-80Zm0-239v-81H640v-80h160q33 0 56.5 23.5T880-800v81h-80Zm-400-81v-80h160v80H400ZM80-719v-81q0-33 23.5-56.5T160-880h160v80H160v81H80Z"/>
+              </svg>
+              <span className="label">临时对话</span>
             </button>
           </div>
         </div>
@@ -295,10 +305,13 @@ export function Sidebar({
               conversations.map((conv) => (
                 <div 
                   key={conv.id}
-                  className={`history-item ${conv.id === currentConversationId ? 'active' : ''}`}
+                  className={`history-item ${conv.id.startsWith('temp_') ? 'temp-item' : ''} ${conv.id === currentConversationId ? 'active' : ''}`}
                   onClick={() => onSelectConversation(conv.id)}
                 >
-                  <div className="history-item-content">{conv.title}</div>
+                  <div className="history-item-content">
+                    {conv.id.startsWith('temp_') && <span className="temp-badge">临时</span>}
+                    {conv.title}
+                  </div>
                   <div className="history-item-actions" onClick={(e) => e.stopPropagation()}>
                     <md-icon-button onClick={(e: React.MouseEvent) => handleMoreClick(e, conv)}>
                       <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
@@ -438,24 +451,43 @@ export function Sidebar({
                 left: `${contextMenu.position.left}px`
               }}
             >
-              <button className="context-menu-item" onClick={() => {
+              {(() => {
                 const conv = conversations.find(c => c.id === contextMenu.conversationId);
-                if (conv) handleEditClick(conv);
-              }}>
-                <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
-                </svg>
-                <span>编辑标题</span>
-              </button>
-              <button className="context-menu-item danger" onClick={() => {
-                const conv = conversations.find(c => c.id === contextMenu.conversationId);
-                if (conv) handleDeleteClick(conv);
-              }}>
-                <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                  <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
-                </svg>
-                <span>删除对话</span>
-              </button>
+                const isTemp = conv?.id.startsWith('temp_');
+                
+                return (
+                  <>
+                    {isTemp ? (
+                      <button className="context-menu-item" onClick={() => {
+                        onPromoteTempChat(contextMenu.conversationId);
+                        setContextMenu(null);
+                      }}>
+                        <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                          <path d="M440-160v-326L337-383l-57-57 200-200 200 200-57 57-103-103v326h-80ZM160-600v-120q0-33 23.5-56.5T240-800h480q33 0 56.5 23.5T800-720v120h-80v-120H240v120h-80Z"/>
+                        </svg>
+                        <span>转正对话</span>
+                      </button>
+                    ) : (
+                      <button className="context-menu-item" onClick={() => {
+                        if (conv) handleEditClick(conv);
+                      }}>
+                        <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                          <path d="M200-200h57l391-391-57-57-391 391v57Zm-80 80v-170l528-527q12-11 26.5-17t30.5-6q16 0 31 6t26 18l55 56q12 11 17.5 26t5.5 30q0 16-5.5 30.5T817-647L290-120H120Zm640-584-56-56 56 56Zm-141 85-28-29 57 57-29-28Z"/>
+                        </svg>
+                        <span>编辑标题</span>
+                      </button>
+                    )}
+                    <button className="context-menu-item danger" onClick={() => {
+                      if (conv) handleDeleteClick(conv);
+                    }}>
+                      <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
+                        <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
+                      </svg>
+                      <span>删除对话</span>
+                    </button>
+                  </>
+                );
+              })()}
             </div>,
             document.body
           )}

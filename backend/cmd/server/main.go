@@ -74,6 +74,7 @@ func main() {
 	memberService.StartExpiryChecker(context.Background())
 	tokenService := services.NewTokenService(cfg.JWTSecret)
 	streamManager := services.NewStreamManager()
+	tempConvService := services.NewTempConversationService(rdb)
 
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
 	if err != nil {
@@ -83,7 +84,9 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService, tokenService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
+	conversationHandler.SetTempConversationService(tempConvService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
+	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
 	adminHandler := handlers.NewAdminHandler(db, aiService, memberService)
 	locationHandler := handlers.NewLocationHandler()
@@ -134,6 +137,9 @@ func main() {
 			// Conversation routes
 			protected.GET("/conversations", conversationHandler.GetAllConversations)
 			protected.POST("/conversations", conversationHandler.CreateConversation)
+			protected.GET("/conversations/temp/:id", conversationHandler.GetTempConversation)
+			protected.POST("/conversations/temp/:id/promote", conversationHandler.PromoteTempConversation)
+			protected.DELETE("/conversations/temp/:id", conversationHandler.DeleteTempConversation)
 			protected.GET("/conversations/:id", conversationHandler.GetConversation)
 			protected.PUT("/conversations/:id/title", conversationHandler.UpdateConversationTitle)
 			protected.POST("/conversations/:id/generate-title", conversationHandler.GenerateTitle)

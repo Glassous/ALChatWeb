@@ -341,6 +341,30 @@ class APIClient {
     return data.title;
   }
 
+  // Temporary Conversation APIs
+  async getTempConversation(id: string): Promise<ConversationWithMessages> {
+    const response = await fetch(`${this.baseURL}/api/conversations/temp/${id}`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteTempConversation(id: string): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/conversations/temp/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    await this.handleResponse(response);
+  }
+
+  async promoteTempConversation(id: string): Promise<Conversation> {
+    const response = await fetch(`${this.baseURL}/api/conversations/temp/${id}/promote`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   async generateImage(
     conversationId: string,
     prompt: string,
