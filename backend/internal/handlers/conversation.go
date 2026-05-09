@@ -4,6 +4,7 @@ import (
 	"alchat-backend/internal/services"
 	"alchat-backend/internal/utils"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -127,7 +128,12 @@ func (h *ConversationHandler) DeleteConversation(c *gin.Context) {
 
 	err := h.service.DeleteConversation(c.Request.Context(), conversationID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": errMsg})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
+		}
 		return
 	}
 

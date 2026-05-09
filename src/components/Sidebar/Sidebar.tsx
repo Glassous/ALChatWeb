@@ -277,14 +277,15 @@ export function Sidebar({
             }
           }}>
             <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-              <path d="M120-240v-80h720v80H120Zm0-200v-80h720v80H120Zm0-200v-80h720v80H120Z"/>
+              <path d="M120-240v-80h480v80H120Zm0-400v-80h720v80H120Z"/>
             </svg>
           </md-icon-button>
           
           <div className="fab-container">
             <button className="new-chat-button" onClick={onNewChat} aria-label="新对话">
               <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                <path d="M80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z"/>
+                <path d="M80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v340h-80v-340H160v525l46-45H660v80H240L80-80Z"/>
+                <path d="M800-400v80h-80v80h80v80h80v-80h80v-80h-80v-80h-80Z"/>
               </svg>
               <span className="label">新对话</span>
             </button>

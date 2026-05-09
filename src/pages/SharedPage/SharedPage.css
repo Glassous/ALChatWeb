@@ -1,0 +1,217 @@
+.shared-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-color);
+}
+
+.shared-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-color);
+  flex-shrink: 0;
+}
+
+.shared-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+  padding-top: 56px;
+}
+
+.shared-header-left {
+  display: flex;
+  align-items: center;
+}
+
+.shared-logo {
+  font-family: 'Playwrite NO Variable', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 400;
+  margin: 0;
+  color: var(--text-color);
+}
+
+.shared-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shared-save-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.shared-save-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.shared-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.shared-login-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.shared-login-btn:hover {
+  background: var(--surface-hover);
+}
+
+.shared-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  overflow-y: auto;
+}
+
+.shared-status-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.shared-status-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.shared-status-container h2 {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--text-color);
+  margin: 0 0 8px 0;
+}
+
+.shared-status-container p {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.shared-sharer-info {
+  margin-top: 8px !important;
+}
+
+.shared-conv-title {
+  margin-top: 4px !important;
+  font-style: italic;
+}
+
+.shared-time-info {
+  font-size: 12px !important;
+  margin-top: 12px !important;
+}
+
+.shared-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--md-sys-color-primary, #6750a4);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.shared-conversation {
+  width: 100%;
+  max-width: 768px;
+  padding: 24px;
+}
+
+.shared-conversation-header {
+  text-align: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.shared-conversation-title {
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--text-color);
+  margin: 0 0 4px 0;
+}
+
+.shared-conversation-sharer {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.shared-conversation-sharer-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.shared-sharer-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-color);
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+}
+
+.shared-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shared-chat-wrapper {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .shared-header {
+    padding: 0 12px;
+  }
+
+  .shared-conversation {
+    padding: 16px;
+  }
+}

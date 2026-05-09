@@ -76,6 +76,8 @@ func main() {
 	streamManager := services.NewStreamManager()
 	tempConvService := services.NewTempConversationService(rdb)
 
+	shareService := services.NewShareService(db)
+
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize Image service: %v. Image generation will be disabled.", err)
@@ -90,6 +92,7 @@ func main() {
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
 	adminHandler := handlers.NewAdminHandler(db, aiService, memberService)
 	locationHandler := handlers.NewLocationHandler()
+	shareHandler := handlers.NewShareHandler(shareService)
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
 
@@ -161,6 +164,12 @@ func main() {
 			// Location route
 			protected.POST("/location/resolve", locationHandler.Resolve)
 
+			// Share routes
+			protected.POST("/conversations/:id/share", shareHandler.CreateShare)
+			protected.GET("/my/shared", shareHandler.GetMyShares)
+			protected.DELETE("/shared/:token", shareHandler.DeleteShare)
+			protected.POST("/shared/:token/save", shareHandler.SaveSharedConversation)
+
 			// Admin routes
 			admin := protected.Group("/admin")
 			admin.Use(middleware.AdminMiddleware())
@@ -185,6 +194,8 @@ func main() {
 				admin.PUT("/settings", adminHandler.UpdateSystemSettings)
 				admin.GET("/agent/tools", adminHandler.GetAgentTools)
 				admin.PUT("/agent/tools/:name", adminHandler.ToggleAgentTool)
+				admin.GET("/shared", shareHandler.GetAllShares)
+				admin.DELETE("/shared/:id", shareHandler.AdminDeleteShare)
 			}
 		}
 	}
@@ -193,6 +204,9 @@ func main() {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// Public shared conversation route (no auth required)
+	router.GET("/api/shared/:token", shareHandler.GetSharedConversation)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

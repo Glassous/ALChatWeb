@@ -1,0 +1,71 @@
+.share-dialog-content {
+  padding-top: 12px;
+  min-height: 80px;
+}
+
+.share-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0;
+  color: var(--text-muted);
+}
+
+.share-error {
+  color: #ba1a1a;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.share-url-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.share-url-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-color);
+  color: var(--text-color);
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.share-url-input:focus {
+  border-color: var(--md-sys-color-primary);
+}
+
+.share-copy-btn {
+  align-self: flex-end;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 16px;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.share-copy-btn:hover {
+  opacity: 0.9;
+}
+
+.share-info p {
+  margin: 0 0 8px 0;
+  color: var(--text-color);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.share-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}

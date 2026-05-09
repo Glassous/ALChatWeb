@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
@@ -14,6 +14,8 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
 import { UserSettings } from './pages/UserSettings';
+import { SharedPage } from './pages/SharedPage/SharedPage';
+import { ShareDialog } from './components/ShareDialog/ShareDialog';
 import './App.css';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
@@ -40,6 +42,7 @@ function ChatApp({
   setIsTempChat: React.Dispatch<React.SetStateAction<boolean>>
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -61,6 +64,7 @@ function ChatApp({
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
@@ -181,7 +185,7 @@ function ChatApp({
     }
   };
 
-  const loadConversation = async (conversationId: string, targetNodeId?: string) => {
+    const loadConversation = async (conversationId: string, targetNodeId?: string) => {
     setIsMessageLoading(true);
     try {
       let conv;
@@ -225,6 +229,14 @@ function ChatApp({
       setIsMessageLoading(false);
     }
   };
+
+  useEffect(() => {
+    const state = location.state as { openConversationId?: string } | null;
+    if (state?.openConversationId && !isLoadingConversations) {
+      loadConversation(state.openConversationId);
+      navigate('/', { replace: true, state: {} });
+    }
+  }, [location.state, isLoadingConversations]);
 
   const handleSend = async (text: string, options?: { 
     isImageMode: boolean; 
@@ -622,22 +634,15 @@ function ChatApp({
     setIsInitialLoad(false);
   };
 
-  const handleDeleteConversation = async (conversationId: string) => {
-    try {
-      if (isTempID(conversationId)) {
-        await apiClient.deleteTempConversation(conversationId);
-        setTempConversations((prev) => prev.filter((c) => c.id !== conversationId));
-      } else {
-        await apiClient.deleteConversation(conversationId);
-        setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-      }
+  const handleDeleteConversation = (conversationId: string) => {
+    if (isTempID(conversationId)) {
+      setTempConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    } else {
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    }
 
-      // If deleted conversation is current, reset
-      if (conversationId === currentConversationId) {
-        handleNewChat();
-      }
-    } catch (error) {
-      console.error('Failed to delete conversation:', error);
+    if (conversationId === currentConversationId) {
+      handleNewChat();
     }
   };
 
@@ -831,6 +836,8 @@ function ChatApp({
           onPromote={() => currentConversationId && handlePromoteTempChat(currentConversationId)}
           onMenuClick={() => setIsMobileDrawerOpen(true)}
           onNewChat={handleNewChat}
+          showShareButton={hasMessages && !!currentConversationId && !isTempID(currentConversationId)}
+          onShare={() => setIsShareOpen(true)}
           showOverviewButton={isTree}
           onOverviewClick={() => setIsTreeViewOpen(!isTreeViewOpen)}
           isTreeViewOpen={isTreeViewOpen}
@@ -903,6 +910,13 @@ function ChatApp({
         />,
         document.body
       )}
+      {currentConversationId && !isTempID(currentConversationId) && (
+        <ShareDialog
+          open={isShareOpen}
+          onClose={() => setIsShareOpen(false)}
+          conversationId={currentConversationId}
+        />
+      )}
     </div>
   );
 }
@@ -918,6 +932,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/shared/:token" element={<SharedPage />} />
         <Route 
           path="/" 
           element={

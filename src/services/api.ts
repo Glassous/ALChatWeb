@@ -77,6 +77,29 @@ export interface ThemeConfig {
   };
 }
 
+export interface ShareConversation {
+  id: string;
+  share_token: string;
+  conversation_id: string;
+  user_id: string;
+  user_nickname: string;
+  title: string;
+  message_ids: string[];
+  leaf_message_id: string;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+  view_count: number;
+}
+
+export interface SharedConversationResponse {
+  status: 'active' | 'partial' | 'deleted' | 'expired' | 'conversation_deleted' | 'messages_deleted';
+  title?: string;
+  sharer_nickname?: string;
+  created_at?: string;
+  messages?: Message[];
+}
+
 class APIClient {
   private baseURL: string;
   private conversationCache = new Map<string, CacheEntry<ConversationWithMessages>>();
@@ -584,6 +607,65 @@ class APIClient {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  async createShare(conversationId: string, leafMessageId?: string): Promise<ShareConversation> {
+    const response = await fetch(`${this.baseURL}/api/conversations/${conversationId}/share`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(leafMessageId ? { leaf_message_id: leafMessageId } : {}),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getSharedConversation(token: string): Promise<SharedConversationResponse> {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    const tokenStr = localStorage.getItem('token');
+    if (tokenStr) {
+      headers['Authorization'] = `Bearer ${tokenStr}`;
+    }
+    const response = await fetch(`${this.baseURL}/api/shared/${token}`, {
+      headers,
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteShare(token: string): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/shared/${token}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    await this.handleResponse(response);
+  }
+
+  async getMyShares(): Promise<ShareConversation[]> {
+    const response = await fetch(`${this.baseURL}/api/my/shared`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async saveSharedConversation(token: string): Promise<{ conversation_id: string }> {
+    const response = await fetch(`${this.baseURL}/api/shared/${token}/save`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getAllSharedConversations(): Promise<ShareConversation[]> {
+    const response = await fetch(`${this.baseURL}/api/admin/shared`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteSharedConversationAdmin(shareId: string): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/admin/shared/${shareId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    await this.handleResponse(response);
   }
 
 }
