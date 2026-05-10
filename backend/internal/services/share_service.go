@@ -66,6 +66,7 @@ func (s *ShareService) CreateShare(ctx context.Context, userID, conversationID p
 		ConversationID: conversationID,
 		UserID:         userID,
 		UserNickname:   nickname,
+		UserAvatar:     user.Avatar,
 		Title:          conv.Title,
 		MessageIDs:     msgIDs,
 		LeafMessageID:  leafID,
@@ -160,6 +161,7 @@ func (s *ShareService) GetSharedConversation(ctx context.Context, token string) 
 			"status":          "deleted",
 			"title":           shared.Title,
 			"sharer_nickname": shared.UserNickname,
+			"sharer_avatar":   shared.UserAvatar,
 			"created_at":      shared.CreatedAt,
 		}, nil
 	}
@@ -169,6 +171,7 @@ func (s *ShareService) GetSharedConversation(ctx context.Context, token string) 
 			"status":          "expired",
 			"title":           shared.Title,
 			"sharer_nickname": shared.UserNickname,
+			"sharer_avatar":   shared.UserAvatar,
 			"created_at":      shared.CreatedAt,
 		}, nil
 	}
@@ -180,6 +183,7 @@ func (s *ShareService) GetSharedConversation(ctx context.Context, token string) 
 			"status":          "conversation_deleted",
 			"title":           shared.Title,
 			"sharer_nickname": shared.UserNickname,
+			"sharer_avatar":   shared.UserAvatar,
 			"created_at":      shared.CreatedAt,
 		}, nil
 	}
@@ -195,6 +199,7 @@ func (s *ShareService) GetSharedConversation(ctx context.Context, token string) 
 			"status":          "messages_deleted",
 			"title":           shared.Title,
 			"sharer_nickname": shared.UserNickname,
+			"sharer_avatar":   shared.UserAvatar,
 			"created_at":      shared.CreatedAt,
 		}, nil
 	}
@@ -208,6 +213,7 @@ func (s *ShareService) GetSharedConversation(ctx context.Context, token string) 
 		"status":          status,
 		"title":           shared.Title,
 		"sharer_nickname": shared.UserNickname,
+		"sharer_avatar":   shared.UserAvatar,
 		"created_at":      shared.CreatedAt,
 		"messages":        msgs,
 	}, nil

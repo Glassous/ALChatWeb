@@ -12,6 +12,7 @@ type SharedConversation struct {
 	ConversationID primitive.ObjectID   `bson:"conversation_id" json:"conversation_id"`
 	UserID         primitive.ObjectID   `bson:"user_id" json:"user_id"`
 	UserNickname   string               `bson:"user_nickname" json:"user_nickname"`
+	UserAvatar     string               `bson:"user_avatar" json:"user_avatar"`
 	Title          string               `bson:"title" json:"title"`
 	MessageIDs     []primitive.ObjectID `bson:"message_ids" json:"message_ids"`
 	LeafMessageID  primitive.ObjectID   `bson:"leaf_message_id" json:"leaf_message_id"`

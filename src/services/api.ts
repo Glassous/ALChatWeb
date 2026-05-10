@@ -96,6 +96,7 @@ export interface SharedConversationResponse {
   status: 'active' | 'partial' | 'deleted' | 'expired' | 'conversation_deleted' | 'messages_deleted';
   title?: string;
   sharer_nickname?: string;
+  sharer_avatar?: string;
   created_at?: string;
   messages?: Message[];
 }

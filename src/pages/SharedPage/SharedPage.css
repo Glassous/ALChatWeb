@@ -192,6 +192,13 @@
   font-size: 12px;
   font-weight: 500;
   border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.shared-sharer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .shared-messages {

@@ -90,7 +90,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	// Temporary conversation routing
 	if utils.IsTempID(req.ConversationID) {
-		h.handleTempChat(c, req, userID, userIDObj, &user)
+		h.handleTempChat(c, req, userIDObj)
 		return
 	}
 
@@ -448,7 +448,7 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 	})
 }
 
-func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userID string, userIDObj primitive.ObjectID, user *models.User) {
+func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userIDObj primitive.ObjectID) {
 	// 1. Ensure temp conversation exists in Redis (metadata)
 	_, err := h.tempConvService.GetConversation(c.Request.Context(), req.ConversationID)
 	if err != nil {

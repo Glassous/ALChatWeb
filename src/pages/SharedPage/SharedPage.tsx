@@ -143,7 +143,11 @@ export function SharedPage() {
               {data.sharer_nickname && (
                 <div className="shared-conversation-sharer-container">
                   <div className="shared-sharer-avatar">
-                    {data.sharer_nickname.charAt(0).toUpperCase()}
+                    {data.sharer_avatar ? (
+                      <img src={data.sharer_avatar} alt={data.sharer_nickname} />
+                    ) : (
+                      data.sharer_nickname.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <span className="shared-conversation-sharer">由 {data.sharer_nickname} 分享</span>
                 </div>
