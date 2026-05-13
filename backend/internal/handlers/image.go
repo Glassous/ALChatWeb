@@ -208,24 +208,80 @@ func (h *ImageHandler) DeleteReferenceImage(c *gin.Context) {
 }
 
 func (h *ImageHandler) UploadReferenceImage(c *gin.Context) {
-	file, err := c.FormFile("file")
+	const maxFileSize = 15 * 1024 * 1024 // 15MB
+
+	form, err := c.MultipartForm()
 	if err != nil {
-		// Fallback to "image" for backward compatibility
-		file, err = c.FormFile("image")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
-			return
-		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse multipart form"})
+		return
 	}
 
-	f, err := file.Open()
+	// Try both "file" and "image" keys for backward compatibility
+	files := form.File["file"]
+	if len(files) == 0 {
+		files = form.File["image"]
+	}
+
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
+		return
+	}
+
+	if len(files) > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Too many files. Maximum 5 files allowed"})
+		return
+	}
+
+	header := files[0] // Take the first one
+
+	// 1. Check file size
+	if header.Size > maxFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds 15MB limit"})
+		return
+	}
+
+	file, err := header.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
 		return
 	}
-	defer f.Close()
+	defer file.Close()
 
-	url, err := h.ossService.UploadFile(f, file.Filename, "reference_files")
+	// 2. Check MIME type using Magic Number
+	buffer := make([]byte, 512)
+	_, err = file.Read(buffer)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file header"})
+		return
+	}
+	// Reset file pointer after reading header
+	if _, err := file.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset file pointer"})
+		return
+	}
+
+	contentType := http.DetectContentType(buffer)
+	validImageTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/webp": true,
+		"image/gif":  true,
+		"image/bmp":  true,
+	}
+	validVideoTypes := map[string]bool{
+		"video/mp4":       true,
+		"video/mpeg":      true,
+		"video/quicktime": true,
+		"video/webm":      true,
+		"video/x-msvideo": true, // avi
+	}
+
+	if !validImageTypes[contentType] && !validVideoTypes[contentType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only common image and video formats are allowed"})
+		return
+	}
+
+	url, err := h.ossService.UploadFile(file, header.Filename, "reference_files")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload file to OSS: %v", err)})
 		return

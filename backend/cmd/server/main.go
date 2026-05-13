@@ -117,6 +117,7 @@ func main() {
 	{
 		// Public routes
 		auth := api.Group("/auth")
+		auth.Use(middleware.RateLimiter(rdb, 5, time.Minute))
 		{
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)

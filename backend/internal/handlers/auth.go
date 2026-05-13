@@ -285,12 +285,68 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		return
 	}
 
-	file, header, err := c.Request.FormFile("avatar")
+	// Limit total multipart memory (e.g. 15MB + some overhead)
+	// Gin's default is 32MB, but we can be more specific if needed.
+	// However, the user wants 15MB per file.
+	const maxFileSize = 15 * 1024 * 1024 // 15MB
+
+	form, err := c.MultipartForm()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get avatar file"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse multipart form"})
+		return
+	}
+
+	files := form.File["avatar"]
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No avatar file provided"})
+		return
+	}
+
+	if len(files) > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Too many files. Maximum 5 files allowed"})
+		return
+	}
+
+	header := files[0] // Only take the first one for avatar
+
+	// 1. Check file size
+	if header.Size > maxFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds 15MB limit"})
+		return
+	}
+
+	file, err := header.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to open avatar file"})
 		return
 	}
 	defer file.Close()
+
+	// 2. Check MIME type using Magic Number
+	buffer := make([]byte, 512)
+	_, err = file.Read(buffer)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file header"})
+		return
+	}
+	// Reset file pointer after reading header
+	if _, err := file.Seek(0, 0); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset file pointer"})
+		return
+	}
+
+	contentType := http.DetectContentType(buffer)
+	validTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/webp": true,
+		"image/gif":  true,
+	}
+
+	if !validTypes[contentType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Only JPEG, PNG, WEBP and GIF are allowed"})
+		return
+	}
 
 	// Upload to OSS
 	avatarURL, err := h.ossService.UploadFile(file, header.Filename, "avatars")
