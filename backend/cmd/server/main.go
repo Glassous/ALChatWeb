@@ -10,6 +10,8 @@ import (
 	"alchat-backend/internal/services"
 	"context"
 	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,22 +21,40 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Set Gin mode
+	gin.SetMode(cfg.GinMode)
+
+	// Initialize structured logger
+	var handler slog.Handler
+	if cfg.GinMode == gin.ReleaseMode {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+	}
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	slog.Info("Starting AL Chat Web Backend", "mode", cfg.GinMode, "port", cfg.Port)
+
 	// Validate configuration
 	if cfg.OpenAIAPIKey == "" || cfg.OpenAIAPIKey == "your-api-key-here" {
-		log.Fatal("OPENAI_API_KEY is not set. Please set it in backend/.env file")
+		slog.Error("OPENAI_API_KEY is not set. Please set it in backend/.env file")
+		os.Exit(1)
 	}
 
 	// Connect to MongoDB
 	db, err := database.NewMongoDB(cfg.MongoDBURI, cfg.MongoDBDatabase)
 	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
+		slog.Error("Failed to connect to MongoDB", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	// Connect to Redis
 	rdb, err := database.NewRedis(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		slog.Error("Failed to connect to Redis", "error", err)
+		os.Exit(1)
 	}
 	defer rdb.Close()
 
@@ -84,7 +104,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, cfg.JWTSecret, ossService, memberService, tokenService)
+	authHandler := handlers.NewAuthHandler(db, rdb, cfg.JWTSecret, ossService, memberService, tokenService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
@@ -110,7 +130,7 @@ func main() {
 
 	// Setup Gin router
 	router := gin.Default()
-	router.Use(middleware.CORS())
+	router.Use(middleware.CORS(cfg.AllowOrigins))
 
 	// API routes
 	api := router.Group("/api")
@@ -127,9 +147,10 @@ func main() {
 
 		// Protected routes
 		protected := api.Group("/")
-		protected.Use(middleware.AuthMiddleware(tokenService))
+		protected.Use(middleware.AuthMiddleware(tokenService, rdb))
 		{
 			// Auth protected routes
+			protected.POST("/auth/logout", authHandler.Logout)
 			protected.GET("/auth/profile", authHandler.GetProfile)
 			protected.PUT("/auth/profile", authHandler.UpdateProfile)
 			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
@@ -201,19 +222,40 @@ func main() {
 		}
 	}
 
-	// Health check
+	// Health check with database pings
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		status := "ok"
+		mongoStatus := "ok"
+		redisStatus := "ok"
+
+		// Ping MongoDB
+		if err := db.Client.Ping(c.Request.Context(), nil); err != nil {
+			mongoStatus = "error"
+			status = "partial_outage"
+		}
+
+		// Ping Redis
+		if err := rdb.Client.Ping(c.Request.Context()).Err(); err != nil {
+			redisStatus = "error"
+			status = "partial_outage"
+		}
+
+		c.JSON(200, gin.H{
+			"status":   status,
+			"mongodb":  mongoStatus,
+			"redis":    redisStatus,
+			"version":  "1.0.0",
+			"gin_mode": cfg.GinMode,
+		})
 	})
 
 	// Public shared conversation route (no auth required)
 	router.GET("/api/shared/:token", shareHandler.GetSharedConversation)
 
 	// Start server
-	log.Printf("Server starting on port %s", cfg.Port)
-	log.Printf("Using model: %s", cfg.OpenAIModel)
-	log.Printf("API Base URL: %s", cfg.OpenAIBaseURL)
+	slog.Info("Server is ready", "port", cfg.Port, "model", cfg.OpenAIModel)
 	if err := router.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		slog.Error("Failed to start server", "error", err)
+		os.Exit(1)
 	}
 }

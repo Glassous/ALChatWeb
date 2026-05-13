@@ -42,6 +42,8 @@ type Config struct {
 	RedisAddr          string
 	RedisPassword      string
 	RedisDB            int
+	AllowOrigins       []string
+	GinMode            string
 }
 
 func Load() *Config {
@@ -87,6 +89,8 @@ func Load() *Config {
 		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
 		RedisDB:            getEnvInt("REDIS_DB", 0),
+		AllowOrigins:       getEnvSlice("ALLOW_ORIGINS", []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:3001"}),
+		GinMode:            getEnv("GIN_MODE", "debug"),
 	}
 
 	// Enhanced Debug Logging for OSS
@@ -125,4 +129,16 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return value
+}
+
+func getEnvSlice(key string, defaultValue []string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	parts := strings.Split(value, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }

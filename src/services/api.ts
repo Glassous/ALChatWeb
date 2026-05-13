@@ -150,6 +150,18 @@ class APIClient {
   }
 
   // Auth APIs
+  async logout() {
+    try {
+      const response = await fetch(`${this.baseURL}/api/auth/logout`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+      });
+      return this.handleResponse(response);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }
+
   async register(data: any) {
     const response = await fetch(`${this.baseURL}/api/auth/register`, {
       method: 'POST',

@@ -1,7 +1,10 @@
 package middleware
 
 import (
+	"alchat-backend/internal/database"
 	"alchat-backend/internal/services"
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -11,7 +14,7 @@ import (
 
 const UserIDKey = "user_id"
 
-func AuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
+func AuthMiddleware(tokenService *services.TokenService, rdb *database.Redis) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -34,6 +37,18 @@ func AuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return
+		}
+
+		// Check if token is blacklisted in Redis
+		if rdb != nil && rdb.Client != nil {
+			if jti, ok := claims["jti"].(string); ok {
+				blacklisted, err := rdb.Client.Exists(context.Background(), fmt.Sprintf("blacklist:%s", jti)).Result()
+				if err == nil && blacklisted > 0 {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "Token has been revoked"})
+					c.Abort()
+					return
+				}
+			}
 		}
 
 		userIDStr, ok := claims["user_id"].(string)
@@ -59,6 +74,12 @@ func AuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
 
 		c.Set(UserIDKey, userIDStr)
 		c.Set("role", role)
+		if jti, ok := claims["jti"].(string); ok {
+			c.Set("jti", jti)
+		}
+		if exp, ok := claims["exp"].(float64); ok {
+			c.Set("exp", int64(exp))
+		}
 		c.Next()
 	}
 }

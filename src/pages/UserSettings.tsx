@@ -374,7 +374,12 @@ export function UserSettings() {
             
             <section className="settings-section logout-section-page">
               <md-outlined-button 
-                onClick={() => {
+                onClick={async () => {
+                  try {
+                    await apiClient.logout();
+                  } catch (e) {
+                    console.error('Logout error:', e);
+                  }
                   localStorage.removeItem('token');
                   localStorage.removeItem('user');
                   window.location.href = '/welcome';

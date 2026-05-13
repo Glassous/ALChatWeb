@@ -20,20 +20,43 @@ import (
 
 type AuthHandler struct {
 	db            *database.MongoDB
+	rdb           *database.Redis
 	jwtSecret     string
 	ossService    *services.OSSService
 	memberService *services.MemberService
 	tokenService  *services.TokenService
 }
 
-func NewAuthHandler(db *database.MongoDB, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService) *AuthHandler {
 	return &AuthHandler{
 		db:            db,
+		rdb:           rdb,
 		jwtSecret:     jwtSecret,
 		ossService:    ossService,
 		memberService: memberService,
 		tokenService:  tokenService,
 	}
+}
+
+func (h *AuthHandler) Logout(c *gin.Context) {
+	jti, _ := c.Get("jti")
+	exp, _ := c.Get("exp")
+
+	if jti != nil && exp != nil {
+		jtiStr := jti.(string)
+		expTime := time.Unix(exp.(int64), 0)
+		ttl := time.Until(expTime)
+
+		if ttl > 0 {
+			err := h.rdb.Client.Set(c.Request.Context(), fmt.Sprintf("blacklist:%s", jtiStr), "1", ttl).Err()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to logout"})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 
 func (h *AuthHandler) generateToken(userID primitive.ObjectID, role string) (string, error) {
