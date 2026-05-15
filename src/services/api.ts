@@ -101,6 +101,31 @@ export interface SharedConversationResponse {
   messages?: Message[];
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: 'info' | 'warning' | 'critical';
+  is_active: boolean;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: string;
+  user_id?: string;
+  user_email: string;
+  type: 'bug' | 'feature' | 'other';
+  content: string;
+  meta?: Record<string, string>;
+  status: 'open' | 'replied' | 'closed';
+  reply_content?: string;
+  replied_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 class APIClient {
   private baseURL: string;
   private conversationCache = new Map<string, CacheEntry<ConversationWithMessages>>();
@@ -683,6 +708,24 @@ class APIClient {
       headers: this.getHeaders(),
     });
     await this.handleResponse(response);
+  }
+
+  // Public Announcement APIs
+  async getPublicAnnouncements(): Promise<Announcement[]> {
+    const response = await fetch(`${this.baseURL}/api/announcements`, {
+      headers: this.getHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  // Public Feedback APIs
+  async submitFeedback(data: { type: string; content: string; user_email: string; meta?: Record<string, string> }) {
+    const response = await fetch(`${this.baseURL}/api/feedback`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(data),
+    });
+    return this.handleResponse(response);
   }
 
 }

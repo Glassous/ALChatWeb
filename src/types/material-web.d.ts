@@ -12,6 +12,10 @@ declare module 'react' {
       'md-circular-progress': any;
       'md-list': any;
       'md-list-item': any;
+      'md-tabs': any;
+      'md-primary-tab': any;
+      'md-outlined-select': any;
+      'md-select-option': any;
     }
   }
 }

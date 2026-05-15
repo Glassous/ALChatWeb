@@ -26,6 +26,7 @@ type AdminHandler struct {
 	aiService     *services.AIService
 	memberService *services.MemberService
 	tokenService  *services.TokenService
+	emailService  *services.EmailService
 	agentRunner   interface {
 		GetToolNames() []string
 		GetToolDescriptions() map[string]string
@@ -36,13 +37,14 @@ type AdminHandler struct {
 	}
 }
 
-func NewAdminHandler(db *database.MongoDB, rdb *database.Redis, aiService *services.AIService, memberService *services.MemberService, tokenService *services.TokenService) *AdminHandler {
+func NewAdminHandler(db *database.MongoDB, rdb *database.Redis, aiService *services.AIService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AdminHandler {
 	return &AdminHandler{
 		db:            db,
 		rdb:           rdb,
 		aiService:     aiService,
 		memberService: memberService,
 		tokenService:  tokenService,
+		emailService:  emailService,
 	}
 }
 
@@ -712,6 +714,334 @@ func (h *AdminHandler) ToggleAgentTool(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tool state updated", "name": name, "enabled": req.Enabled})
+}
+
+const (
+	collectionAnnouncements = "announcements"
+	collectionFeedbacks     = "feedbacks"
+)
+
+// Admin: Create announcement
+func (h *AdminHandler) CreateAnnouncement(c *gin.Context) {
+	var req models.CreateAnnouncementRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userHex := c.GetString("user_id")
+	userObjID, _ := primitive.ObjectIDFromHex(userHex)
+
+	now := time.Now()
+	ann := models.Announcement{
+		ID:        primitive.NewObjectID(),
+		Title:     req.Title,
+		Content:   req.Content,
+		Type:      req.Type,
+		IsActive:  req.IsActive,
+		CreatedBy: userObjID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if req.IsActive {
+		t := now
+		ann.PublishedAt = &t
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.db.Collection(collectionAnnouncements).InsertOne(ctx, ann); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create announcement"})
+		return
+	}
+	c.JSON(http.StatusOK, ann)
+}
+
+// Admin: List announcements
+func (h *AdminHandler) ListAnnouncements(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	cur, err := h.db.Collection(collectionAnnouncements).Find(
+		ctx,
+		bson.M{},
+		options.Find().SetSort(bson.M{"created_at": -1}),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cur.Close(ctx)
+
+	var items []models.Announcement
+	if err := cur.All(ctx, &items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if items == nil {
+		items = []models.Announcement{}
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// Admin: Update announcement
+func (h *AdminHandler) UpdateAnnouncement(c *gin.Context) {
+	idHex := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req models.UpdateAnnouncementRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	set := bson.M{"updated_at": time.Now()}
+	if req.Title != nil {
+		set["title"] = *req.Title
+	}
+	if req.Content != nil {
+		set["content"] = *req.Content
+	}
+	if req.Type != nil {
+		set["type"] = *req.Type
+	}
+	if req.IsActive != nil {
+		set["is_active"] = *req.IsActive
+	}
+	if req.Publish != nil && *req.Publish {
+		t := time.Now()
+		set["is_active"] = true
+		set["published_at"] = t
+	}
+	if req.Unpublish != nil && *req.Unpublish {
+		set["is_active"] = false
+		set["published_at"] = nil
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	_, err = h.db.Collection(collectionAnnouncements).UpdateOne(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": set},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+}
+
+// Admin: Delete announcement
+func (h *AdminHandler) DeleteAnnouncement(c *gin.Context) {
+	idHex := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.db.Collection(collectionAnnouncements).DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// Admin: List feedbacks
+func (h *AdminHandler) ListFeedbacks(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	cur, err := h.db.Collection(collectionFeedbacks).Find(
+		ctx,
+		bson.M{},
+		options.Find().SetSort(bson.M{"created_at": -1}),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cur.Close(ctx)
+
+	var items []models.Feedback
+	if err := cur.All(ctx, &items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if items == nil {
+		items = []models.Feedback{}
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// Admin: Update feedback status
+func (h *AdminHandler) UpdateFeedbackStatus(c *gin.Context) {
+	idHex := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req models.UpdateFeedbackStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	_, err = h.db.Collection(collectionFeedbacks).UpdateOne(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": bson.M{"status": req.Status, "updated_at": time.Now()}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "status updated"})
+}
+
+// Admin: Reply feedback
+func (h *AdminHandler) ReplyFeedback(c *gin.Context) {
+	idHex := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var req models.ReplyFeedbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	var feedback models.Feedback
+	err = h.db.Collection(collectionFeedbacks).FindOne(ctx, bson.M{"_id": id}).Decode(&feedback)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Feedback not found"})
+		return
+	}
+
+	now := time.Now()
+	_, err = h.db.Collection(collectionFeedbacks).UpdateOne(
+		ctx,
+		bson.M{"_id": id},
+		bson.M{"$set": bson.M{
+			"status":        "replied",
+			"reply_content": req.ReplyContent,
+			"replied_at":    &now,
+			"updated_at":    now,
+		}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update feedback"})
+		return
+	}
+
+	// Send email notification
+	go func() {
+		err := h.emailService.SendFeedbackReply(feedback.UserEmail, feedback.Content, req.ReplyContent)
+		if err != nil {
+			fmt.Printf("Failed to send reply email: %v\n", err)
+		}
+	}()
+
+	c.JSON(http.StatusOK, gin.H{"message": "Replied successfully"})
+}
+
+// Admin: Delete feedback
+func (h *AdminHandler) DeleteFeedback(c *gin.Context) {
+	idHex := c.Param("id")
+	id, err := primitive.ObjectIDFromHex(idHex)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.db.Collection(collectionFeedbacks).DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// Public: Get active announcements
+func (h *AdminHandler) PublicListActiveAnnouncements(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	cur, err := h.db.Collection(collectionAnnouncements).Find(
+		ctx,
+		bson.M{"is_active": true},
+		options.Find().SetSort(bson.M{"published_at": -1}).SetLimit(20),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cur.Close(ctx)
+
+	var items []models.Announcement
+	if err := cur.All(ctx, &items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if items == nil {
+		items = []models.Announcement{}
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// Public: Submit feedback
+func (h *AdminHandler) PublicSubmitFeedback(c *gin.Context) {
+	var req models.SubmitFeedbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var userID *primitive.ObjectID
+	if userHex := c.GetString("user_id"); userHex != "" {
+		if id, err := primitive.ObjectIDFromHex(userHex); err == nil {
+			userID = &id
+		}
+	}
+
+	now := time.Now()
+	item := models.Feedback{
+		ID:        primitive.NewObjectID(),
+		UserID:    userID,
+		UserEmail: req.UserEmail,
+		Type:      req.Type,
+		Content:   req.Content,
+		Meta:      req.Meta,
+		Status:    "open",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.db.Collection(collectionFeedbacks).InsertOne(ctx, item); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit feedback"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "submitted"})
 }
 
 // SetupAdmin ensures at least one admin exists

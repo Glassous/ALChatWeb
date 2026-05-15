@@ -12,6 +12,7 @@ import '@material/web/progress/circular-progress.js';
 import './Sidebar.css';
 import { apiClient, type ThemeConfig } from '../../services/api';
 import { ThemeSettingsDialog } from './ThemeSettingsDialog';
+import { AnnouncementFeedbackDialog } from './AnnouncementFeedbackDialog';
 
 interface Conversation {
   id: string;
@@ -81,10 +82,12 @@ export function Sidebar({
   const [userMemberType, setUserMemberType] = useState('free');
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [showNoticeFeedback, setShowNoticeFeedback] = useState(false);
+  const [noticeFeedbackTab, setNoticeFeedbackTab] = useState<'announcement' | 'feedback'>('announcement');
 
   // Helper to manage global dialog blur
   useEffect(() => {
-    const isAnyDialogOpen = showDeleteDialog || showEditDialog || showThemeSettings;
+    const isAnyDialogOpen = showDeleteDialog || showEditDialog || showThemeSettings || showNoticeFeedback;
     if (isAnyDialogOpen) {
       document.body.classList.add('dialog-open-blur');
     } else {
@@ -389,6 +392,22 @@ export function Sidebar({
               </div>
               <div className="settings-divider"></div>
               <div 
+                className="settings-row clickable"
+                onClick={() => {
+                  setShowSettings(false);
+                  setNoticeFeedbackTab('announcement');
+                  setShowNoticeFeedback(true);
+                }}
+              >
+                <div className="settings-row-content">
+                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                    <path d="M198-278q-57-57-87.5-129.5T80-560q0-80 30.5-152.5T198-842l48 48q-47 47-72.5 107.5T148-560q0 66 25.5 126.5T246-326l-48 48Zm92-92q-38-38-58-87t-20-103q0-54 20-103t58-87l48 48q-29 29-43.5 65.5T280-560q0 40 14.5 76.5T338-418l-48 48Zm150 250v-348q-27-12-43.5-37T380-560q0-42 29-71t71-29q42 0 71 29t29 71q0 30-16.5 55T520-468v348h-80Zm230-250-48-48q29-29 43.5-65.5T680-560q0-40-14.5-76.5T622-702l48-48q38 38 58 87t20 103q0 54-20 103t-58 87Zm92 92-48-48q47-47 72.5-107.5T812-560q0-66-25.5-126.5T714-794l48-48q57 57 87.5 129.5T880-560q0 80-30.5 152.5T762-278Z"/>
+                  </svg>
+                  <span className="settings-label">公告/反馈</span>
+                </div>
+              </div>
+              <div className="settings-divider"></div>
+              <div 
                 className="settings-row user-info-row clickable"
                 onClick={() => {
                   setShowSettings(false);
@@ -538,6 +557,12 @@ export function Sidebar({
                     onThemeConfigUpdated(config);
                   }
                 }}
+              />
+
+              <AnnouncementFeedbackDialog
+                open={showNoticeFeedback}
+                onClose={() => setShowNoticeFeedback(false)}
+                initialTab={noticeFeedbackTab}
               />
             </>,
             document.body

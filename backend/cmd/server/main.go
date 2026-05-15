@@ -111,7 +111,7 @@ func main() {
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
 	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
-	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService)
+	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService, emailService)
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
 	adminHandler.SetupAdmin(context.Background())
@@ -144,6 +144,16 @@ func main() {
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/reset-password", authHandler.ResetPassword)
+		}
+
+		// Announcements (public)
+		api.GET("/announcements", adminHandler.PublicListActiveAnnouncements)
+
+		// Feedback (public submit, with basic rate limit)
+		feedbackGroup := api.Group("/feedback")
+		feedbackGroup.Use(middleware.RateLimiter(rdb, 5, time.Minute))
+		{
+			feedbackGroup.POST("", adminHandler.PublicSubmitFeedback)
 		}
 
 		// Protected routes
@@ -219,6 +229,18 @@ func main() {
 				admin.PUT("/agent/tools/:name", adminHandler.ToggleAgentTool)
 				admin.GET("/shared", shareHandler.GetAllShares)
 				admin.DELETE("/shared/:id", shareHandler.AdminDeleteShare)
+
+				// Announcements (admin)
+				admin.GET("/announcements", adminHandler.ListAnnouncements)
+				admin.POST("/announcements", adminHandler.CreateAnnouncement)
+				admin.PUT("/announcements/:id", adminHandler.UpdateAnnouncement)
+				admin.DELETE("/announcements/:id", adminHandler.DeleteAnnouncement)
+
+				// Feedbacks (admin)
+				admin.GET("/feedbacks", adminHandler.ListFeedbacks)
+				admin.POST("/feedbacks/:id/reply", adminHandler.ReplyFeedback)
+				admin.PUT("/feedbacks/:id/status", adminHandler.UpdateFeedbackStatus)
+				admin.DELETE("/feedbacks/:id", adminHandler.DeleteFeedback)
 			}
 
 			// Public admin register (protected by code verification, but allows creating first admin)
