@@ -47,25 +47,116 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 
 const emailTemplate = `
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <style>
-        .container { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px; }
-        .header { text-align: center; padding-bottom: 20px; }
-        .code { font-size: 32px; font-weight: bold; color: #0078d4; text-align: center; letter-spacing: 5px; margin: 20px 0; }
-        .footer { font-size: 12px; color: #888; text-align: center; margin-top: 30px; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AL Chat 验证码</title>
 </head>
-<body>
-    <div class="container">
-        <div class="header"><h2>AL Chat 验证码</h2></div>
-        <p>您好，</p>
-        <p>您正在进行身份验证，请在验证码输入框中输入以下代码：</p>
-        <div class="code">{{.Code}}</div>
-        <p>该验证码在 10 分钟内有效。如果这不是您本人的操作，请忽略此邮件。</p>
-        <div class="footer">© 2026 AL Chat. All rights reserved.</div>
-    </div>
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+
+<!-- 外层容器 -->
+<table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff;padding:60px 0;">
+    <tr>
+        <td align="center">
+            
+            <!-- 主体区域：极简风 -->
+            <table width="400" border="0" cellspacing="0" cellpadding="0" style="max-width:400px;background-color:#ffffff;">
+                
+                <!-- 1. Logo & Brand 区域 -->
+                <tr>
+                    <td align="center" style="padding-bottom:32px;">
+                        <table border="0" cellspacing="0" cellpadding="0">
+                            <tr>
+                                <td style="vertical-align: middle;">
+                                    <!-- 内嵌 SVG Logo -->
+                                    <div style="width:40px;height:40px;">
+                                        <svg viewBox="0 0 300 300" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <linearGradient id="cherryPinkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                    <stop offset="0%" stop-color="#790604"/>
+                                                    <stop offset="100%" stop-color="#D81B60"/>
+                                                </linearGradient>
+                                            </defs>
+                                            <g transform="translate(150, 150) scale(0.85)">
+                                                <circle cx="0" cy="-55" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="0" cy="55" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="-55" cy="0" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="55" cy="0" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="-39" cy="-39" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="39" cy="-39" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="-39" cy="39" r="60" fill="url(#cherryPinkGradient)"/>
+                                                <circle cx="39" cy="39" r="60" fill="url(#cherryPinkGradient)"/>
+                                            </g>
+                                        </svg>
+                                    </div>
+                                </td>
+                                <td style="vertical-align: middle; padding-left: 12px;">
+                                    <span style="font-size: 22px; font-weight: 700; color: #0b0b0f; letter-spacing: -0.5px;">AL Chat</span>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+
+                <!-- 2. 标题 -->
+                <tr>
+                    <td align="center" style="padding-bottom:24px;">
+                        <h1 style="margin:0;font-size:20px;font-weight:600;color:#0b0b0f;letter-spacing:-0.5px;">
+                            验证您的邮箱
+                        </h1>
+                    </td>
+                </tr>
+
+                <!-- 3. 正文内容 -->
+                <tr>
+                    <td align="left" style="padding-bottom:32px;">
+                        <p style="margin:0;font-size:14px;line-height:1.6;color:#6b7280;text-align:center;">
+                            您好，感谢使用 AL Chat。请使用下方的 6 位验证码完成登录或注册流程。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 4. 验证码展示 -->
+                <tr>
+                    <td align="center" style="padding:24px 0;border-top:1px solid #f3f4f6;border-bottom:1px solid #f3f4f6;">
+                        <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:36px;font-weight:700;color:#0b0b0f;letter-spacing:12px;margin-left:12px;">
+                            {{.Code}}
+                        </span>
+                    </td>
+                </tr>
+
+                <!-- 5. 补充信息 -->
+                <tr>
+                    <td align="center" style="padding-top:32px;">
+                        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.8;">
+                            验证码有效期为 <span style="color:#0b0b0f;font-weight:500;">10 分钟</span>。<br>
+                            如果这不是您本人操作，请忽略此邮件。
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- 6. 页脚 -->
+                <tr>
+                    <td align="center" style="padding-top:64px;">
+                        <table border="0" cellspacing="0" cellpadding="0">
+                            <tr>
+                                <td style="border-top:1px solid #f3f4f6;padding-top:16px;width:200px;">
+                                    <p style="margin:0;font-size:11px;color:#d1d5db;letter-spacing:1px;text-transform:uppercase;">
+                                        AL Chat Team
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+
+            </table>
+
+        </td>
+    </tr>
+</table>
+
 </body>
 </html>
 `
@@ -94,7 +185,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	}
 	message += "\r\n" + body.String()
 
-	addr := fmt.Sprintf("%s:%d", s.cfg.SMTPHost, s.cfg.SMTPPort)
+	addr := net.JoinHostPort(s.cfg.SMTPHost, fmt.Sprintf("%d", s.cfg.SMTPPort))
 
 	var client *smtp.Client
 
