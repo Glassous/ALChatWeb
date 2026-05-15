@@ -160,7 +160,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Email:             req.Email,
 		Nickname:          nickname,
 		Password:          string(hashedPassword),
-		Role:              "user", // Default role
+		Role:              "user", // Standard registration only creates "user"
 		MemberType:        "free",
 		Credits:           1000,
 		LastCreditResetAt: time.Now(),

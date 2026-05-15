@@ -111,7 +111,7 @@ func main() {
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
 	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
-	adminHandler := handlers.NewAdminHandler(db, aiService, memberService)
+	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService)
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
 	adminHandler.SetupAdmin(context.Background())
@@ -220,6 +220,9 @@ func main() {
 				admin.GET("/shared", shareHandler.GetAllShares)
 				admin.DELETE("/shared/:id", shareHandler.AdminDeleteShare)
 			}
+
+			// Public admin register (protected by code verification, but allows creating first admin)
+			api.POST("/admin/register", adminHandler.AdminRegister)
 		}
 	}
 

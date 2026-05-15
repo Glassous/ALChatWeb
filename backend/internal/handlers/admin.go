@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"math/big"
 	"net/http"
 	"time"
@@ -16,12 +17,15 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AdminHandler struct {
 	db            *database.MongoDB
+	rdb           *database.Redis
 	aiService     *services.AIService
 	memberService *services.MemberService
+	tokenService  *services.TokenService
 	agentRunner   interface {
 		GetToolNames() []string
 		GetToolDescriptions() map[string]string
@@ -32,11 +36,13 @@ type AdminHandler struct {
 	}
 }
 
-func NewAdminHandler(db *database.MongoDB, aiService *services.AIService, memberService *services.MemberService) *AdminHandler {
+func NewAdminHandler(db *database.MongoDB, rdb *database.Redis, aiService *services.AIService, memberService *services.MemberService, tokenService *services.TokenService) *AdminHandler {
 	return &AdminHandler{
 		db:            db,
+		rdb:           rdb,
 		aiService:     aiService,
 		memberService: memberService,
+		tokenService:  tokenService,
 	}
 }
 
@@ -49,6 +55,77 @@ func (h *AdminHandler) SetAgentRunner(runner interface {
 	LoadToolStates(ctx context.Context)
 }) {
 	h.agentRunner = runner
+}
+
+func (h *AdminHandler) AdminRegister(c *gin.Context) {
+	var req models.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify code
+	verifyKey := fmt.Sprintf("email_verify:%s", req.Email)
+	storedCode, err := h.rdb.Client.Get(c.Request.Context(), verifyKey).Result()
+	if err != nil || storedCode != req.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired verification code"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	// Check if email already exists
+	var existingUser models.User
+	err = h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&existingUser)
+	if err == nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	nickname := req.Nickname
+	if nickname == "" {
+		nickname = req.Email
+	}
+
+	user := models.User{
+		ID:                primitive.NewObjectID(),
+		Email:             req.Email,
+		Nickname:          nickname,
+		Password:          string(hashedPassword),
+		Role:              "admin", // Admin role for this endpoint
+		MemberType:        "free",
+		Credits:           1000,
+		LastCreditResetAt: time.Now(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	_, err = h.db.Users().InsertOne(ctx, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create admin user"})
+		return
+	}
+
+	// Delete code after successful registration
+	h.rdb.Client.Del(c.Request.Context(), verifyKey)
+
+	token, err := h.tokenService.GenerateToken(user.ID.Hex(), user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.AuthResponse{
+		Token: token,
+		User:  user,
+	})
 }
 
 // Dashboard stats
