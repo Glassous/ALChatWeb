@@ -814,7 +814,6 @@ function ChatApp({
         conversations={sidebarConversations}
         currentConversationId={currentConversationId}
         onNewChat={handleNewChat}
-        onNewTempChat={handleNewTempChat}
         onSelectConversation={handleSelectConversation}
         onDeleteConversation={handleDeleteConversation}
         onUpdateConversation={handleUpdateConversation}
@@ -836,6 +835,7 @@ function ChatApp({
           onPromote={() => currentConversationId && handlePromoteTempChat(currentConversationId)}
           onMenuClick={() => setIsMobileDrawerOpen(true)}
           onNewChat={handleNewChat}
+          onNewTempChat={handleNewTempChat}
           showShareButton={hasMessages && !!currentConversationId && !isTempID(currentConversationId)}
           onShare={() => setIsShareOpen(true)}
           showOverviewButton={isTree}
@@ -843,6 +843,8 @@ function ChatApp({
           isTreeViewOpen={isTreeViewOpen}
           userMemberType={userMemberType}
           onShowUpgrade={() => navigate('/settings')}
+          hasMessages={hasMessages}
+          hasConversation={!!currentConversationId}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
         <div className="chat-container">
@@ -854,6 +856,11 @@ function ChatApp({
                   <h2>你好，今天我能帮你什么？</h2>
                 </div>
               </div>
+              {isTempChat && (
+                <div className="temp-chat-notice">
+                  <span>临时对话不会保存记录，关闭页面后数据将被清除。</span>
+                </div>
+              )}
             </div>
           ) : (
             <div key="chat-content" className="chat-area-wrapper">

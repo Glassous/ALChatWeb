@@ -25,7 +25,6 @@ interface SidebarProps {
   conversations: Conversation[];
   currentConversationId: string | null;
   onNewChat: () => void;
-  onNewTempChat: () => void;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
   onUpdateConversation: (id: string, title: string) => void;
@@ -54,8 +53,7 @@ interface ContextMenuState {
 export function Sidebar({ 
   conversations, 
   currentConversationId, 
-  onNewChat, 
-  onNewTempChat,
+  onNewChat,
   onSelectConversation,
   onDeleteConversation,
   onUpdateConversation,
@@ -291,12 +289,6 @@ export function Sidebar({
                 <path d="M800-400v80h-80v80h80v80h80v-80h80v-80h-80v-80h-80Z"/>
               </svg>
               <span className="label">新对话</span>
-            </button>
-            <button className="new-chat-button temp-chat-button" onClick={onNewTempChat} aria-label="临时对话">
-              <svg className="icon" xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                <path d="M80-480v-160h80v160H80Zm0 400v-320h80v125l46-45h114v80h-80L80-80Zm320-160v-80h160v80H400Zm240 0v-80h160v-80h80v80q0 33-23.5 56.5T800-240H640Zm160-240v-160h80v160h-80Zm0-239v-81H640v-80h160q33 0 56.5 23.5T880-800v81h-80Zm-400-81v-80h160v80H400ZM80-719v-81q0-33 23.5-56.5T160-880h160v80H160v81H80Z"/>
-              </svg>
-              <span className="label">临时对话</span>
             </button>
           </div>
         </div>

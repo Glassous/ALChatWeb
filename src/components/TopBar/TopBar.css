@@ -34,6 +34,10 @@
   --md-icon-button-icon-size: 28px;
 }
 
+.temp-chat-topbar-btn {
+  --md-icon-button-icon-size: 24px;
+}
+
 .mobile-conversation-title {
   display: none;
 }
@@ -151,7 +155,19 @@
   }
 
   .mobile-new-chat-button {
+    display: none;
+  }
+
+  .topbar.has-conversation .mobile-new-chat-button {
     display: flex;
+  }
+
+  .temp-chat-topbar-btn {
+    display: flex;
+  }
+
+  .topbar.has-conversation .temp-chat-topbar-btn {
+    display: none;
   }
 
   .topbar-logo-container {
