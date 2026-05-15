@@ -93,6 +93,7 @@ func main() {
 	memberService := services.NewMemberService(db)
 	memberService.StartExpiryChecker(context.Background())
 	tokenService := services.NewTokenService(cfg.JWTSecret)
+	emailService := services.NewEmailService(cfg)
 	streamManager := services.NewStreamManager()
 	tempConvService := services.NewTempConversationService(rdb)
 
@@ -104,7 +105,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, rdb, cfg.JWTSecret, ossService, memberService, tokenService)
+	authHandler := handlers.NewAuthHandler(db, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
 	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
@@ -139,10 +140,10 @@ func main() {
 		auth := api.Group("/auth")
 		auth.Use(middleware.RateLimiter(rdb, 5, time.Minute))
 		{
+			auth.POST("/send-code", authHandler.SendCode)
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/reset-password", authHandler.ResetPassword)
-			auth.GET("/security-question", authHandler.GetSecurityQuestion)
 		}
 
 		// Protected routes

@@ -180,8 +180,12 @@ class APIClient {
     return this.handleResponse(response);
   }
 
-  async getSecurityQuestion(username: string) {
-    const response = await fetch(`${this.baseURL}/api/auth/security-question?username=${encodeURIComponent(username)}`);
+  async sendCode(email: string, scene: 'register' | 'reset') {
+    const response = await fetch(`${this.baseURL}/api/auth/send-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, scene }),
+    });
     return this.handleResponse(response);
   }
 

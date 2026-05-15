@@ -4,6 +4,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev # 使用开发环境的 Dockerfile
     container_name: alchat-backend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "${HOST_PORT:-8080}:${PORT:-8080}"
     volumes:

@@ -6,12 +6,12 @@ import './Auth.css';
 export function ResetPassword() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [username, setUsername] = useState('');
-  const [question, setQuestion] = useState('');
+  const [email, setEmail] = useState('');
+  const [countdown, setCountdown] = useState(0);
   
   const [formData, setFormData] = useState({
-    username: '',
-    security_answer: '',
+    email: '',
+    code: '',
     new_password: '',
     confirm_password: '',
   });
@@ -20,19 +20,29 @@ export function ResetPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
-  const handleGetQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username) return;
-    
+  const handleSendCode = async () => {
+    if (!email) {
+      setError('请输入邮箱');
+      return;
+    }
     setIsLoading(true);
     try {
-      const response = await apiClient.getSecurityQuestion(username);
-      setQuestion(response.security_question);
-      setFormData({ ...formData, username });
+      await apiClient.sendCode(email, 'reset');
+      setFormData({ ...formData, email });
       setStep(2);
       setError('');
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || '获取密保问题失败');
+      setError(err.message || '获取验证码失败');
     } finally {
       setIsLoading(false);
     }
@@ -68,26 +78,26 @@ export function ResetPassword() {
         </div>
         
         {step === 1 ? (
-          <form onSubmit={handleGetQuestion} className="auth-form">
+          <form onSubmit={(e) => { e.preventDefault(); handleSendCode(); }} className="auth-form">
             <div className="form-group">
-              <label htmlFor="username">请输入用户名</label>
+              <label htmlFor="email">请输入注册邮箱</label>
               <input
-                type="text"
-                id="username"
+                type="email"
+                id="email"
                 required
-                value={username}
+                value={email}
                 onChange={(e) => {
-                  setUsername(e.target.value);
+                  setEmail(e.target.value);
                   setError('');
                 }}
-                placeholder="用户名"
+                placeholder="邮箱地址"
               />
             </div>
             
             {error && <div className="auth-error">{error}</div>}
             
             <button type="submit" className="auth-button" disabled={isLoading}>
-              {isLoading ? '查询中...' : '下一步'}
+              {isLoading ? '发送中...' : '发送验证码'}
             </button>
             
             <div className="auth-links">
@@ -99,23 +109,38 @@ export function ResetPassword() {
         ) : (
           <form onSubmit={handleReset} className="auth-form">
             <div className="form-group">
-              <label>密保问题</label>
-              <div className="security-question-text">{question}</div>
-            </div>
-            
-            <div className="form-group">
-              <label htmlFor="security_answer">密保答案 *</label>
-              <input
-                type="text"
-                id="security_answer"
-                required
-                value={formData.security_answer}
-                onChange={(e) => {
-                  setFormData({ ...formData, security_answer: e.target.value });
-                  setError('');
-                }}
-                placeholder="请输入密保答案"
-              />
+              <label htmlFor="code">验证码 *</label>
+              <div className="code-input-group" style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  id="code"
+                  required
+                  value={formData.code}
+                  onChange={(e) => {
+                    setFormData({ ...formData, code: e.target.value });
+                    setError('');
+                  }}
+                  placeholder="6 位验证码"
+                  style={{ flex: 1 }}
+                />
+                <button 
+                  type="button" 
+                  className="send-code-button" 
+                  onClick={handleSendCode}
+                  disabled={countdown > 0}
+                  style={{ 
+                    width: '100px', 
+                    fontSize: '12px',
+                    backgroundColor: countdown > 0 ? '#ccc' : '#0078d4',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: countdown > 0 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {countdown > 0 ? `${countdown}s` : '重发'}
+                </button>
+              </div>
             </div>
             
             <div className="form-group">

@@ -89,8 +89,8 @@ export function UserSettings() {
   const loadUserProfile = async () => {
     try {
       const user = await apiClient.getProfile();
-      setUserNickname(user.nickname || user.username || '');
-      setOriginalNickname(user.nickname || user.username || '');
+      setUserNickname(user.nickname || user.email || '');
+      setOriginalNickname(user.nickname || user.email || '');
       setUserAvatar(user.avatar || '');
       setUserMemberType(user.member_type || 'free');
       setUserMemberExpiry(user.member_expiry || null);

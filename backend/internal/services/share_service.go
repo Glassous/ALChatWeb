@@ -50,7 +50,7 @@ func (s *ShareService) CreateShare(ctx context.Context, userID, conversationID p
 
 	nickname := user.Nickname
 	if nickname == "" {
-		nickname = user.Username
+		nickname = user.Email
 	}
 
 	msgIDs, leafID, err := s.extractBranch(ctx, conversationID, leafMsgID)

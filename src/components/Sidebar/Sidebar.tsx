@@ -421,7 +421,7 @@ export function Sidebar({
                           const userStr = localStorage.getItem('user');
                           if (userStr) {
                             const user = JSON.parse(userStr);
-                            return user.nickname || user.username || '用户';
+                            return user.nickname || user.email || '用户';
                           }
                         } catch { }
                         return '用户';

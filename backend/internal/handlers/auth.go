@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -25,9 +27,10 @@ type AuthHandler struct {
 	ossService    *services.OSSService
 	memberService *services.MemberService
 	tokenService  *services.TokenService
+	emailService  *services.EmailService
 }
 
-func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AuthHandler {
 	return &AuthHandler{
 		db:            db,
 		rdb:           rdb,
@@ -35,6 +38,7 @@ func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string,
 		ossService:    ossService,
 		memberService: memberService,
 		tokenService:  tokenService,
+		emailService:  emailService,
 	}
 }
 
@@ -63,6 +67,57 @@ func (h *AuthHandler) generateToken(userID primitive.ObjectID, role string) (str
 	return h.tokenService.GenerateToken(userID.Hex(), role)
 }
 
+func (h *AuthHandler) generateCode() string {
+	const charset = "0123456789"
+	b := make([]byte, 6)
+	for i := range b {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[num.Int64()]
+	}
+	return string(b)
+}
+
+func (h *AuthHandler) SendCode(c *gin.Context) {
+	var req models.SendCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check rate limit (1 minute)
+	limitKey := fmt.Sprintf("email_limit:%s", req.Email)
+	exists, _ := h.rdb.Client.Exists(c.Request.Context(), limitKey).Result()
+	if exists > 0 {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Please wait a minute before requesting another code"})
+		return
+	}
+
+	// If resetting password, check if user exists
+	if req.Scene == "reset" {
+		var user models.User
+		err := h.db.Users().FindOne(c.Request.Context(), bson.M{"email": req.Email}).Decode(&user)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
+			return
+		}
+	}
+
+	code := h.generateCode()
+	err := h.emailService.SendVerificationCode(req.Email, code)
+	if err != nil {
+		fmt.Printf("Failed to send email to %s: %v\n", req.Email, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send email: " + err.Error()})
+		return
+	}
+
+	// Store code in Redis (10 minutes)
+	verifyKey := fmt.Sprintf("email_verify:%s", req.Email)
+	h.rdb.Client.Set(c.Request.Context(), verifyKey, code, 10*time.Minute)
+	h.rdb.Client.Set(c.Request.Context(), limitKey, "1", 1*time.Minute)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Verification code sent"})
+}
+
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -70,26 +125,22 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if req.Username == "" || req.Password == "" || req.ConfirmPassword == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username and password are required"})
-		return
-	}
-
-	if req.Password != req.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Passwords do not match"})
+	// Verify code
+	verifyKey := fmt.Sprintf("email_verify:%s", req.Email)
+	storedCode, err := h.rdb.Client.Get(c.Request.Context(), verifyKey).Result()
+	if err != nil || storedCode != req.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired verification code"})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
+	// Check if email already exists
 	var existingUser models.User
-	err := h.db.Users().FindOne(ctx, bson.M{"username": req.Username}).Decode(&existingUser)
+	err = h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&existingUser)
 	if err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Username already exists"})
-		return
-	} else if err != mongo.ErrNoDocuments {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
 		return
 	}
 
@@ -99,19 +150,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	hashedAnswer, err := bcrypt.GenerateFromPassword([]byte(req.SecurityAnswer), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash security answer"})
-		return
+	nickname := req.Nickname
+	if nickname == "" {
+		nickname = req.Email
 	}
 
 	user := models.User{
 		ID:                primitive.NewObjectID(),
-		Username:          req.Username,
-		Nickname:          req.Nickname,
+		Email:             req.Email,
+		Nickname:          nickname,
 		Password:          string(hashedPassword),
-		SecurityQuestion:  req.SecurityQuestion,
-		SecurityAnswer:    string(hashedAnswer),
 		Role:              "user", // Default role
 		MemberType:        "free",
 		Credits:           1000,
@@ -120,15 +168,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		UpdatedAt:         time.Now(),
 	}
 
-	if user.Nickname == "" {
-		user.Nickname = user.Username
-	}
-
 	_, err = h.db.Users().InsertOne(ctx, user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
+
+	// Delete code after successful registration
+	h.rdb.Client.Del(c.Request.Context(), verifyKey)
 
 	token, err := h.generateToken(user.ID, user.Role)
 	if err != nil {
@@ -153,10 +200,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	defer cancel()
 
 	var user models.User
-	err := h.db.Users().FindOne(ctx, bson.M{"username": req.Username}).Decode(&user)
+	err := h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -165,7 +212,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
 
@@ -193,26 +240,16 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	if req.NewPassword != req.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Passwords do not match"})
+	// Verify code
+	verifyKey := fmt.Sprintf("email_verify:%s", req.Email)
+	storedCode, err := h.rdb.Client.Get(c.Request.Context(), verifyKey).Result()
+	if err != nil || storedCode != req.Code {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or expired verification code"})
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-
-	var user models.User
-	err := h.db.Users().FindOne(ctx, bson.M{"username": req.Username}).Decode(&user)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(user.SecurityAnswer), []byte(req.SecurityAnswer))
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid security answer"})
-		return
-	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
@@ -220,9 +257,9 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	_, err = h.db.Users().UpdateOne(
+	result, err := h.db.Users().UpdateOne(
 		ctx,
-		bson.M{"_id": user.ID},
+		bson.M{"email": req.Email},
 		bson.M{"$set": bson.M{"password": string(hashedPassword), "updated_at": time.Now()}},
 	)
 	if err != nil {
@@ -230,27 +267,15 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
+		return
+	}
+
+	// Delete code after success
+	h.rdb.Client.Del(c.Request.Context(), verifyKey)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Password reset successfully"})
-}
-
-func (h *AuthHandler) GetSecurityQuestion(c *gin.Context) {
-	username := c.Query("username")
-	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Username is required"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
-
-	var user models.User
-	err := h.db.Users().FindOne(ctx, bson.M{"username": username}).Decode(&user)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"security_question": user.SecurityQuestion})
 }
 
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {

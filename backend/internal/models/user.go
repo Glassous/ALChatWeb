@@ -8,11 +8,9 @@ import (
 
 type User struct {
 	ID                primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Username          string             `bson:"username" json:"username"`
+	Email             string             `bson:"email" json:"email"`
 	Nickname          string             `bson:"nickname" json:"nickname"`
 	Password          string             `bson:"password" json:"-"` // Omit password from JSON
-	SecurityQuestion  string             `bson:"security_question" json:"security_question"`
-	SecurityAnswer    string             `bson:"security_answer" json:"-"` // Omit from JSON
 	Avatar            string             `bson:"avatar" json:"avatar"`
 	Role              string             `bson:"role" json:"role"` // "user" | "admin"
 	SystemPrompt      string             `bson:"system_prompt" json:"system_prompt"`
@@ -45,24 +43,28 @@ type ThemePreset struct {
 }
 
 type RegisterRequest struct {
-	Username         string `json:"username"`
-	Nickname         string `json:"nickname"`
-	Password         string `json:"password"`
-	ConfirmPassword  string `json:"confirm_password"`
-	SecurityQuestion string `json:"security_question"`
-	SecurityAnswer   string `json:"security_answer"`
+	Email           string `json:"email" binding:"required,email"`
+	Nickname        string `json:"nickname"`
+	Password        string `json:"password" binding:"required,min=6"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,eqfield=Password"`
+	Code            string `json:"code" binding:"required,len=6"`
 }
 
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 type ResetPasswordRequest struct {
-	Username        string `json:"username"`
-	SecurityAnswer  string `json:"security_answer"`
-	NewPassword     string `json:"new_password"`
-	ConfirmPassword string `json:"confirm_password"`
+	Email           string `json:"email" binding:"required,email"`
+	Code            string `json:"code" binding:"required,len=6"`
+	NewPassword     string `json:"new_password" binding:"required,min=6"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,eqfield=NewPassword"`
+}
+
+type SendCodeRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Scene string `json:"scene" binding:"required,oneof=register reset"`
 }
 
 type AuthResponse struct {

@@ -6,7 +6,7 @@ import './Auth.css';
 export function Login() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    username: '',
+    email: '',
     password: '',
   });
   const [error, setError] = useState('');
@@ -43,15 +43,15 @@ export function Login() {
         
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="username">用户名</label>
+            <label htmlFor="email">邮箱</label>
             <input
-              type="text"
-              id="username"
-              name="username"
+              type="email"
+              id="email"
+              name="email"
               required
-              value={formData.username}
+              value={formData.email}
               onChange={handleChange}
-              placeholder="请输入用户名"
+              placeholder="请输入您的邮箱"
             />
           </div>
           

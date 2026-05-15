@@ -6,19 +6,46 @@ import './Auth.css';
 export function Register() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    username: '',
+    email: '',
     nickname: '',
     password: '',
     confirm_password: '',
-    security_question: '',
-    security_answer: '',
+    code: '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
+  };
+
+  const handleSendCode = async () => {
+    if (!formData.email) {
+      setError('请输入邮箱');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      setError('请输入正确的邮箱格式');
+      return;
+    }
+
+    try {
+      await apiClient.sendCode(formData.email, 'register');
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      setError(err.message || '发送验证码失败');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,9 +64,6 @@ export function Register() {
       navigate('/');
     } catch (err: any) {
       setError(err.message || '注册失败');
-      if (err.message === 'Username already exists') {
-        setError('用户名已存在，请重新输入');
-      }
     } finally {
       setIsLoading(false);
     }
@@ -55,16 +79,49 @@ export function Register() {
         
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
-            <label htmlFor="username">用户名 *</label>
+            <label htmlFor="email">邮箱 *</label>
             <input
-              type="text"
-              id="username"
-              name="username"
+              type="email"
+              id="email"
+              name="email"
               required
-              value={formData.username}
+              value={formData.email}
               onChange={handleChange}
-              placeholder="用于登录的唯一标识"
+              placeholder="您的注册邮箱"
             />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="code">验证码 *</label>
+            <div className="code-input-group" style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                id="code"
+                name="code"
+                required
+                value={formData.code}
+                onChange={handleChange}
+                placeholder="6 位验证码"
+                style={{ flex: 1 }}
+              />
+              <button 
+                type="button" 
+                className="send-code-button" 
+                onClick={handleSendCode}
+                disabled={countdown > 0}
+                style={{ 
+                  width: '120px', 
+                  fontSize: '14px',
+                  backgroundColor: countdown > 0 ? '#ccc' : '#0078d4',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: countdown > 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {countdown > 0 ? `${countdown}s` : '发送验证码'}
+              </button>
+            </div>
           </div>
           
           <div className="form-group">
@@ -75,7 +132,7 @@ export function Register() {
               name="nickname"
               value={formData.nickname}
               onChange={handleChange}
-              placeholder="显示名称（选填）"
+              placeholder="显示名称（默认邮箱）"
             />
           </div>
           
@@ -102,32 +159,6 @@ export function Register() {
               value={formData.confirm_password}
               onChange={handleChange}
               placeholder="请再次输入密码"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="security_question">密保问题 *</label>
-            <input
-              type="text"
-              id="security_question"
-              name="security_question"
-              required
-              value={formData.security_question}
-              onChange={handleChange}
-              placeholder="例如：我最喜欢的颜色是？"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="security_answer">密保答案 *</label>
-            <input
-              type="text"
-              id="security_answer"
-              name="security_answer"
-              required
-              value={formData.security_answer}
-              onChange={handleChange}
-              placeholder="用于重置密码"
             />
           </div>
           

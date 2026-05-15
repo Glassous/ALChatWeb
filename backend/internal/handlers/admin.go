@@ -646,7 +646,7 @@ func (h *AdminHandler) SetupAdmin(ctx context.Context) {
 		err := h.db.Users().FindOne(ctx, bson.M{}).Decode(&firstUser)
 		if err == nil {
 			h.db.Users().UpdateOne(ctx, bson.M{"_id": firstUser.ID}, bson.M{"$set": bson.M{"role": "admin"}})
-			println("Warning: No admin found. Promoted user '" + firstUser.Username + "' to admin.")
+			println("Warning: No admin found. Promoted user '" + firstUser.Email + "' to admin.")
 		} else {
 			println("Notice: No users found. First registered user will need manual promotion to admin via DB.")
 		}

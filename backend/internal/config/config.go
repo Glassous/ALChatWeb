@@ -20,6 +20,11 @@ type Config struct {
 	ExpertBaseURL      string
 	ExpertModel        string
 	JWTSecret          string
+	SMTPHost           string
+	SMTPPort           int
+	SMTPUser           string
+	SMTPPass           string
+	SMTPFrom           string
 	TitleAIModel       string
 	TitleAIBaseURL     string
 	TitleAIAPIKey      string
@@ -67,6 +72,11 @@ func Load() *Config {
 		ExpertBaseURL:      getEnv("EXPERT_BASE_URL", "https://api.openai.com/v1"),
 		ExpertModel:        getEnv("EXPERT_MODEL", "gpt-4"),
 		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key"),
+		SMTPHost:           getEnv("SMTP_HOST", "smtp.office365.com"),
+		SMTPPort:           getEnvInt("SMTP_PORT", 587),
+		SMTPUser:           getEnv("SMTP_USER", ""),
+		SMTPPass:           getEnv("SMTP_PASS", ""),
+		SMTPFrom:           getEnv("SMTP_FROM", ""),
 		TitleAIModel:       getEnv("TITLE_AI_MODEL", ""),
 		TitleAIBaseURL:     getEnv("TITLE_AI_BASE_URL", ""),
 		TitleAIAPIKey:      getEnv("TITLE_AI_API_KEY", ""),
