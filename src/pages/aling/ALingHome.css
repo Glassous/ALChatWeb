@@ -1,0 +1,116 @@
+.aling-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.aling-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--surface-color);
+  flex-shrink: 0;
+}
+
+.aling-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aling-topbar-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin: 0;
+}
+
+.aling-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  display: flex;
+  justify-content: center;
+}
+
+.aling-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  max-width: 900px;
+  width: 100%;
+  align-content: start;
+}
+
+.aling-tool-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background-color: var(--surface-color);
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  text-align: center;
+  color: var(--text-color);
+}
+
+.aling-tool-card:hover:not(:disabled) {
+  background-color: var(--surface-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.aling-tool-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aling-tool-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #7b68ee, #b388ff);
+  padding: 3px 10px;
+  border-radius: 8px;
+}
+
+.aling-tool-icon {
+  color: #b388ff;
+}
+
+.aling-tool-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aling-tool-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.aling-tool-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+  .aling-main {
+    padding: 16px;
+  }
+  .aling-tools-grid {
+    grid-template-columns: 1fr;
+  }
+}

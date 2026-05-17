@@ -266,8 +266,6 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 // GenerateStream generates AI response with streaming
 func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
-	apiKey := s.apiKey
-	baseURL := s.baseURL
 	model := s.model
 	multimodalAPIKey := s.multimodalAPIKey
 	s.mu.RUnlock()
@@ -312,18 +310,162 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 		return s.generateSearchStream(ctx, messages, callback, searchCallback)
 	}
 
-	// Daily mode: use direct HTTP with enable_thinking disabled
-	err := s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
+	// Daily mode: Use unified tool stream with daily model
+	err := s.GenerateToolStream(ctx, "openai", model, messages, nil, func(token string) {
+		callback(token, "")
+	}, func(reasoning string) {
+		callback("", reasoning)
+	}, nil)
 	return 0, 0, err
+}
+
+func (s *AIService) GenerateToolStream(
+	ctx context.Context,
+	provider string,
+	model string,
+	messages []*ai.Message,
+	tools []ai.ToolRef,
+	tokenCb func(string),
+	reasoningCb func(string),
+	toolCb func(tr *ai.ToolRequest, output any, err error),
+) error {
+	s.mu.RLock()
+	g := s.g
+	s.mu.RUnlock()
+
+	maxIterations := 15
+	if len(tools) == 0 {
+		maxIterations = 1
+	}
+
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		var finalResp *ai.ModelResponse
+		var streamErr error
+		var reasoningBuilder strings.Builder
+
+		for sv, err := range genkit.GenerateStream(ctx, g,
+			ai.WithModelName(provider+"/"+model),
+			ai.WithMessages(messages...),
+			ai.WithTools(tools...),
+			ai.WithReturnToolRequests(true),
+		) {
+			if err != nil {
+				streamErr = err
+				break
+			}
+			if sv.Done {
+				finalResp = sv.Response
+				break
+			}
+			if sv.Chunk != nil {
+				if r := sv.Chunk.Reasoning(); r != "" {
+					reasoningBuilder.WriteString(r)
+					if reasoningCb != nil {
+						reasoningCb(r)
+					}
+				}
+				if t := sv.Chunk.Text(); t != "" {
+					if tokenCb != nil {
+						tokenCb(t)
+					}
+				}
+			}
+		}
+
+		if streamErr != nil {
+			return streamErr
+		}
+		if finalResp == nil {
+			break
+		}
+
+		// Preserve reasoning_content for next turn (thinking models requirement)
+		if reasoningBuilder.Len() > 0 && finalResp.Message != nil {
+			if finalResp.Message.Metadata == nil {
+				finalResp.Message.Metadata = make(map[string]any)
+			}
+			finalResp.Message.Metadata["reasoning_content"] = reasoningBuilder.String()
+		}
+
+		toolRequests := finalResp.ToolRequests()
+		if len(toolRequests) == 0 {
+			break
+		}
+
+		var toolResponseParts []*ai.Part
+		for _, tr := range toolRequests {
+			var output any
+			var runErr error
+
+			// Execute tool
+			tool := genkit.LookupTool(g, tr.Name)
+			if tool != nil {
+				inputMap := parseToolInputMap(tr.Input)
+				output, runErr = tool.RunRaw(ctx, inputMap)
+			} else {
+				runErr = fmt.Errorf("tool %s not found", tr.Name)
+			}
+
+			// Call tool callback if provided
+			if toolCb != nil {
+				toolCb(tr, output, runErr)
+			}
+
+			// Prepare tool response part
+			if runErr != nil {
+				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
+					Name: tr.Name, Ref: tr.Ref, Output: map[string]any{"error": runErr.Error()},
+				}))
+			} else {
+				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
+					Name: tr.Name, Ref: tr.Ref, Output: output,
+				}))
+			}
+		}
+
+		messages = append(messages, finalResp.Message)
+		messages = append(messages, &ai.Message{
+			Role:    ai.RoleTool,
+			Content: toolResponseParts,
+		})
+	}
+
+	return nil
+}
+
+func parseToolInputMap(input any) map[string]any {
+	switch v := input.(type) {
+	case map[string]any:
+		return v
+	case string:
+		var m map[string]any
+		if err := json.Unmarshal([]byte(v), &m); err == nil {
+			return m
+		}
+	}
+	return map[string]any{}
+}
+
+// GeneratePlainStream bypasses Genkit and calls the model directly via HTTP
+func (s *AIService) GeneratePlainStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+	s.mu.RLock()
+	apiKey := s.apiKey
+	baseURL := s.baseURL
+	model := s.model
+	s.mu.RUnlock()
+
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
 }
 
 func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
 	s.mu.RLock()
-	apiKey := s.expertAPIKey
-	baseURL := s.expertBaseURL
 	model := s.expertModel
 	s.mu.RUnlock()
-	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, true, callback)
+	return s.GenerateToolStream(ctx, "openai", model, messages, nil, func(token string) {
+		callback(token, "")
+	}, func(reasoning string) {
+		callback("", reasoning)
+	}, nil)
 }
 
 func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
@@ -500,29 +642,26 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	return nil
 }
 
-func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
-	s.mu.RLock()
-	apiKey := s.searchAPIKey
-	baseURL := s.searchBaseURL
-	model := s.searchModel
-	s.mu.RUnlock()
-
-	// 1. Generate search keywords using AI
-	query, kwInput, kwOutput, err := s.GenerateKeywords(ctx, messages)
+// PerformSearch handles the full search flow: keyword generation and web search
+func (s *AIService) PerformSearch(ctx context.Context, messages []*ai.Message, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
+	// 1. Generate search keywords
+	query, _, _, err := s.GenerateKeywords(ctx, messages)
 	if err != nil {
-		// Log error but fallback to the last user message
-		fmt.Printf("Keyword generation error: %v, falling back to last message\n", err)
-		lastMsg := messages[len(messages)-1]
-		var queryBuilder strings.Builder
-		for _, p := range lastMsg.Content {
-			if p.IsText() {
-				queryBuilder.WriteString(p.Text)
+		log.Printf("[AIService] Keyword generation error: %v", err)
+		// Fallback to the last message content
+		if len(messages) > 0 {
+			lastMsg := messages[len(messages)-1]
+			var queryBuilder strings.Builder
+			for _, p := range lastMsg.Content {
+				if p.IsText() {
+					queryBuilder.WriteString(p.Text)
+				}
 			}
+			query = queryBuilder.String()
 		}
-		query = queryBuilder.String()
 	}
 
-	// 2. Notify frontend that we are searching
+	// 2. Notify searching status
 	if searchCallback != nil {
 		searchCallback(models.SearchData{
 			Query:  query,
@@ -531,14 +670,17 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	}
 
 	// 3. Perform search
-	results, err := s.searchService.Search(ctx, query, 10)
+	s.mu.RLock()
+	searchService := s.searchService
+	s.mu.RUnlock()
+
+	results, err := searchService.Search(ctx, query, 10)
 	if err != nil {
-		// Log error but continue with empty results
-		fmt.Printf("Search error: %v\n", err)
+		log.Printf("[AIService] Search error: %v", err)
 		results = []models.SearchResult{}
 	}
 
-	// 4. Notify frontend that search is completed
+	// 4. Notify completion
 	if searchCallback != nil {
 		searchCallback(models.SearchData{
 			Query:   query,
@@ -547,7 +689,22 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 		})
 	}
 
-	// 5. Format search results into <search> tag
+	return results, query, nil
+}
+
+func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
+	s.mu.RLock()
+	apiKey := s.searchAPIKey
+	baseURL := s.searchBaseURL
+	model := s.searchModel
+	s.mu.RUnlock()
+
+	results, query, err := s.PerformSearch(ctx, messages, searchCallback)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// 5. Format search results into <search> tag for the stream
 	var searchTag strings.Builder
 	searchTag.WriteString("\n<search>\n")
 	searchData := map[string]any{
@@ -560,7 +717,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 
 	// Send the search tag to the frontend as a token
 	if err := callback(searchTag.String(), ""); err != nil {
-		return kwInput, kwOutput, err
+		return 0, 0, err
 	}
 
 	// 6. Generate final response using search results as context
@@ -598,7 +755,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 
 	// Use search model for final response
 	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, false, callback)
-	return kwInput, kwOutput, err
+	return 0, 0, err
 }
 
 func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
@@ -778,6 +935,12 @@ func (s *AIService) GetAgentConfig() (apiKey, baseURL, model string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.agentAPIKey, s.agentBaseURL, s.agentModel
+}
+
+func (s *AIService) GetDailyConfig() (apiKey, baseURL, model string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.apiKey, s.baseURL, s.model
 }
 
 func (s *AIService) GetGenkit() *genkit.Genkit {

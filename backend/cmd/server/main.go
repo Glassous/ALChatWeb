@@ -114,6 +114,10 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService, emailService)
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
+
+	alingService := services.NewALingService(db, aiService, streamManager, memberService)
+	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService)
+
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
 
@@ -202,6 +206,21 @@ func main() {
 			protected.GET("/my/shared", shareHandler.GetMyShares)
 			protected.DELETE("/shared/:token", shareHandler.DeleteShare)
 			protected.POST("/shared/:token/save", shareHandler.SaveSharedConversation)
+
+			// ALing routes
+			aling := protected.Group("/aling")
+			{
+				aling.GET("/tools", alingHandler.GetTools)
+				aling.POST("/demo", alingHandler.CreateDemo)
+				aling.GET("/demo/tasks", alingHandler.ListDemoTasks)
+				aling.GET("/demo/:taskId", alingHandler.GetDemoTask)
+				aling.POST("/demo/:taskId/outline", alingHandler.GenerateOutline)
+				aling.PUT("/demo/:taskId/outline", alingHandler.UpdateOutline)
+				aling.POST("/demo/:taskId/generate", alingHandler.GenerateHTML)
+				aling.GET("/demo/:taskId/stream", alingHandler.StreamTask)
+				aling.GET("/demo/:taskId/output", alingHandler.GetOutput)
+				aling.DELETE("/demo/:taskId", alingHandler.DeleteDemoTask)
+			}
 
 			// Admin routes
 			admin := protected.Group("/admin")

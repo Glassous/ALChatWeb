@@ -116,14 +116,28 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 
 		var resp *ai.ModelResponse
 		var streamErr error
+		var reasoningBuilder strings.Builder
 
 		if reasoningCb != nil || tokenCb != nil {
-			resp, streamErr = r.generateStreaming(ctx, messages, enabledTools, reasoningCb, tokenCb, &allReasoning)
+			resp, streamErr = r.generateStreaming(ctx, messages, enabledTools, func(r string) {
+				reasoningBuilder.WriteString(r)
+				if reasoningCb != nil {
+					reasoningCb(r)
+				}
+			}, tokenCb, &allReasoning)
 		} else {
 			resp, streamErr = r.generateSync(ctx, messages, enabledTools)
 		}
 		if streamErr != nil {
 			return nil, fmt.Errorf("generation error: %w", streamErr)
+		}
+
+		// Ensure reasoning_content is preserved for next turns
+		if reasoningBuilder.Len() > 0 && resp.Message != nil {
+			if resp.Message.Metadata == nil {
+				resp.Message.Metadata = make(map[string]any)
+			}
+			resp.Message.Metadata["reasoning_content"] = reasoningBuilder.String()
 		}
 
 		toolRequests := resp.ToolRequests()
