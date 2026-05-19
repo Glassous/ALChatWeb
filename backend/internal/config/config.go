@@ -44,6 +44,9 @@ type Config struct {
 	AgentAPIKey        string
 	AgentBaseURL       string
 	AgentModel         string
+	ALingAPIKey        string
+	ALingBaseURL       string
+	ALingModel         string
 	RedisAddr          string
 	RedisPassword      string
 	RedisDB            int
@@ -96,6 +99,9 @@ func Load() *Config {
 		AgentAPIKey:        getEnv("AGENT_API_KEY", ""),
 		AgentBaseURL:       getEnv("AGENT_BASE_URL", "https://api.openai.com/v1"),
 		AgentModel:         getEnv("AGENT_MODEL", "gpt-4o"),
+		ALingAPIKey:        getEnv("ALING_API_KEY", ""),
+		ALingBaseURL:       getEnv("ALING_BASE_URL", "https://api.openai.com/v1"),
+		ALingModel:         getEnv("ALING_MODEL", "gpt-4o"),
 		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
 		RedisDB:            getEnvInt("REDIS_DB", 0),

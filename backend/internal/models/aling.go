@@ -15,6 +15,7 @@ type ALingTask struct {
 	Status       string             `bson:"status" json:"status"`
 	Outline      []OutlineItem      `bson:"outline,omitempty" json:"outline,omitempty"`
 	HTMLContent  string             `bson:"html_content,omitempty" json:"html_content,omitempty"`
+	HTMLURL      string             `bson:"html_url,omitempty" json:"html_url,omitempty"`
 	SlideHTMLs   []SlideHTML        `bson:"slide_htmls,omitempty" json:"slide_htmls,omitempty"`
 	SlideCount   int                `bson:"slide_count" json:"slide_count"`
 	CurrentSlide int                `bson:"current_slide" json:"current_slide"`
@@ -33,18 +34,10 @@ type OutlineItem struct {
 }
 
 type SlideHTML struct {
-	Index int    `bson:"index" json:"index"`
-	Title string `bson:"title" json:"title"`
-	HTML  string `bson:"html" json:"html"`
-}
-
-type CreateDemoRequest struct {
-	Topic        string `json:"topic"`
-	EnableSearch bool   `json:"enable_search"`
-}
-
-type UpdateOutlineRequest struct {
-	Outline []OutlineItem `json:"outline"`
+	Index  int    `bson:"index" json:"index"`
+	Title  string `bson:"title" json:"title"`
+	HTML   string `bson:"html" json:"html"`
+	OSSURL string `bson:"oss_url,omitempty" json:"oss_url,omitempty"`
 }
 
 type ALingStreamResponse struct {

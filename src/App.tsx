@@ -17,9 +17,6 @@ import { UserSettings } from './pages/UserSettings';
 import { SharedPage } from './pages/SharedPage/SharedPage';
 import { ShareDialog } from './components/ShareDialog/ShareDialog';
 import { ALingHome } from './pages/aling/ALingHome';
-import { ALingDemoHome } from './pages/aling/ALingDemoHome';
-import { ALingDemoCreate } from './pages/aling/ALingDemoCreate';
-import { ALingDemoView } from './pages/aling/ALingDemoView';
 import './App.css';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
@@ -970,30 +967,6 @@ function App() {
           element={
             <ProtectedRoute>
               <ALingHome />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/aling/demo" 
-          element={
-            <ProtectedRoute>
-              <ALingDemoHome />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/aling/demo/new" 
-          element={
-            <ProtectedRoute>
-              <ALingDemoCreate />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/aling/demo/:taskId" 
-          element={
-            <ProtectedRoute>
-              <ALingDemoView />
             </ProtectedRoute>
           } 
         />

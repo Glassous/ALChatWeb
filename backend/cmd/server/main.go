@@ -79,6 +79,9 @@ func main() {
 		cfg.AgentAPIKey,
 		cfg.AgentBaseURL,
 		cfg.AgentModel,
+		cfg.ALingAPIKey,
+		cfg.ALingBaseURL,
+		cfg.ALingModel,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI service: %v", err)
@@ -115,7 +118,7 @@ func main() {
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
 
-	alingService := services.NewALingService(db, aiService, streamManager, memberService)
+	alingService := services.NewALingService(db, aiService, streamManager, memberService, ossService)
 	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService)
 
 	adminHandler.SetupAdmin(context.Background())
@@ -211,15 +214,6 @@ func main() {
 			aling := protected.Group("/aling")
 			{
 				aling.GET("/tools", alingHandler.GetTools)
-				aling.POST("/demo", alingHandler.CreateDemo)
-				aling.GET("/demo/tasks", alingHandler.ListDemoTasks)
-				aling.GET("/demo/:taskId", alingHandler.GetDemoTask)
-				aling.POST("/demo/:taskId/outline", alingHandler.GenerateOutline)
-				aling.PUT("/demo/:taskId/outline", alingHandler.UpdateOutline)
-				aling.POST("/demo/:taskId/generate", alingHandler.GenerateHTML)
-				aling.GET("/demo/:taskId/stream", alingHandler.StreamTask)
-				aling.GET("/demo/:taskId/output", alingHandler.GetOutput)
-				aling.DELETE("/demo/:taskId", alingHandler.DeleteDemoTask)
 			}
 
 			// Admin routes

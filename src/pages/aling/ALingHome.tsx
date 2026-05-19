@@ -12,14 +12,7 @@ export function ALingHome() {
     alingApi.getTools()
       .then(res => setTools(res.tools))
       .catch(() => {
-        setTools([{
-          id: 'demo',
-          name: 'ALing 演示',
-          description: 'AI 驱动的 HTML 演示文稿生成器',
-          icon: 'slideshow',
-          route: '/aling/demo',
-          enabled: true,
-        }]);
+        setTools([]);
       });
   }, []);
 

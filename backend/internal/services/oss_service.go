@@ -1,12 +1,15 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"alchat-backend/internal/config"
+
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/google/uuid"
 )
@@ -29,8 +32,8 @@ func NewOSSService(cfg *config.Config) (*OSSService, error) {
 
 	// Test the connection by getting bucket info (optional but helpful for debugging)
 	// We don't do it here to avoid blocking startup if network is slow
-	
-	fmt.Printf("[OSS] Initialized with endpoint: %s, bucket: %s, keyId prefix: %s...\n", 
+
+	fmt.Printf("[OSS] Initialized with endpoint: %s, bucket: %s, keyId prefix: %s...\n",
 		cfg.OSSEndpoint, cfg.OSSBucketName, cfg.OSSAccessKeyID[:5])
 
 	return &OSSService{
@@ -38,6 +41,32 @@ func NewOSSService(cfg *config.Config) (*OSSService, error) {
 		bucketName: cfg.OSSBucketName,
 		endpoint:   cfg.OSSEndpoint,
 	}, nil
+}
+
+// UploadHTML uploads raw HTML content to Aliyun OSS and returns the public URL
+func (s *OSSService) UploadHTML(ctx context.Context, htmlContent string, filename string, folder string) (string, error) {
+	bucket, err := s.client.Bucket(s.bucketName)
+	if err != nil {
+		return "", fmt.Errorf("failed to get bucket: %v", err)
+	}
+
+	objectKey := filename
+	if folder != "" {
+		objectKey = fmt.Sprintf("%s/%s", folder, filename)
+	}
+
+	options := []oss.Option{
+		oss.ContentType("text/html; charset=utf-8"),
+		oss.ContentDisposition("inline"),
+	}
+
+	err = bucket.PutObject(objectKey, strings.NewReader(htmlContent), options...)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload HTML object: %v", err)
+	}
+
+	url := fmt.Sprintf("https://%s.%s/%s", s.bucketName, s.endpoint, objectKey)
+	return url, nil
 }
 
 // UploadFile uploads a file to Aliyun OSS and returns the public URL
@@ -50,7 +79,7 @@ func (s *OSSService) UploadFile(file io.Reader, filename string, folder string) 
 	// Generate a unique filename to avoid collisions
 	ext := filepath.Ext(filename)
 	uniqueName := fmt.Sprintf("%s%s", uuid.New().String(), ext)
-	
+
 	objectKey := uniqueName
 	if folder != "" {
 		objectKey = fmt.Sprintf("%s/%s", folder, uniqueName)

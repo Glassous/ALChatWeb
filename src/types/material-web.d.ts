@@ -16,6 +16,8 @@ declare module 'react' {
       'md-primary-tab': any;
       'md-outlined-select': any;
       'md-select-option': any;
+      'md-checkbox': any;
+      'md-outlined-button': any;
     }
   }
 }

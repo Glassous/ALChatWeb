@@ -43,9 +43,12 @@ type AIService struct {
 	agentAPIKey       string
 	agentBaseURL      string
 	agentModel        string
+	alingAPIKey       string
+	alingBaseURL      string
+	alingModel        string
 }
 
-func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
 	s := &AIService{
 		apiKey:            apiKey,
 		baseURL:           baseURL,
@@ -67,6 +70,9 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		agentAPIKey:       agentAPIKey,
 		agentBaseURL:      agentBaseURL,
 		agentModel:        agentModel,
+		alingAPIKey:       alingAPIKey,
+		alingBaseURL:      alingBaseURL,
+		alingModel:        alingModel,
 	}
 	s.reinitGenkit()
 	return s, nil
@@ -110,6 +116,17 @@ func (s *AIService) reinitGenkit() {
 			Provider: "openai-agent",
 			APIKey:   s.agentAPIKey,
 			BaseURL:  s.agentBaseURL,
+			Opts: []option.RequestOption{
+				option.WithHeader("Content-Type", "application/json"),
+			},
+		})
+	}
+
+	if s.alingBaseURL != "" && s.alingAPIKey != "" {
+		oaiPlugins = append(oaiPlugins, &compat_oai.OpenAICompatible{
+			Provider: "openai-aling",
+			APIKey:   s.alingAPIKey,
+			BaseURL:  s.alingBaseURL,
 			Opts: []option.RequestOption{
 				option.WithHeader("Content-Type", "application/json"),
 			},
@@ -186,6 +203,17 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		}
 		if model != "" {
 			s.agentModel = model
+		}
+		needReinit = true
+	case "aling":
+		if baseURL != "" {
+			s.alingBaseURL = baseURL
+		}
+		if apiKey != "" {
+			s.alingAPIKey = apiKey
+		}
+		if model != "" {
+			s.alingModel = model
 		}
 		needReinit = true
 	}
@@ -452,6 +480,16 @@ func (s *AIService) GeneratePlainStream(ctx context.Context, messages []*ai.Mess
 	apiKey := s.apiKey
 	baseURL := s.baseURL
 	model := s.model
+	s.mu.RUnlock()
+
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
+}
+
+func (s *AIService) GenerateALingStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+	s.mu.RLock()
+	apiKey := s.alingAPIKey
+	baseURL := s.alingBaseURL
+	model := s.alingModel
 	s.mu.RUnlock()
 
 	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
