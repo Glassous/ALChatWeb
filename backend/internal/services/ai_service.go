@@ -12,17 +12,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-
-	"github.com/firebase/genkit/go/ai"
-	coreapi "github.com/firebase/genkit/go/core/api"
-	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/compat_oai"
-	"github.com/openai/openai-go/option"
 )
 
 type AIService struct {
 	mu                sync.RWMutex
-	g                 *genkit.Genkit
 	apiKey            string
 	baseURL           string
 	model             string
@@ -74,71 +67,12 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		alingBaseURL:      alingBaseURL,
 		alingModel:        alingModel,
 	}
-	s.reinitGenkit()
 	return s, nil
-}
-
-func (s *AIService) reinitGenkit() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ctx := context.Background()
-
-	oaiPlugins := []coreapi.Plugin{
-		&compat_oai.OpenAICompatible{
-			Provider: "openai",
-			APIKey:   s.apiKey,
-			BaseURL:  s.baseURL,
-			Opts: []option.RequestOption{
-				option.WithHeader("Content-Type", "application/json"),
-			},
-		},
-		&compat_oai.OpenAICompatible{
-			Provider: "openai-title",
-			APIKey:   s.titleAPIKey,
-			BaseURL:  s.titleBaseURL,
-			Opts: []option.RequestOption{
-				option.WithHeader("Content-Type", "application/json"),
-			},
-		},
-		&compat_oai.OpenAICompatible{
-			Provider: "openai-multimodal",
-			APIKey:   s.multimodalAPIKey,
-			BaseURL:  s.multimodalBaseURL,
-			Opts: []option.RequestOption{
-				option.WithHeader("Content-Type", "application/json"),
-			},
-		},
-	}
-
-	if s.agentBaseURL != "" && s.agentAPIKey != "" {
-		oaiPlugins = append(oaiPlugins, &compat_oai.OpenAICompatible{
-			Provider: "openai-agent",
-			APIKey:   s.agentAPIKey,
-			BaseURL:  s.agentBaseURL,
-			Opts: []option.RequestOption{
-				option.WithHeader("Content-Type", "application/json"),
-			},
-		})
-	}
-
-	if s.alingBaseURL != "" && s.alingAPIKey != "" {
-		oaiPlugins = append(oaiPlugins, &compat_oai.OpenAICompatible{
-			Provider: "openai-aling",
-			APIKey:   s.alingAPIKey,
-			BaseURL:  s.alingBaseURL,
-			Opts: []option.RequestOption{
-				option.WithHeader("Content-Type", "application/json"),
-			},
-		})
-	}
-
-	s.g = genkit.Init(ctx, genkit.WithPlugins(oaiPlugins...))
 }
 
 func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 	s.mu.Lock()
-	needReinit := false
+	defer s.mu.Unlock()
 	log.Printf("[AIService] Updating config for mode: %s, model: %s, baseURL: %s, key length: %d", mode, model, baseURL, len(apiKey))
 	switch mode {
 	case "daily":
@@ -151,7 +85,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		if model != "" {
 			s.model = model
 		}
-		needReinit = true
 	case "expert":
 		if baseURL != "" {
 			s.expertBaseURL = baseURL
@@ -172,7 +105,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		if model != "" {
 			s.titleModel = model
 		}
-		needReinit = true
 	case "search":
 		if baseURL != "" {
 			s.searchBaseURL = baseURL
@@ -193,7 +125,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		if model != "" {
 			s.multimodalModel = model
 		}
-		needReinit = true
 	case "agent":
 		if baseURL != "" {
 			s.agentBaseURL = baseURL
@@ -204,7 +135,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		if model != "" {
 			s.agentModel = model
 		}
-		needReinit = true
 	case "aling":
 		if baseURL != "" {
 			s.alingBaseURL = baseURL
@@ -215,12 +145,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		if model != "" {
 			s.alingModel = model
 		}
-		needReinit = true
-	}
-	s.mu.Unlock()
-
-	if needReinit {
-		s.reinitGenkit()
 	}
 	return nil
 }
@@ -228,7 +152,7 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 type SearchCallback func(data models.SearchData) error
 
 // GenerateKeywords generates search keywords based on conversation history
-func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message) (string, int, int, error) {
+func (s *AIService) GenerateKeywords(ctx context.Context, messages []models.AIMessage) (string, int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
@@ -236,12 +160,12 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 	s.mu.RUnlock()
 
 	// 1. Prepare messages for keyword generation
-	keywordPrompt := "你是一个搜索专家。根据提供的对话历史，总结出 1-3 个最适合用于联网搜索的关键词或短语。要求：1. 关键词应简洁、准确；2. 只输出关键词，用空格分隔；3. 不要包含任何解释或标点符号。"
+	keywordPrompt := "你是一个搜索专家。根据提供的对话历史，总结出 1-3 个最适合用于联网搜索的联网搜索关键词或短语。要求：1. 关键词应简洁、准确；2. 只输出关键词，用空格分隔；3. 不要包含任何解释或标点符号。"
 
-	keywordMessages := []*ai.Message{
+	keywordMessages := []models.AIMessage{
 		{
-			Role:    ai.RoleSystem,
-			Content: []*ai.Part{ai.NewTextPart(keywordPrompt)},
+			Role:    "system",
+			Content: keywordPrompt,
 		},
 	}
 	// Only use the last few messages for keyword generation to keep it focused and save tokens
@@ -266,11 +190,8 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 	result := strings.TrimSpace(keywords.String())
 	if result == "" {
 		// Fallback to the last message content if keyword generation fails
-		lastMsg := messages[len(messages)-1]
-		for _, p := range lastMsg.Content {
-			if p.IsText() {
-				result += p.Text
-			}
+		if len(messages) > 0 {
+			result = messages[len(messages)-1].Content
 		}
 	}
 
@@ -278,11 +199,7 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 	var inputBuilder strings.Builder
 	inputBuilder.WriteString(keywordPrompt)
 	for _, m := range messages[start:] {
-		for _, p := range m.Content {
-			if p.IsText() {
-				inputBuilder.WriteString(p.Text)
-			}
-		}
+		inputBuilder.WriteString(m.Content)
 	}
 
 	inputTokens := utils.CountTokens(inputBuilder.String())
@@ -292,18 +209,13 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []*ai.Message
 }
 
 // GenerateStream generates AI response with streaming
-func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
-	s.mu.RLock()
-	model := s.model
-	multimodalAPIKey := s.multimodalAPIKey
-	s.mu.RUnlock()
-
+func (s *AIService) GenerateStream(ctx context.Context, messages []models.AIMessage, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	// Prepend user system prompt if provided
 	if userSystemPrompt != "" {
-		messages = append([]*ai.Message{
+		messages = append([]models.AIMessage{
 			{
-				Role:    ai.RoleSystem,
-				Content: []*ai.Part{ai.NewTextPart(userSystemPrompt)},
+				Role:    "system",
+				Content: userSystemPrompt,
 			},
 		}, messages...)
 	}
@@ -311,18 +223,18 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 	// Check if any message contains multimodal content (<file> or <image> tags)
 	hasMultimodal := false
 	for _, m := range messages {
-		for _, p := range m.Content {
-			if p.IsText() {
-				if strings.Contains(p.Text, "<file") || strings.Contains(p.Text, "<image") {
-					hasMultimodal = true
-					break
-				}
-			}
-		}
-		if hasMultimodal {
+		if strings.Contains(m.Content, "<file") || strings.Contains(m.Content, "<image") {
+			hasMultimodal = true
 			break
 		}
 	}
+
+	s.mu.RLock()
+	multimodalAPIKey := s.multimodalAPIKey
+	dailyModel := s.model
+	dailyAPIKey := s.apiKey
+	dailyBaseURL := s.baseURL
+	s.mu.RUnlock()
 
 	if hasMultimodal && multimodalAPIKey != "" {
 		err := s.generateMultimodalStream(ctx, messages, callback)
@@ -338,144 +250,13 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []*ai.Message, 
 		return s.generateSearchStream(ctx, messages, callback, searchCallback)
 	}
 
-	// Daily mode: Use unified tool stream with daily model
-	err := s.GenerateToolStream(ctx, "openai", model, messages, nil, func(token string) {
-		callback(token, "")
-	}, func(reasoning string) {
-		callback("", reasoning)
-	}, nil)
+	// Daily mode: direct HTTP stream with thinking disabled
+	err := s.generateCustomStream(ctx, messages, dailyAPIKey, dailyBaseURL, dailyModel, false, callback)
 	return 0, 0, err
 }
 
-func (s *AIService) GenerateToolStream(
-	ctx context.Context,
-	provider string,
-	model string,
-	messages []*ai.Message,
-	tools []ai.ToolRef,
-	tokenCb func(string),
-	reasoningCb func(string),
-	toolCb func(tr *ai.ToolRequest, output any, err error),
-) error {
-	s.mu.RLock()
-	g := s.g
-	s.mu.RUnlock()
-
-	maxIterations := 15
-	if len(tools) == 0 {
-		maxIterations = 1
-	}
-
-	for iteration := 0; iteration < maxIterations; iteration++ {
-		var finalResp *ai.ModelResponse
-		var streamErr error
-		var reasoningBuilder strings.Builder
-
-		for sv, err := range genkit.GenerateStream(ctx, g,
-			ai.WithModelName(provider+"/"+model),
-			ai.WithMessages(messages...),
-			ai.WithTools(tools...),
-			ai.WithReturnToolRequests(true),
-		) {
-			if err != nil {
-				streamErr = err
-				break
-			}
-			if sv.Done {
-				finalResp = sv.Response
-				break
-			}
-			if sv.Chunk != nil {
-				if r := sv.Chunk.Reasoning(); r != "" {
-					reasoningBuilder.WriteString(r)
-					if reasoningCb != nil {
-						reasoningCb(r)
-					}
-				}
-				if t := sv.Chunk.Text(); t != "" {
-					if tokenCb != nil {
-						tokenCb(t)
-					}
-				}
-			}
-		}
-
-		if streamErr != nil {
-			return streamErr
-		}
-		if finalResp == nil {
-			break
-		}
-
-		// Preserve reasoning_content for next turn (thinking models requirement)
-		if reasoningBuilder.Len() > 0 && finalResp.Message != nil {
-			if finalResp.Message.Metadata == nil {
-				finalResp.Message.Metadata = make(map[string]any)
-			}
-			finalResp.Message.Metadata["reasoning_content"] = reasoningBuilder.String()
-		}
-
-		toolRequests := finalResp.ToolRequests()
-		if len(toolRequests) == 0 {
-			break
-		}
-
-		var toolResponseParts []*ai.Part
-		for _, tr := range toolRequests {
-			var output any
-			var runErr error
-
-			// Execute tool
-			tool := genkit.LookupTool(g, tr.Name)
-			if tool != nil {
-				inputMap := parseToolInputMap(tr.Input)
-				output, runErr = tool.RunRaw(ctx, inputMap)
-			} else {
-				runErr = fmt.Errorf("tool %s not found", tr.Name)
-			}
-
-			// Call tool callback if provided
-			if toolCb != nil {
-				toolCb(tr, output, runErr)
-			}
-
-			// Prepare tool response part
-			if runErr != nil {
-				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
-					Name: tr.Name, Ref: tr.Ref, Output: map[string]any{"error": runErr.Error()},
-				}))
-			} else {
-				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
-					Name: tr.Name, Ref: tr.Ref, Output: output,
-				}))
-			}
-		}
-
-		messages = append(messages, finalResp.Message)
-		messages = append(messages, &ai.Message{
-			Role:    ai.RoleTool,
-			Content: toolResponseParts,
-		})
-	}
-
-	return nil
-}
-
-func parseToolInputMap(input any) map[string]any {
-	switch v := input.(type) {
-	case map[string]any:
-		return v
-	case string:
-		var m map[string]any
-		if err := json.Unmarshal([]byte(v), &m); err == nil {
-			return m
-		}
-	}
-	return map[string]any{}
-}
-
 // GeneratePlainStream bypasses Genkit and calls the model directly via HTTP
-func (s *AIService) GeneratePlainStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+func (s *AIService) GeneratePlainStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error) error {
 	s.mu.RLock()
 	apiKey := s.apiKey
 	baseURL := s.baseURL
@@ -485,7 +266,7 @@ func (s *AIService) GeneratePlainStream(ctx context.Context, messages []*ai.Mess
 	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
 }
 
-func (s *AIService) GenerateALingStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+func (s *AIService) GenerateALingStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error) error {
 	s.mu.RLock()
 	apiKey := s.alingAPIKey
 	baseURL := s.alingBaseURL
@@ -495,32 +276,26 @@ func (s *AIService) GenerateALingStream(ctx context.Context, messages []*ai.Mess
 	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
 }
 
-func (s *AIService) generateExpertStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+func (s *AIService) generateExpertStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error) error {
 	s.mu.RLock()
+	apiKey := s.expertAPIKey
+	baseURL := s.expertBaseURL
 	model := s.expertModel
 	s.mu.RUnlock()
-	return s.GenerateToolStream(ctx, "openai", model, messages, nil, func(token string) {
-		callback(token, "")
-	}, func(reasoning string) {
-		callback("", reasoning)
-	}, nil)
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
 }
 
-func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error) error {
+func (s *AIService) generateMultimodalStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error) error {
 	s.mu.RLock()
 	apiKey := s.multimodalAPIKey
 	baseURL := s.multimodalBaseURL
 	model := s.multimodalModel
 	s.mu.RUnlock()
-	// For multimodal models, we need to parse <file> and <image> tags
-	// and convert them to the format the API expects (image_url or file_url).
 
 	type oaiContent struct {
 		Type     string         `json:"type"`
 		Text     string         `json:"text,omitempty"`
 		ImageURL map[string]any `json:"image_url,omitempty"`
-		// Some providers might support video/file differently, but many use the same structure
-		// For now, let's treat both image and file as image_url as most vision models expect that.
 	}
 
 	type oaiMessage struct {
@@ -532,56 +307,47 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 	for _, m := range messages {
 		role := "user"
 		switch m.Role {
-		case ai.RoleModel:
+		case "assistant":
 			role = "assistant"
-		case ai.RoleSystem:
+		case "system":
 			role = "system"
 		}
 
 		var contents []oaiContent
-		for _, p := range m.Content {
-			if p.IsText() {
-				text := p.Text
-				// Find all <image src="..."> and <file src="..."> tags
-				imageRe := regexp.MustCompile(`<(image|file) src="([^"]+)">`)
-				matches := imageRe.FindAllStringSubmatch(text, -1)
+		text := m.Content
+		imageRe := regexp.MustCompile(`<(image|file) src="([^"]+)">`)
+		matches := imageRe.FindAllStringSubmatch(text, -1)
 
-				// Split text by tags and add parts
-				lastIdx := 0
-				for _, match := range matches {
-					fullMatch := match[0]
-					url := match[2]
-					idx := strings.Index(text[lastIdx:], fullMatch)
+		lastIdx := 0
+		for _, match := range matches {
+			fullMatch := match[0]
+			url := match[2]
+			idx := strings.Index(text[lastIdx:], fullMatch)
 
-					// Add text before the tag
-					if idx > 0 {
-						contents = append(contents, oaiContent{
-							Type: "text",
-							Text: text[lastIdx : lastIdx+idx],
-						})
-					}
+			if idx > 0 {
+				contents = append(contents, oaiContent{
+					Type: "text",
+					Text: text[lastIdx : lastIdx+idx],
+				})
+			}
 
-					// Add image/file URL
-					contents = append(contents, oaiContent{
-						Type: "image_url",
-						ImageURL: map[string]any{
-							"url": url,
-						},
-					})
+			contents = append(contents, oaiContent{
+				Type: "image_url",
+				ImageURL: map[string]any{
+					"url": url,
+				},
+			})
 
-					lastIdx += idx + len(fullMatch)
-				}
+			lastIdx += idx + len(fullMatch)
+		}
 
-				// Add remaining text
-				if lastIdx < len(text) {
-					remaining := text[lastIdx:]
-					if remaining != "" {
-						contents = append(contents, oaiContent{
-							Type: "text",
-							Text: remaining,
-						})
-					}
-				}
+		if lastIdx < len(text) {
+			remaining := text[lastIdx:]
+			if remaining != "" {
+				contents = append(contents, oaiContent{
+					Type: "text",
+					Text: remaining,
+				})
 			}
 		}
 
@@ -681,21 +447,13 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []*ai
 }
 
 // PerformSearch handles the full search flow: keyword generation and web search
-func (s *AIService) PerformSearch(ctx context.Context, messages []*ai.Message, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
+func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessage, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
 	// 1. Generate search keywords
 	query, _, _, err := s.GenerateKeywords(ctx, messages)
 	if err != nil {
 		log.Printf("[AIService] Keyword generation error: %v", err)
-		// Fallback to the last message content
 		if len(messages) > 0 {
-			lastMsg := messages[len(messages)-1]
-			var queryBuilder strings.Builder
-			for _, p := range lastMsg.Content {
-				if p.IsText() {
-					queryBuilder.WriteString(p.Text)
-				}
-			}
-			query = queryBuilder.String()
+			query = messages[len(messages)-1].Content
 		}
 	}
 
@@ -730,7 +488,7 @@ func (s *AIService) PerformSearch(ctx context.Context, messages []*ai.Message, s
 	return results, query, nil
 }
 
-func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Message, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
+func (s *AIService) generateSearchStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
@@ -770,8 +528,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 	}
 	searchContext := searchContextBuilder.String()
 
-	augmentedMessages := make([]*ai.Message, 0, len(messages)+2)
-	// Add system prompt for search
+	augmentedMessages := make([]models.AIMessage, 0, len(messages)+2)
 	systemPrompt := "你是一个具备联网搜索能力的助手。请根据提供的搜索结果回答用户的问题。\n\n" +
 		"**引用要求**：\n" +
 		"1. 当你引用搜索结果中的信息时，必须在对应的语句末尾使用 `ref(n)` 格式进行标注，其中 n 是搜索结果的序号（从 1 开始）。\n" +
@@ -779,27 +536,21 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []*ai.Mes
 		"3. 如果一条语句引用了多个来源，请使用多个标注，如：ref(1) ref(2)。\n" +
 		"4. 如果搜索结果不相关，请根据你的知识储备回答，并告知用户搜索结果可能不完全匹配。"
 
-	augmentedMessages = append(augmentedMessages, &ai.Message{
-		Role:    ai.RoleSystem,
-		Content: []*ai.Part{ai.NewTextPart(systemPrompt)},
+	augmentedMessages = append(augmentedMessages, models.AIMessage{
+		Role:    "system",
+		Content: systemPrompt,
 	})
-	// Add search context
-	augmentedMessages = append(augmentedMessages, &ai.Message{
-		Role:    ai.RoleSystem,
-		Content: []*ai.Part{ai.NewTextPart(searchContext)},
+	augmentedMessages = append(augmentedMessages, models.AIMessage{
+		Role:    "system",
+		Content: searchContext,
 	})
-	// Add original messages
 	augmentedMessages = append(augmentedMessages, messages...)
 
-	// Use search model for final response
 	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, false, callback)
 	return 0, 0, err
 }
 
-func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Message, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
-	// For custom modes, we use a direct HTTP request to handle reasoning_content
-	// since Genkit and some Go SDKs might not support it yet.
-
+func (s *AIService) generateCustomStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
 	type oaiMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -807,25 +558,17 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 
 	var oaiMessages []oaiMessage
 	for _, m := range messages {
-		var contentBuilder strings.Builder
-		for _, p := range m.Content {
-			if p.IsText() {
-				contentBuilder.WriteString(p.Text)
-			}
-		}
-		content := contentBuilder.String()
-
 		role := "user"
 		switch m.Role {
-		case ai.RoleModel:
+		case "assistant":
 			role = "assistant"
-		case ai.RoleSystem:
+		case "system":
 			role = "system"
 		}
 
 		oaiMessages = append(oaiMessages, oaiMessage{
 			Role:    role,
-			Content: content,
+			Content: m.Content,
 		})
 	}
 
@@ -866,7 +609,6 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 	}
 
 	reader := io.Reader(resp.Body)
-	// Simple SSE parser
 	buf := make([]byte, 4096)
 	var remainder string
 
@@ -923,17 +665,16 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []*ai.Mes
 }
 
 // GenerateTitle generates a title for the conversation based on messages
-func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (string, error) {
+func (s *AIService) GenerateTitle(ctx context.Context, messages []models.AIMessage) (string, error) {
 	s.mu.RLock()
 	apiKey := s.titleAPIKey
 	baseURL := s.titleBaseURL
 	model := s.titleModel
 	s.mu.RUnlock()
 
-	// Add a system message to instruct the AI to generate a title
-	titlePrompt := &ai.Message{
-		Role:    ai.RoleUser,
-		Content: []*ai.Part{ai.NewTextPart("Please generate a short, concise title for this conversation based on the above messages. The title should be in the same language as the conversation and should not exceed 10 words. Only output the title itself, no quotes or extra text.")},
+	titlePrompt := models.AIMessage{
+		Role:    "user",
+		Content: "Please generate a short, concise title for this conversation based on the above messages. The title should be in the same language as the conversation and should not exceed 10 words. Only output the title itself, no quotes or extra text.",
 	}
 
 	allMessages := append(messages, titlePrompt)
@@ -950,25 +691,6 @@ func (s *AIService) GenerateTitle(ctx context.Context, messages []*ai.Message) (
 	return strings.TrimSpace(title.String()), nil
 }
 
-// ConvertToGenkitMessages converts our message format to Genkit format
-func ConvertToGenkitMessages(messages []struct {
-	Role    string
-	Content string
-}) []*ai.Message {
-	genkitMessages := make([]*ai.Message, len(messages))
-	for i, msg := range messages {
-		role := ai.RoleUser
-		if msg.Role == "assistant" {
-			role = ai.RoleModel
-		}
-		genkitMessages[i] = &ai.Message{
-			Role:    role,
-			Content: []*ai.Part{ai.NewTextPart(msg.Content)},
-		}
-	}
-	return genkitMessages
-}
-
 func (s *AIService) GetAgentConfig() (apiKey, baseURL, model string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -979,10 +701,4 @@ func (s *AIService) GetDailyConfig() (apiKey, baseURL, model string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.apiKey, s.baseURL, s.model
-}
-
-func (s *AIService) GetGenkit() *genkit.Genkit {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.g
 }

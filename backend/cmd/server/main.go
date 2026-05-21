@@ -124,14 +124,14 @@ func main() {
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
 
-	registry := tools.NewRegistry(aiService.GetGenkit())
+	registry := tools.NewRegistry()
 	registry.Register("web_search", tools.WebSearchDescription, tools.NewWebSearchFn(cfg.BochaAPIKey))
 	registry.Register("weather", tools.WeatherDescription, tools.WeatherFn)
 	registry.Register("calculator", tools.CalculatorDescription, tools.CalculatorFn)
 	registry.Register("get_time", tools.GetTimeDescription, tools.GetTimeFn)
 
-	_, _, agentModel := aiService.GetAgentConfig()
-	agentRunner := agent.NewRunner(aiService.GetGenkit(), registry, db, agentModel)
+	agentAPIKey, agentBaseURL, agentModel := aiService.GetAgentConfig()
+	agentRunner := agent.NewRunner(agentAPIKey, agentBaseURL, agentModel, registry, db)
 	agentRunner.LoadToolStates(context.Background())
 	adminHandler.SetAgentRunner(agentRunner)
 	chatHandler.SetAgentRunner(agentRunner)

@@ -1,17 +1,16 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
-
-	"github.com/firebase/genkit/go/ai"
 )
 
 const CalculatorDescription = "Perform mathematical calculations. Supports basic arithmetic (+, -, *, /), powers (^), and common math functions (sqrt, abs, sin, cos, tan, log, ln). Input: {\"expression\": \"math expression\"}. Example: {\"expression\": \"2 + 3 * 4\"} or {\"expression\": \"sqrt(144)\"}"
 
-func CalculatorFn(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+func CalculatorFn(ctx context.Context, input map[string]any) (map[string]any, error) {
 	expr, _ := input["expression"].(string)
 	if expr == "" {
 		return map[string]any{"error": "expression is required"}, nil

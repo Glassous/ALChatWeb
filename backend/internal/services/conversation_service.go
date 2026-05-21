@@ -333,18 +333,12 @@ func (s *ConversationService) AutoGenerateTitle(ctx context.Context, conversatio
 		return "", err
 	}
 
-	genkitMsgs := make([]struct {
-		Role    string
-		Content string
-	}, len(history))
+	aiMsgs := make([]models.AIMessage, len(history))
 	for i, m := range history {
-		genkitMsgs[i] = struct {
-			Role    string
-			Content string
-		}{Role: m.Role, Content: m.Content}
+		aiMsgs[i] = models.AIMessage{Role: m.Role, Content: m.Content}
 	}
 
-	title, err := aiService.GenerateTitle(ctx, ConvertToGenkitMessages(genkitMsgs))
+	title, err := aiService.GenerateTitle(ctx, aiMsgs)
 	if err != nil || title == "" {
 		return "", err
 	}

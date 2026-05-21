@@ -1,42 +1,37 @@
 package tools
 
 import (
+	"context"
 	"sync"
-
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 )
 
 type ToolMeta struct {
 	Name        string
 	Description string
 	Enabled     bool
-	GenkitTool  ai.ToolRef
+	Fn          func(ctx context.Context, input map[string]any) (map[string]any, error)
 }
 
 type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]*ToolMeta
-	g     *genkit.Genkit
 }
 
-func NewRegistry(g *genkit.Genkit) *Registry {
+func NewRegistry() *Registry {
 	return &Registry{
 		tools: make(map[string]*ToolMeta),
-		g:     g,
 	}
 }
 
-func (r *Registry) Register(name, description string, fn ai.ToolFunc[map[string]any, map[string]any]) {
+func (r *Registry) Register(name, description string, fn func(ctx context.Context, input map[string]any) (map[string]any, error)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	t := genkit.DefineTool(r.g, name, description, fn)
 	r.tools[name] = &ToolMeta{
 		Name:        name,
 		Description: description,
 		Enabled:     true,
-		GenkitTool:  t,
+		Fn:          fn,
 	}
 }
 
@@ -48,17 +43,17 @@ func (r *Registry) SetEnabled(name string, enabled bool) {
 	}
 }
 
-func (r *Registry) GetEnabledTools() []ai.ToolRef {
+func (r *Registry) GetEnabledTools() []ToolMeta {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var tools []ai.ToolRef
+	var enabled []ToolMeta
 	for _, t := range r.tools {
 		if t.Enabled {
-			tools = append(tools, t.GenkitTool)
+			enabled = append(enabled, *t)
 		}
 	}
-	return tools
+	return enabled
 }
 
 func (r *Registry) GetAllTools() []ToolMeta {

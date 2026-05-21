@@ -60,3 +60,9 @@ type ChatStreamResponse struct {
 	Content string      `json:"content,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 }
+
+type AIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+

@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/firebase/genkit/go/ai"
 )
 
 const WebSearchDescription = "Search the web for information using Bocha AI. Use this when you need to find current information, news, travel guides, or facts. Input: {\"query\": \"search keywords\"}. Returns search results with titles, URLs, and snippets."
 
-func NewWebSearchFn(apiKey string) func(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
-	return func(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+func NewWebSearchFn(apiKey string) func(ctx context.Context, input map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, input map[string]any) (map[string]any, error) {
 		query, _ := input["query"].(string)
 		if query == "" {
 			return map[string]any{"error": "query is required"}, nil

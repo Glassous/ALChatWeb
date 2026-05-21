@@ -1,15 +1,14 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"time"
-
-	"github.com/firebase/genkit/go/ai"
 )
 
 const GetTimeDescription = "Get the current date and time, or convert between timezones. Use this when the user asks about the current time, date, or time in a specific timezone. Input: {\"timezone\": \"optional timezone, e.g. Asia/Shanghai, America/New_York\"}. If no timezone is provided, returns UTC+8 (China Standard Time)."
 
-func GetTimeFn(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+func GetTimeFn(ctx context.Context, input map[string]any) (map[string]any, error) {
 	tz, _ := input["timezone"].(string)
 
 	loc := time.FixedZone("CST", 8*3600)

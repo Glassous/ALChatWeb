@@ -4,15 +4,16 @@ import (
 	"alchat-backend/internal/agent/tools"
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
-	"time"
 
-	"github.com/firebase/genkit/go/ai"
-	"github.com/firebase/genkit/go/genkit"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -25,27 +26,104 @@ type AgentResult struct {
 }
 
 type Runner struct {
-	g        *genkit.Genkit
+	apiKey   string
+	baseURL  string
+	model    string
 	registry *tools.Registry
 	db       *database.MongoDB
-	model    string
 }
 
-func NewRunner(g *genkit.Genkit, registry *tools.Registry, db *database.MongoDB, model string) *Runner {
+func NewRunner(apiKey, baseURL, model string, registry *tools.Registry, db *database.MongoDB) *Runner {
 	return &Runner{
-		g:        g,
+		apiKey:   apiKey,
+		baseURL:  baseURL,
+		model:    model,
 		registry: registry,
 		db:       db,
-		model:    model,
 	}
 }
 
-func (r *Runner) Run(ctx context.Context, messages []*ai.Message, callbackI interface{}) (*AgentResult, error) {
-	callback, ok := callbackI.(StepCallback)
-	if !ok {
-		return nil, fmt.Errorf("invalid callback type")
-	}
+type openAIToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
 
+type openAIToolCall struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Function openAIToolCallFunction `json:"function"`
+}
+
+type openAIMessage struct {
+	Role       string           `json:"role"`
+	Content    any              `json:"content"`
+	Name       string           `json:"name,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+}
+
+type streamToolCallFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type streamToolCall struct {
+	Index    *int                   `json:"index,omitempty"`
+	ID       string                 `json:"id,omitempty"`
+	Type     string                 `json:"type,omitempty"`
+	Function streamToolCallFunction `json:"function,omitempty"`
+}
+
+var toolParameters = map[string]any{
+	"calculator": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"expression": map[string]any{
+				"type":        "string",
+				"description": "Math expression to evaluate",
+			},
+		},
+		"required": []string{"expression"},
+	},
+	"get_time": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"timezone": map[string]any{
+				"type":        "string",
+				"description": "Optional timezone, e.g. Asia/Shanghai, America/New_York",
+			},
+		},
+	},
+	"weather": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"location": map[string]any{
+				"type":        "string",
+				"description": "City name, e.g. 北京, Shanghai",
+			},
+			"latitude": map[string]any{
+				"type":        "number",
+				"description": "Latitude coordinate",
+			},
+			"longitude": map[string]any{
+				"type":        "number",
+				"description": "Longitude coordinate",
+			},
+		},
+	},
+	"web_search": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Search query keywords",
+			},
+		},
+		"required": []string{"query"},
+	},
+}
+
+func (r *Runner) Run(ctx context.Context, messages []models.AIMessage, callback StepCallback) (*AgentResult, error) {
 	if r.model == "" {
 		return nil, fmt.Errorf("agent model not configured")
 	}
@@ -55,23 +133,20 @@ func (r *Runner) Run(ctx context.Context, messages []*ai.Message, callbackI inte
 		return nil, fmt.Errorf("no tools available")
 	}
 
-	var allMessages []*ai.Message
-	allMessages = append(allMessages, messages...)
-
-	plan, err := r.generatePlan(ctx, allMessages, enabledTools)
+	plan, err := r.generatePlan(ctx, messages, enabledTools)
 	if err != nil {
 		log.Printf("[Agent] Plan generation failed, falling back to no-plan mode: %v", err)
 	}
 
 	if plan != nil && len(plan.Items) > 0 {
 		callback(AgentStep{Plan: plan})
-		return r.runWithPlan(ctx, allMessages, plan, enabledTools, callback)
+		return r.runLoop(ctx, messages, enabledTools, callback, plan, nil, nil)
 	}
 
-	return r.runLoop(ctx, allMessages, enabledTools, callback, nil, nil, nil)
+	return r.runLoop(ctx, messages, enabledTools, callback, nil, nil, nil)
 }
 
-func (r *Runner) RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
+func (r *Runner) RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
 	if r.model == "" {
 		return nil, fmt.Errorf("agent model not configured")
 	}
@@ -81,71 +156,69 @@ func (r *Runner) RunWithStreaming(ctx context.Context, messages []*ai.Message, s
 		return nil, fmt.Errorf("no tools available")
 	}
 
-	var allMessages []*ai.Message
-	allMessages = append(allMessages, messages...)
-
-	plan, err := r.generatePlan(ctx, allMessages, enabledTools)
+	plan, err := r.generatePlan(ctx, messages, enabledTools)
 	if err != nil {
 		log.Printf("[Agent] Plan generation failed, falling back to no-plan mode: %v", err)
 	}
 
 	if plan != nil && len(plan.Items) > 0 {
 		stepCb(AgentStep{Plan: plan})
-		return r.runWithPlanStreaming(ctx, allMessages, plan, enabledTools, stepCb, tokenCb, reasoningCb)
+		return r.runLoop(ctx, messages, enabledTools, stepCb, plan, tokenCb, reasoningCb)
 	}
 
-	return r.runLoop(ctx, allMessages, enabledTools, stepCb, nil, tokenCb, reasoningCb)
+	return r.runLoop(ctx, messages, enabledTools, stepCb, nil, tokenCb, reasoningCb)
 }
 
-func (r *Runner) runWithPlan(ctx context.Context, messages []*ai.Message, plan *PlanResponse, enabledTools []ai.ToolRef, callback StepCallback) (*AgentResult, error) {
-	return r.runLoop(ctx, messages, enabledTools, callback, plan, nil, nil)
-}
-
-func (r *Runner) runWithPlanStreaming(ctx context.Context, messages []*ai.Message, plan *PlanResponse, enabledTools []ai.ToolRef, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
-	return r.runLoop(ctx, messages, enabledTools, stepCb, plan, tokenCb, reasoningCb)
-}
-
-func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, callback StepCallback, plan *PlanResponse, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
+func (r *Runner) runLoop(
+	ctx context.Context,
+	messages []models.AIMessage,
+	enabledTools []tools.ToolMeta,
+	callback StepCallback,
+	plan *PlanResponse,
+	tokenCb func(string),
+	reasoningCb func(string),
+) (*AgentResult, error) {
 	maxIterations := 10
 	iteration := 0
 	planIndex := 0
-	var allReasoning string
+
+	var oaiMessages []openAIMessage
+	for _, m := range messages {
+		oaiMessages = append(oaiMessages, openAIMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
+
+	var allReasoning strings.Builder
 
 	for iteration < maxIterations {
 		iteration++
 
-		var resp *ai.ModelResponse
-		var streamErr error
-		var reasoningBuilder strings.Builder
-
-		if reasoningCb != nil || tokenCb != nil {
-			resp, streamErr = r.generateStreaming(ctx, messages, enabledTools, func(r string) {
-				reasoningBuilder.WriteString(r)
-				if reasoningCb != nil {
-					reasoningCb(r)
-				}
-			}, tokenCb, &allReasoning)
-		} else {
-			resp, streamErr = r.generateSync(ctx, messages, enabledTools)
-		}
-		if streamErr != nil {
-			return nil, fmt.Errorf("generation error: %w", streamErr)
-		}
-
-		// Ensure reasoning_content is preserved for next turns
-		if reasoningBuilder.Len() > 0 && resp.Message != nil {
-			if resp.Message.Metadata == nil {
-				resp.Message.Metadata = make(map[string]any)
+		// Define streaming token and reasoning callbacks
+		var currentReasoning strings.Builder
+		tCb := func(token string) {
+			if tokenCb != nil {
+				tokenCb(token)
 			}
-			resp.Message.Metadata["reasoning_content"] = reasoningBuilder.String()
+		}
+		rCb := func(reasoning string) {
+			currentReasoning.WriteString(reasoning)
+			allReasoning.WriteString(reasoning)
+			if reasoningCb != nil {
+				reasoningCb(reasoning)
+			}
 		}
 
-		toolRequests := resp.ToolRequests()
-		if len(toolRequests) == 0 {
-			finalText := resp.Text()
+		toolCalls, finalContent, err := r.callChatCompletionsStream(ctx, oaiMessages, enabledTools, tCb, rCb)
+		if err != nil {
+			return nil, fmt.Errorf("generation error: %w", err)
+		}
+
+		if len(toolCalls) == 0 {
 			return &AgentResult{
-				Answer:    finalText,
-				Reasoning: allReasoning,
+				Answer:    finalContent,
+				Reasoning: allReasoning.String(),
 			}, nil
 		}
 
@@ -157,58 +230,70 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 			})
 		}
 
-		var toolResponseParts []*ai.Part
-		for _, tr := range toolRequests {
-			inputMap := parseToolInput(tr.Input)
+		// Save the assistant message with tool calls delta
+		assistantMsg := openAIMessage{
+			Role:      "assistant",
+			ToolCalls: toolCalls,
+		}
+		if finalContent != "" {
+			assistantMsg.Content = finalContent
+		}
+		oaiMessages = append(oaiMessages, assistantMsg)
 
-			tool := genkit.LookupTool(r.g, tr.Name)
-			if tool == nil {
-				errOutput := map[string]any{"error": fmt.Sprintf("tool %s not found", tr.Name)}
+		for _, tc := range toolCalls {
+			inputMap := parseToolInput(tc.Function.Arguments)
+
+			toolMeta, exists := r.registry.GetToolMeta(tc.Function.Name)
+			if !exists {
+				errOutput := map[string]any{"error": fmt.Sprintf("tool %s not found", tc.Function.Name)}
 				callback(AgentStep{
 					Index:      iteration,
-					ToolName:   tr.Name,
+					ToolName:   tc.Function.Name,
 					ToolInput:  inputMap,
 					ToolOutput: formatOutput(errOutput),
-					Err:        fmt.Sprintf("tool %s not found", tr.Name),
+					Err:        fmt.Sprintf("tool %s not found", tc.Function.Name),
 					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
-				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
-					Name:   tr.Name,
-					Ref:    tr.Ref,
-					Output: errOutput,
-				}))
+				oaiMessages = append(oaiMessages, openAIMessage{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Name:       tc.Function.Name,
+					Content:    formatOutput(errOutput),
+				})
 				continue
 			}
 
-			output, err := tool.RunRaw(ctx, inputMap)
+			output, err := toolMeta.Fn(ctx, inputMap)
 			if err != nil {
 				errOutput := map[string]any{"error": err.Error()}
 				callback(AgentStep{
 					Index:      iteration,
-					ToolName:   tr.Name,
+					ToolName:   tc.Function.Name,
 					ToolInput:  inputMap,
 					ToolOutput: formatOutput(errOutput),
 					Err:        err.Error(),
 					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
-				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
-					Name:   tr.Name,
-					Ref:    tr.Ref,
-					Output: errOutput,
-				}))
+				oaiMessages = append(oaiMessages, openAIMessage{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Name:       tc.Function.Name,
+					Content:    formatOutput(errOutput),
+				})
 			} else {
 				callback(AgentStep{
 					Index:      iteration,
-					ToolName:   tr.Name,
+					ToolName:   tc.Function.Name,
 					ToolInput:  inputMap,
 					ToolOutput: formatOutput(output),
 					PlanIndex:  getPlanIndex(plan, planIndex),
 				})
-				toolResponseParts = append(toolResponseParts, ai.NewToolResponsePart(&ai.ToolResponse{
-					Name:   tr.Name,
-					Ref:    tr.Ref,
-					Output: output,
-				}))
+				oaiMessages = append(oaiMessages, openAIMessage{
+					Role:       "tool",
+					ToolCallID: tc.ID,
+					Name:       tc.Function.Name,
+					Content:    formatOutput(output),
+				})
 			}
 		}
 
@@ -223,100 +308,172 @@ func (r *Runner) runLoop(ctx context.Context, messages []*ai.Message, enabledToo
 			}
 			planIndex++
 		}
-
-		toolMsg := &ai.Message{Role: ai.RoleTool, Content: toolResponseParts}
-		messages = append(messages, resp.Message, toolMsg)
 	}
 
 	return nil, fmt.Errorf("agent exceeded maximum iterations (%d)", maxIterations)
 }
 
-func (r *Runner) generateSync(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef) (*ai.ModelResponse, error) {
-	return genkit.Generate(ctx, r.g,
-		ai.WithModelName("openai-agent/"+r.model),
-		ai.WithMessages(messages...),
-		ai.WithTools(enabledTools...),
-		ai.WithReturnToolRequests(true),
-	)
-}
-
-func (r *Runner) generateStreaming(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef, reasoningCb func(string), tokenCb func(string), allReasoning *string) (*ai.ModelResponse, error) {
-	const maxRetries = 2
-	var lastErr error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(1<<uint(attempt-1)) * time.Second
-			log.Printf("[Agent] Stream error, retry %d/%d after %v: %v", attempt, maxRetries, delay, lastErr)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
+func (r *Runner) callChatCompletionsStream(
+	ctx context.Context,
+	oaiMessages []openAIMessage,
+	enabledTools []tools.ToolMeta,
+	tokenCb func(string),
+	reasoningCb func(string),
+) ([]openAIToolCall, string, error) {
+	var toolsParam []any
+	for _, t := range enabledTools {
+		paramSchema, exists := toolParameters[t.Name]
+		if !exists {
+			paramSchema = map[string]any{
+				"type": "object",
 			}
 		}
-
-		var finalResp *ai.ModelResponse
-		var streamErr error
-
-		for sv, err := range genkit.GenerateStream(ctx, r.g,
-			ai.WithModelName("openai-agent/"+r.model),
-			ai.WithMessages(messages...),
-			ai.WithTools(enabledTools...),
-			ai.WithReturnToolRequests(true),
-		) {
-			if err != nil {
-				streamErr = err
-				break
-			}
-
-			if sv.Done {
-				finalResp = sv.Response
-				break
-			}
-
-			if sv.Chunk != nil {
-				if reasoningCb != nil {
-					if r := sv.Chunk.Reasoning(); r != "" {
-						*allReasoning += r
-						reasoningCb(r)
-					}
-				}
-				if tokenCb != nil {
-					if t := sv.Chunk.Text(); t != "" {
-						tokenCb(t)
-					}
-				}
-			}
-		}
-
-		if streamErr != nil {
-			if isTransientStreamError(streamErr) && attempt < maxRetries {
-				lastErr = streamErr
-				continue
-			}
-			return nil, streamErr
-		}
-
-		if finalResp == nil {
-			return nil, fmt.Errorf("streaming completed without final response")
-		}
-
-		return finalResp, nil
+		toolsParam = append(toolsParam, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        t.Name,
+				"description": t.Description,
+				"parameters":  paramSchema,
+			},
+		})
 	}
 
-	return nil, fmt.Errorf("all %d retry attempts exhausted, last error: %w", maxRetries, lastErr)
+	requestBodyMap := map[string]any{
+		"model":    r.model,
+		"messages": oaiMessages,
+		"stream":   true,
+		"thinking": map[string]any{
+			"type": "disabled",
+		},
+	}
+	if len(toolsParam) > 0 {
+		requestBodyMap["tools"] = toolsParam
+	}
+
+	requestBodyBytes, err := json.Marshal(requestBodyMap)
+	if err != nil {
+		return nil, "", err
+	}
+
+	url := fmt.Sprintf("%s/chat/completions", r.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, "", fmt.Errorf("Agent model API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	accumulatedTools := make(map[int]*openAIToolCall)
+	var finalTextBuilder strings.Builder
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, "", err
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		type streamResponse struct {
+			Choices []struct {
+				Delta struct {
+					Content          string           `json:"content"`
+					ReasoningContent string           `json:"reasoning_content"`
+					ToolCalls        []streamToolCall `json:"tool_calls"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+
+		var chunk streamResponse
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if len(chunk.Choices) > 0 {
+			delta := chunk.Choices[0].Delta
+			if delta.Content != "" {
+				finalTextBuilder.WriteString(delta.Content)
+				if tokenCb != nil {
+					tokenCb(delta.Content)
+				}
+			}
+			if delta.ReasoningContent != "" {
+				if reasoningCb != nil {
+					reasoningCb(delta.ReasoningContent)
+				}
+			}
+			for _, tc := range delta.ToolCalls {
+				idx := 0
+				if tc.Index != nil {
+					idx = *tc.Index
+				}
+				acc, exists := accumulatedTools[idx]
+				if !exists {
+					acc = &openAIToolCall{
+						Type: "function",
+					}
+					accumulatedTools[idx] = acc
+				}
+				if tc.ID != "" {
+					acc.ID = tc.ID
+				}
+				if tc.Function.Name != "" {
+					acc.Function.Name = tc.Function.Name
+				}
+				if tc.Function.Arguments != "" {
+					acc.Function.Arguments += tc.Function.Arguments
+				}
+			}
+		}
+	}
+
+	var toolCalls []openAIToolCall
+	for i := 0; i < len(accumulatedTools); i++ {
+		if tc, exists := accumulatedTools[i]; exists {
+			toolCalls = append(toolCalls, *tc)
+		}
+	}
+	if len(toolCalls) == 0 && len(accumulatedTools) > 0 {
+		for _, tc := range accumulatedTools {
+			toolCalls = append(toolCalls, *tc)
+		}
+	}
+
+	return toolCalls, finalTextBuilder.String(), nil
 }
 
-func parseToolInput(input any) map[string]any {
-	if input == nil {
+func parseToolInput(arguments string) map[string]any {
+	if arguments == "" {
 		return nil
 	}
-	if inputMap, ok := input.(map[string]any); ok {
-		return inputMap
-	}
-	inputBytes, _ := json.Marshal(input)
 	var inputMap map[string]any
-	json.Unmarshal(inputBytes, &inputMap)
+	if err := json.Unmarshal([]byte(arguments), &inputMap); err != nil {
+		return map[string]any{"arguments": arguments}
+	}
 	return inputMap
 }
 
@@ -338,15 +495,13 @@ func getPlanIndex(plan *PlanResponse, planIndex int) *int {
 	return nil
 }
 
-func (r *Runner) generatePlan(ctx context.Context, messages []*ai.Message, enabledTools []ai.ToolRef) (*PlanResponse, error) {
+func (r *Runner) generatePlan(ctx context.Context, messages []models.AIMessage, enabledTools []tools.ToolMeta) (*PlanResponse, error) {
 	var toolDescs []map[string]string
-	for _, t := range r.registry.GetAllTools() {
-		if t.Enabled {
-			toolDescs = append(toolDescs, map[string]string{
-				"name":        t.Name,
-				"description": t.Description,
-			})
-		}
+	for _, t := range enabledTools {
+		toolDescs = append(toolDescs, map[string]string{
+			"name":        t.Name,
+			"description": t.Description,
+		})
 	}
 
 	toolDescJSON, _ := json.Marshal(toolDescs)
@@ -362,21 +517,70 @@ func (r *Runner) generatePlan(ctx context.Context, messages []*ai.Message, enabl
 如果不需要任何工具，返回空数组：{"items": []}
 只返回JSON，不要包含其他内容。`, string(toolDescJSON))
 
-	planMessages := []*ai.Message{
-		{Role: ai.RoleSystem, Content: []*ai.Part{ai.NewTextPart(planPrompt)}},
+	var oaiMessages []openAIMessage
+	oaiMessages = append(oaiMessages, openAIMessage{
+		Role:    "system",
+		Content: planPrompt,
+	})
+	for _, m := range messages {
+		oaiMessages = append(oaiMessages, openAIMessage{
+			Role:    m.Role,
+			Content: m.Content,
+		})
 	}
-	planMessages = append(planMessages, messages...)
 
-	resp, err := genkit.Generate(ctx, r.g,
-		ai.WithModelName("openai-agent/"+r.model),
-		ai.WithMessages(planMessages...),
-	)
+	requestBodyMap := map[string]any{
+		"model":    r.model,
+		"messages": oaiMessages,
+		"thinking": map[string]any{
+			"type": "disabled",
+		},
+	}
+
+	requestBodyBytes, err := json.Marshal(requestBodyMap)
 	if err != nil {
 		return nil, err
 	}
 
+	url := fmt.Sprintf("%s/chat/completions", r.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.apiKey))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("plan generation model API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+
+	if len(response.Choices) == 0 {
+		return nil, fmt.Errorf("no choices returned in plan generation")
+	}
+
+	text := cleanJSONString(response.Choices[0].Message.Content)
+
 	var plan PlanResponse
-	text := resp.Text()
 	if err := json.Unmarshal([]byte(text), &plan); err != nil {
 		return nil, fmt.Errorf("failed to parse plan: %w", err)
 	}
@@ -391,6 +595,17 @@ func (r *Runner) generatePlan(ctx context.Context, messages []*ai.Message, enabl
 	}
 
 	return &plan, nil
+}
+
+func cleanJSONString(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimPrefix(s, "json")
+		s = strings.TrimSuffix(s, "```")
+		s = strings.TrimSpace(s)
+	}
+	return s
 }
 
 func (r *Runner) GetToolNames() []string {
@@ -461,29 +676,4 @@ func (r *Runner) LoadToolStates(ctx context.Context) {
 
 func (r *Runner) GetRegistry() *tools.Registry {
 	return r.registry
-}
-
-func isTransientStreamError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	transientPatterns := []string{
-		"unexpected end of JSON input",
-		"unexpected EOF",
-		"connection reset",
-		"broken pipe",
-		"stream error",
-		"i/o timeout",
-		"connection refused",
-		"use of closed network connection",
-		"server sent close",
-	}
-	lower := strings.ToLower(msg)
-	for _, p := range transientPatterns {
-		if strings.Contains(lower, p) {
-			return true
-		}
-	}
-	return false
 }

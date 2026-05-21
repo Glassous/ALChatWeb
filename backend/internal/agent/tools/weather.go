@@ -1,13 +1,12 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-
-	"github.com/firebase/genkit/go/ai"
 )
 
 const WeatherDescription = `Get weather information for a location. Input: {"location": "city name"} or {"latitude": 0.0, "longitude": 0.0}.
@@ -47,7 +46,7 @@ type weatherAPIResult struct {
 	} `json:"daily"`
 }
 
-func WeatherFn(ctx *ai.ToolContext, input map[string]any) (map[string]any, error) {
+func WeatherFn(ctx context.Context, input map[string]any) (map[string]any, error) {
 	location, _ := input["location"].(string)
 	lat, _ := input["latitude"].(float64)
 	lon, _ := input["longitude"].(float64)

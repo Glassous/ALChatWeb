@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
 	"alchat-backend/internal/utils"
 	"net/http"
@@ -42,23 +43,17 @@ func (h *ConversationHandler) GenerateTitle(c *gin.Context) {
 		return
 	}
 
-	// Convert to Genkit format
-	genkitMessages := make([]struct {
-		Role    string
-		Content string
-	}, len(messages))
+	// Convert to AIMessage format
+	aiMessages := make([]models.AIMessage, len(messages))
 	for i, msg := range messages {
-		genkitMessages[i] = struct {
-			Role    string
-			Content string
-		}{
+		aiMessages[i] = models.AIMessage{
 			Role:    msg.Role,
 			Content: msg.Content,
 		}
 	}
 
 	// Generate title
-	title, err := h.aiService.GenerateTitle(c.Request.Context(), services.ConvertToGenkitMessages(genkitMessages))
+	title, err := h.aiService.GenerateTitle(c.Request.Context(), aiMessages)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate title: " + err.Error()})
 		return

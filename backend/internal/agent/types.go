@@ -1,9 +1,5 @@
 package agent
 
-import (
-	"github.com/firebase/genkit/go/ai"
-)
-
 type PlanItemStatus string
 
 const (
@@ -38,10 +34,4 @@ type AgentEvent struct {
 	Type   string      `json:"type"`
 	Data   interface{} `json:"data"`
 	Status string      `json:"status,omitempty"`
-}
-
-type ToolDef struct {
-	Name        string
-	Description string
-	Fn          func(ctx *ai.ToolContext, input map[string]any) (map[string]any, error)
 }

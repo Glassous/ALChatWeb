@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/firebase/genkit/go/ai"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -29,8 +28,8 @@ type ChatHandler struct {
 	streamManager       *services.StreamManager
 	tempConvService     *services.TempConversationService
 	agentRunner         interface {
-		Run(ctx context.Context, messages []*ai.Message, callback interface{}) (*agent.AgentResult, error)
-		RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
+		Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
+		RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
 	}
 }
 
@@ -45,8 +44,8 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 }
 
 func (h *ChatHandler) SetAgentRunner(runner interface {
-	Run(ctx context.Context, messages []*ai.Message, callback interface{}) (*agent.AgentResult, error)
-	RunWithStreaming(ctx context.Context, messages []*ai.Message, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
+	Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
+	RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
 }) {
 	h.agentRunner = runner
 }
@@ -133,16 +132,10 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			return
 		}
 
-		// Convert to Genkit format
-		genkitMessages := make([]struct {
-			Role    string
-			Content string
-		}, len(messages))
+		// Convert to AIMessage format
+		aiMessages := make([]models.AIMessage, len(messages))
 		for i, msg := range messages {
-			genkitMessages[i] = struct {
-				Role    string
-				Content string
-			}{
+			aiMessages[i] = models.AIMessage{
 				Role:    msg.Role,
 				Content: msg.Content,
 			}
@@ -151,7 +144,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		userIDObj, _ := primitive.ObjectIDFromHex(userID)
 
 		if req.Mode == "agent" {
-			h.handleAgentMode(bgCtx, req, genkitMessages, assistantMsg, userIDObj, userMsg)
+			h.handleAgentMode(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
 			return
 		}
 
@@ -191,7 +184,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 		extraInput, extraOutput, err := h.aiService.GenerateStream(
 			bgCtx,
-			services.ConvertToGenkitMessages(genkitMessages),
+			aiMessages,
 			req.Mode,
 			systemPromptBuilder.String(),
 			func(token string, reasoning string) error {
@@ -275,10 +268,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	})
 }
 
-func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatRequest, genkitMessages []struct {
-	Role    string
-	Content string
-}, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
+func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatRequest, aiMessages []models.AIMessage, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
 	if h.agentRunner == nil {
 		log.Printf("[Agent] Agent runner not configured")
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
@@ -292,8 +282,6 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 		Type: "agent_start",
 	})
-
-	aiMessages := services.ConvertToGenkitMessages(genkitMessages)
 
 	var allSteps []models.AgentStepData
 	var allPlan []models.AgentPlanItemData
@@ -502,16 +490,10 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			return
 		}
 
-		// Convert to Genkit format
-		genkitMessages := make([]struct {
-			Role    string
-			Content string
-		}, len(messages))
+		// Convert to AIMessage format
+		aiMessages := make([]models.AIMessage, len(messages))
 		for i, msg := range messages {
-			genkitMessages[i] = struct {
-				Role    string
-				Content string
-			}{
+			aiMessages[i] = models.AIMessage{
 				Role:    msg.Role,
 				Content: msg.Content,
 			}
@@ -529,7 +511,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			// Converting models.Message for agent mode
 			modelAssistantMsg := assistantMsg.ToModel()
 			modelUserMsg := userMsg.ToModel()
-			h.handleAgentMode(bgCtx, req, genkitMessages, &modelAssistantMsg, userIDObj, &modelUserMsg)
+			h.handleAgentMode(bgCtx, req, aiMessages, &modelAssistantMsg, userIDObj, &modelUserMsg)
 
 			// Update back to TempMessage in Redis
 			assistantMsg.Content = modelAssistantMsg.Content
@@ -570,7 +552,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 
 		extraInput, extraOutput, err := h.aiService.GenerateStream(
 			bgCtx,
-			services.ConvertToGenkitMessages(genkitMessages),
+			aiMessages,
 			req.Mode,
 			systemPromptBuilder.String(),
 			func(token string, reasoning string) error {
