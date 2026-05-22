@@ -598,7 +598,7 @@ function ChatApp({
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg): Message =>
               msg.id === assistantMsgId
-                ? { ...msg, status: 'loading', metadata: { ...msg.metadata, resolution } }
+                ? { ...msg, content: '', status: 'loading', metadata: { ...msg.metadata, resolution } }
                 : msg
             )
           );

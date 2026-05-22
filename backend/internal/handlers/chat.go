@@ -664,13 +664,13 @@ func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatR
 
 	log.Printf("[Router] Daily routing completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
 
-	assistantMsg.Content = accumulatedAnswer
+	assistantMsg.Content = cleanTransitionalText(accumulatedAnswer)
 	assistantMsg.Reasoning = accumulatedReasoning
 	assistantMsg.AgentSteps = allSteps
 	assistantMsg.Search = lastSearchData
 	h.conversationService.UpdateMessage(ctx, assistantMsg)
 
-	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(accumulatedAnswer))
+	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(assistantMsg.Content))
 
 	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
 	if titleErr == nil && title != "" {
@@ -923,4 +923,14 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 			return true
 		}
 	})
+}
+
+func cleanTransitionalText(content string) string {
+	if idx := strings.Index(content, "<image"); idx != -1 {
+		return content[idx:]
+	}
+	if idx := strings.Index(content, "<search>"); idx != -1 {
+		return content[idx:]
+	}
+	return content
 }

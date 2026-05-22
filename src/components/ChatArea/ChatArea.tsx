@@ -195,7 +195,15 @@ function MessageItem({
       aspectRatio = w / h;
     }
 
-    const processedContent = msg.content
+    let contentForRender = msg.content;
+    if (contentForRender.includes('<image')) {
+      contentForRender = contentForRender.substring(contentForRender.indexOf('<image'));
+    }
+    if (contentForRender.includes('<search>')) {
+      contentForRender = contentForRender.substring(contentForRender.indexOf('<search>'));
+    }
+
+    const processedContent = contentForRender
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
       .replace(/\n?<search>[\s\S]*?<\/search>\n?/g, '') // Remove completed search tag and surrounding newlines
       .replace(/\n?<search>[\s\S]*/g, '') // Remove partial search tag during streaming and leading newline
