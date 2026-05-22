@@ -757,6 +757,25 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			}
 		}
 
+		// Clean history context for daily model (to avoid XML/JSON tag interference)
+		if req.Mode == "daily" {
+			reSearch := regexp.MustCompile(`(?s)\n?<search>.*?</search>\n?`)
+			reWeather := regexp.MustCompile(`(?s)\n?<weather>.*?</weather>\n?`)
+			reImage := regexp.MustCompile(`(?i)<image src="([^"]+)">`)
+			for i, m := range aiMessages {
+				if m.Role == "assistant" {
+					cleaned := reSearch.ReplaceAllString(m.Content, "")
+					cleaned = reWeather.ReplaceAllString(cleaned, "")
+					cleaned = reImage.ReplaceAllString(cleaned, "![image]($1)")
+					cleaned = strings.TrimSpace(cleaned)
+					if cleaned == "" {
+						cleaned = "[已为您完成]"
+					}
+					aiMessages[i].Content = cleaned
+				}
+			}
+		}
+
 		// Re-fetch user to get latest settings (system prompt, etc.)
 		var user models.User
 		if err := h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user); err != nil {

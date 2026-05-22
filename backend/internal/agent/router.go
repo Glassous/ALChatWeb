@@ -131,64 +131,70 @@ func (r *Runner) RunDailyRouter(
 		}, nil
 	}
 
-	// Case 2: Web Search Tool
+	// Case 2: Web Search Tool (Context Injection Pattern)
 	if hasWebSearch {
 		inputMap := parseToolInput(webSearchCall.Function.Arguments)
 		query, _ := inputMap["query"].(string)
-		if query == "" {
-			query = "latest information"
-		}
 
-		// 1. Append assistant message containing the tool calls
-		assistantMsg := openAIMessage{
-			Role:      "assistant",
-			ToolCalls: toolCalls,
-		}
-		oaiMessages = append(oaiMessages, assistantMsg)
-
-		// 2. Perform search via callback
 		searchContext, err := searchCb(query)
 		if err != nil {
-			searchContext = fmt.Sprintf("Search error: %v", err)
+			return nil, fmt.Errorf("failed to perform search: %w", err)
 		}
 
-		// 3. Append tool response message
-		oaiMessages = append(oaiMessages, openAIMessage{
-			Role:       "tool",
-			ToolCallID: webSearchCall.ID,
-			Name:       "web_search",
-			Content:    searchContext,
-		})
+		// Inject searchContext into the last User message in oaiMessages
+		lastMsgIdx := -1
+		for i := len(oaiMessages) - 1; i >= 0; i-- {
+			if oaiMessages[i].Role == "user" {
+				lastMsgIdx = i
+				break
+			}
+		}
+		if lastMsgIdx == -1 {
+			// Fallback: if no user message exists (should not happen), use the last message
+			lastMsgIdx = len(oaiMessages) - 1
+		}
 
-		// 4. Append search system instructions
+		originalUserQuery, _ := oaiMessages[lastMsgIdx].Content.(string)
+
+		var injectedBuilder strings.Builder
+		injectedBuilder.WriteString("【联网检索背景参考资料】\n")
+		injectedBuilder.WriteString(searchContext)
+		injectedBuilder.WriteString("\n\n请结合上述最新的联网搜索信息，用通俗易懂的语言详细回答用户的问题。如果搜索结果不相关，请基于您的知识库作答。\n")
+		injectedBuilder.WriteString("用户提问：")
+		injectedBuilder.WriteString(originalUserQuery)
+
+		oaiMessages[lastMsgIdx].Content = injectedBuilder.String()
+
+		// Append standard system prompt instructing the model on citations
 		systemPrompt := "你是一个具备联网搜索能力的助手。请根据提供的搜索结果回答用户的问题。\n\n" +
 			"**引用要求**：\n" +
-			"1. 当你引用搜索结果中的信息时，必须在对应的语句末尾使用 `ref(n)` 格式进行标注，其中 n 是搜索结果 of the source (starting from 1).\n" +
+			"1. 当你引用搜索结果中的信息时，必须在对应的语句末尾使用 `ref(n)` 格式进行标注，其中 n 是引用来源序号 (从 1 开始).\n" +
 			"2. 例如：根据某项研究表明，地球是圆的 ref(1)。\n" +
 			"3. 如果一条语句引用了多个来源，请使用多个标注，如：ref(1) ref(2)。\n" +
 			"4. 如果搜索结果不相关，请根据你的知识储备回答，并告知用户搜索结果可能不完全匹配。"
+
 		oaiMessages = append(oaiMessages, openAIMessage{
 			Role:    "system",
 			Content: systemPrompt,
 		})
 
-		// 5. Run daily model again with search results injected to stream final answer
-		_, finalContent2, err := r.callChatCompletionsStreamWith(
+		// Stream the final answer using daily model with enabledTools = nil
+		_, finalContent, err := r.callChatCompletionsStreamWith(
 			ctx,
 			cfg.DailyAPIKey,
 			cfg.DailyBaseURL,
 			cfg.DailyModel,
 			oaiMessages,
-			nil, // No tools in this turn to avoid infinite loop
+			nil, // Setting enabledTools to nil disables the tools parameter in the API payload
 			tCb,
 			rCb,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("web search second step generation error: %w", err)
+			return nil, fmt.Errorf("daily router step 2 search response completion error: %w", err)
 		}
 
 		return &AgentResult{
-			Answer:    finalContent2,
+			Answer:    finalContent,
 			Reasoning: allReasoning.String(),
 		}, nil
 	}
