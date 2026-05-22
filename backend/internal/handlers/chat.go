@@ -27,25 +27,29 @@ type ChatHandler struct {
 	db                  *database.MongoDB
 	streamManager       *services.StreamManager
 	tempConvService     *services.TempConversationService
+	imageService        *services.ImageService
 	agentRunner         interface {
 		Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
 		RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
+		RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string) (string, error)) (*agent.AgentResult, error)
 	}
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, streamManager *services.StreamManager) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
 		memberService:       memberService,
 		db:                  db,
 		streamManager:       streamManager,
+		imageService:        imageService,
 	}
 }
 
 func (h *ChatHandler) SetAgentRunner(runner interface {
 	Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
 	RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
+	RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string) (string, error)) (*agent.AgentResult, error)
 }) {
 	h.agentRunner = runner
 }
@@ -142,6 +146,11 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		}
 
 		userIDObj, _ := primitive.ObjectIDFromHex(userID)
+
+		if req.Mode == "daily" && h.agentRunner != nil {
+			h.handleDailyAutoRoute(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
+			return
+		}
 
 		if req.Mode == "agent" {
 			h.handleAgentMode(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
@@ -413,6 +422,229 @@ func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatReques
 	h.conversationService.UpdateMessage(ctx, assistantMsg)
 
 	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(agentResult.Answer))
+
+	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
+	if titleErr == nil && title != "" {
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "title",
+			Content: title,
+		})
+	}
+
+	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+		Type: "done",
+		Data: gin.H{
+			"user_message_id":      userMsg.ID.Hex(),
+			"assistant_message_id": assistantMsg.ID.Hex(),
+			"credits":              newCredits,
+		},
+	})
+
+	time.AfterFunc(10*time.Second, func() {
+		h.streamManager.CloseConversation(req.ConversationID)
+	})
+}
+
+func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatRequest, aiMessages []models.AIMessage, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
+	log.Printf("[Router] Starting daily auto-route for conversation %s", req.ConversationID)
+
+	dailyAPIKey, dailyBaseURL, dailyModel := h.aiService.GetDailyConfig()
+	agentAPIKey, agentBaseURL, agentModel := h.aiService.GetAgentConfig()
+
+	cfg := agent.DailyRouterConfig{
+		DailyAPIKey:  dailyAPIKey,
+		DailyBaseURL: dailyBaseURL,
+		DailyModel:   dailyModel,
+		AgentAPIKey:  agentAPIKey,
+		AgentBaseURL: agentBaseURL,
+		AgentModel:   agentModel,
+		ImageSvc:     h.imageService,
+	}
+
+	var allSteps []models.AgentStepData
+	var accumulatedReasoning string
+	var accumulatedAnswer string
+	startSent := false
+	agentStartSent := false
+	textSent := false
+	var lastSearchData *models.SearchData
+
+	// Get user settings for system prompt
+	var user models.User
+	h.db.Users().FindOne(ctx, bson.M{"_id": userIDObj}).Decode(&user)
+
+	// Construct system prompt and inject it to the beginning of the context
+	var systemPromptBuilder strings.Builder
+	if user.SystemPrompt != "" {
+		systemPromptBuilder.WriteString(user.SystemPrompt)
+	}
+	if user.IncludeDateTime {
+		currentTime := time.Now().Format("2006-01-02 15:04:05")
+		if systemPromptBuilder.Len() > 0 {
+			systemPromptBuilder.WriteString("\n\n")
+		}
+		fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
+	}
+	if user.IncludeLocation && req.Location != "" {
+		locationStr := req.Location
+		if IsCoordinateFormat(locationStr) {
+			locationStr = ReverseGeocodeFromCoords(locationStr)
+		}
+		if systemPromptBuilder.Len() > 0 {
+			systemPromptBuilder.WriteString("\n\n")
+		}
+		fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", locationStr)
+	}
+
+	if systemPromptBuilder.Len() > 0 {
+		aiMessages = append([]models.AIMessage{
+			{
+				Role:    "system",
+				Content: systemPromptBuilder.String(),
+			},
+		}, aiMessages...)
+	}
+
+	tCb := func(token string) {
+		if !startSent {
+			startSent = true
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "start",
+			})
+		}
+		textSent = true
+		accumulatedAnswer += token
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "token",
+			Content: token,
+		})
+	}
+
+	rCb := func(reasoningChunk string) {
+		if !startSent {
+			startSent = true
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "start",
+			})
+		}
+		accumulatedReasoning += reasoningChunk
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "reasoning",
+			Content: reasoningChunk,
+		})
+	}
+
+	stepCb := func(step agent.AgentStep) {
+		if !agentStartSent {
+			agentStartSent = true
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "agent_start",
+			})
+		}
+
+		if step.ToolName != "" {
+			inputJSON, _ := json.Marshal(step.ToolInput)
+			stepData := models.AgentStepData{
+				Index:      step.Index,
+				ToolName:   step.ToolName,
+				ToolInput:  string(inputJSON),
+				ToolOutput: step.ToolOutput,
+				Err:        step.Err,
+				PlanIndex:  step.PlanIndex,
+			}
+			allSteps = append(allSteps, stepData)
+
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "agent_step",
+				Data: stepData,
+			})
+
+			if textSent {
+				accumulatedAnswer = ""
+				textSent = false
+			}
+		}
+	}
+
+	searchCb := func(query string) (string, error) {
+		results, augmentedQuery, err := h.aiService.PerformSearch(ctx, aiMessages, func(searchData models.SearchData) error {
+			lastSearchData = &searchData
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type: "search",
+				Data: searchData,
+			})
+			return nil
+		})
+		if err != nil {
+			return "", err
+		}
+
+		// Format search results into <search> tag for the stream
+		var searchTag strings.Builder
+		searchTag.WriteString("\n<search>\n")
+		searchData := map[string]any{
+			"query":   augmentedQuery,
+			"results": results,
+		}
+		searchJSON, _ := json.Marshal(searchData)
+		searchTag.Write(searchJSON)
+		searchTag.WriteString("\n</search>\n")
+
+		// Send search tag as token to client
+		tCb(searchTag.String())
+
+		// Format search results into the searchContext format
+		var searchContextBuilder strings.Builder
+		searchContextBuilder.WriteString("以下是联网搜索到的相关信息：\n")
+		if len(results) > 0 {
+			for i, r := range results {
+				fmt.Fprintf(&searchContextBuilder, "[%d] 标题: %s\n    链接: %s\n    内容: %s\n\n", i+1, r.Title, r.URL, r.Snippet)
+			}
+		} else {
+			searchContextBuilder.WriteString("未找到相关搜索结果。\n")
+		}
+		return searchContextBuilder.String(), nil
+	}
+
+	agentResult, err := h.agentRunner.RunDailyRouter(
+		ctx,
+		aiMessages,
+		cfg,
+		stepCb,
+		tCb,
+		rCb,
+		searchCb,
+	)
+
+	if err != nil {
+		log.Printf("[Router] RunDailyRouter failed: %v", err)
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "error",
+			Content: err.Error(),
+		})
+		return
+	}
+
+	if agentResult == nil {
+		agentResult = &agent.AgentResult{}
+	}
+
+	if accumulatedAnswer == "" {
+		accumulatedAnswer = agentResult.Answer
+	}
+	if accumulatedReasoning == "" {
+		accumulatedReasoning = agentResult.Reasoning
+	}
+
+	log.Printf("[Router] Daily routing completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
+
+	assistantMsg.Content = accumulatedAnswer
+	assistantMsg.Reasoning = accumulatedReasoning
+	assistantMsg.AgentSteps = allSteps
+	assistantMsg.Search = lastSearchData
+	h.conversationService.UpdateMessage(ctx, assistantMsg)
+
+	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(accumulatedAnswer))
 
 	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
 	if titleErr == nil && title != "" {

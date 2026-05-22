@@ -282,7 +282,7 @@ func (s *AIService) generateExpertStream(ctx context.Context, messages []models.
 	baseURL := s.expertBaseURL
 	model := s.expertModel
 	s.mu.RUnlock()
-	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, false, callback)
+	return s.generateCustomStream(ctx, messages, apiKey, baseURL, model, true, callback)
 }
 
 func (s *AIService) generateMultimodalStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error) error {

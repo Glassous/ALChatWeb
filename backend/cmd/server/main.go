@@ -111,7 +111,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager, imageService)
 	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
 	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService, emailService)
@@ -129,6 +129,7 @@ func main() {
 	registry.Register("weather", tools.WeatherDescription, tools.WeatherFn)
 	registry.Register("calculator", tools.CalculatorDescription, tools.CalculatorFn)
 	registry.Register("get_time", tools.GetTimeDescription, tools.GetTimeFn)
+	registry.Register("generate_image", tools.GenerateImageDescription, tools.GenerateImageDummyFn)
 
 	agentAPIKey, agentBaseURL, agentModel := aiService.GetAgentConfig()
 	agentRunner := agent.NewRunner(agentAPIKey, agentBaseURL, agentModel, registry, db)

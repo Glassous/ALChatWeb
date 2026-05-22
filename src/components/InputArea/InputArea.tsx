@@ -63,7 +63,7 @@ const rightToolVariants: Variants = {
 };
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'agent' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => void;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -72,8 +72,6 @@ interface InputAreaProps {
   userCredits?: number | null;
   userMemberType?: string;
   onShowUpgrade?: () => void;
-  isAgentMode?: boolean;
-  onAgentModeChange?: (isAgent: boolean) => void;
 }
 
 const RESOLUTIONS = [
@@ -93,13 +91,10 @@ export function InputArea({
   userMessages = [],
   userCredits = null,
   userMemberType = 'free',
-  onShowUpgrade,
-  isAgentMode = false,
-  onAgentModeChange
+  onShowUpgrade
 }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
-  const [isSearchMode, setIsSearchMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
   const [resolution, setResolution] = useState(RESOLUTIONS[0].value);
   const [showResolutions, setShowResolutions] = useState(false);
@@ -206,11 +201,9 @@ export function InputArea({
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
-      let finalMode: 'daily' | 'expert' | 'search' = mode;
+      let finalMode: 'daily' | 'expert' = mode;
       if (isImageMode) {
         finalMode = 'daily';
-      } else if (isSearchMode) {
-        finalMode = 'search';
       }
 
       // Format attachments into message
@@ -662,7 +655,7 @@ export function InputArea({
           <div className="input-bottom-row">
             <motion.div className="tools-left" layout>
               <AnimatePresence initial={false}>
-                {!isImageMode && !isSearchMode && !isAgentMode && attachments.length === 0 && (
+                {!isImageMode && attachments.length === 0 && (
                   <motion.div
                     key="mode-toggle"
                     layout
@@ -681,7 +674,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isSearchMode && !isAgentMode && attachments.length === 0 && (
+                {attachments.length === 0 && (
                   <motion.div
                     key="image-mode"
                     layout
@@ -695,53 +688,12 @@ export function InputArea({
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
                       onClick={() => {
                         setIsImageMode(!isImageMode);
-                        if (!isImageMode) setIsSearchMode(false);
                       }}
                       title="图片生成"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
-                    </button>
-                  </motion.div>
-                )}
-                {!isImageMode && !isAgentMode && attachments.length === 0 && (
-                  <motion.div
-                    key="search-mode"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
-                    <button 
-                      className={`tool-btn search-toggle-btn ${isSearchMode ? 'active' : ''}`}
-                      onClick={() => setIsSearchMode(!isSearchMode)}
-                      title="联网搜索"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                        <path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"/>
-                      </svg>
-                    </button>
-                  </motion.div>
-                )}
-                {!isImageMode && !isSearchMode && attachments.length === 0 && (
-                  <motion.div
-                    key="agent-mode"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
-                    <button 
-                      className={`tool-btn agent-toggle-btn ${isAgentMode ? 'active' : ''}`}
-                      onClick={() => onAgentModeChange?.(!isAgentMode)}
-                      title={isAgentMode ? '关闭 Agent 模式' : '开启 Agent 模式'}
-                    >
-                      Agent
                     </button>
                   </motion.div>
                 )}
@@ -862,7 +814,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isImageMode && !isSearchMode && !isAgentMode && (
+                {!isImageMode && (
                   <motion.div
                     key="attachment"
                     layout

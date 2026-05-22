@@ -121,6 +121,21 @@ var toolParameters = map[string]any{
 		},
 		"required": []string{"query"},
 	},
+	"generate_image": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"prompt": map[string]any{
+				"type":        "string",
+				"description": "Detailed text description of the image to generate.",
+			},
+			"resolution": map[string]any{
+				"type":        "string",
+				"description": "Image resolution enum: '2048x2048' (1:1 square, default), '2304x1728' (4:3 horizontal landscape), '1728x2304' (3:4 vertical portrait), '2560x1440' (16:9 widescreen wallpaper/landscape/横屏), '1440x2560' (9:16 mobile phone wallpaper/vertical portrait/竖屏). Choose the closest ratio specified in the user's prompt description.",
+				"enum":        []string{"2048x2048", "2304x1728", "1728x2304", "2560x1440", "1440x2560"},
+			},
+		},
+		"required": []string{"prompt"},
+	},
 }
 
 func (r *Runner) Run(ctx context.Context, messages []models.AIMessage, callback StepCallback) (*AgentResult, error) {
@@ -178,10 +193,19 @@ func (r *Runner) runLoop(
 	tokenCb func(string),
 	reasoningCb func(string),
 ) (*AgentResult, error) {
-	maxIterations := 10
-	iteration := 0
-	planIndex := 0
+	return r.runLoopWith(ctx, r.apiKey, r.baseURL, r.model, messages, enabledTools, callback, plan, tokenCb, reasoningCb)
+}
 
+func (r *Runner) runLoopWith(
+	ctx context.Context,
+	apiKey, baseURL, model string,
+	messages []models.AIMessage,
+	enabledTools []tools.ToolMeta,
+	callback StepCallback,
+	plan *PlanResponse,
+	tokenCb func(string),
+	reasoningCb func(string),
+) (*AgentResult, error) {
 	var oaiMessages []openAIMessage
 	for _, m := range messages {
 		oaiMessages = append(oaiMessages, openAIMessage{
@@ -189,6 +213,22 @@ func (r *Runner) runLoop(
 			Content: m.Content,
 		})
 	}
+	return r.runLoopInternal(ctx, apiKey, baseURL, model, oaiMessages, enabledTools, callback, plan, tokenCb, reasoningCb)
+}
+
+func (r *Runner) runLoopInternal(
+	ctx context.Context,
+	apiKey, baseURL, model string,
+	oaiMessages []openAIMessage,
+	enabledTools []tools.ToolMeta,
+	callback StepCallback,
+	plan *PlanResponse,
+	tokenCb func(string),
+	reasoningCb func(string),
+) (*AgentResult, error) {
+	maxIterations := 10
+	iteration := 0
+	planIndex := 0
 
 	var allReasoning strings.Builder
 
@@ -210,7 +250,7 @@ func (r *Runner) runLoop(
 			}
 		}
 
-		toolCalls, finalContent, err := r.callChatCompletionsStream(ctx, oaiMessages, enabledTools, tCb, rCb)
+		toolCalls, finalContent, err := r.callChatCompletionsStreamWith(ctx, apiKey, baseURL, model, oaiMessages, enabledTools, tCb, rCb)
 		if err != nil {
 			return nil, fmt.Errorf("generation error: %w", err)
 		}
@@ -320,6 +360,17 @@ func (r *Runner) callChatCompletionsStream(
 	tokenCb func(string),
 	reasoningCb func(string),
 ) ([]openAIToolCall, string, error) {
+	return r.callChatCompletionsStreamWith(ctx, r.apiKey, r.baseURL, r.model, oaiMessages, enabledTools, tokenCb, reasoningCb)
+}
+
+func (r *Runner) callChatCompletionsStreamWith(
+	ctx context.Context,
+	apiKey, baseURL, model string,
+	oaiMessages []openAIMessage,
+	enabledTools []tools.ToolMeta,
+	tokenCb func(string),
+	reasoningCb func(string),
+) ([]openAIToolCall, string, error) {
 	var toolsParam []any
 	for _, t := range enabledTools {
 		paramSchema, exists := toolParameters[t.Name]
@@ -339,7 +390,7 @@ func (r *Runner) callChatCompletionsStream(
 	}
 
 	requestBodyMap := map[string]any{
-		"model":    r.model,
+		"model":    model,
 		"messages": oaiMessages,
 		"stream":   true,
 		"thinking": map[string]any{
@@ -348,6 +399,7 @@ func (r *Runner) callChatCompletionsStream(
 	}
 	if len(toolsParam) > 0 {
 		requestBodyMap["tools"] = toolsParam
+		requestBodyMap["tool_choice"] = "auto"
 	}
 
 	requestBodyBytes, err := json.Marshal(requestBodyMap)
@@ -355,13 +407,13 @@ func (r *Runner) callChatCompletionsStream(
 		return nil, "", err
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", r.baseURL)
+	url := fmt.Sprintf("%s/chat/completions", baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
 	if err != nil {
 		return nil, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.apiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

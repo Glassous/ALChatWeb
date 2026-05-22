@@ -67,7 +67,6 @@ function ChatApp({
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
 
-  const [isAgentMode, setIsAgentMode] = useState(false);
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
   // Global blur logic for Edit Dialog
@@ -249,7 +248,7 @@ function ChatApp({
     if (isLoading) return;
 
     let conversationId = currentConversationId;
-    const currentMode = isAgentMode ? 'agent' : (options?.mode || 'daily');
+    const currentMode = options?.mode || 'daily';
     const effectiveParentId = options?.hasOwnProperty('overrideParentId') 
       ? options.overrideParentId 
       : currentNodeId;
@@ -899,8 +898,6 @@ function ChatApp({
             userCredits={userCredits}
             userMemberType={userMemberType}
             onShowUpgrade={() => navigate('/settings')}
-            isAgentMode={isAgentMode}
-            onAgentModeChange={setIsAgentMode}
           />
         </div>
       </div>
