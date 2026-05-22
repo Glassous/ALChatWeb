@@ -202,6 +202,9 @@ function MessageItem({
     if (contentForRender.includes('<search>')) {
       contentForRender = contentForRender.substring(contentForRender.indexOf('<search>'));
     }
+    if (contentForRender.includes('<weather>')) {
+      contentForRender = contentForRender.substring(contentForRender.indexOf('<weather>'));
+    }
 
     const processedContent = contentForRender
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')

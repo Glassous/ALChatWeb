@@ -932,5 +932,8 @@ func cleanTransitionalText(content string) string {
 	if idx := strings.Index(content, "<search>"); idx != -1 {
 		return content[idx:]
 	}
+	if idx := strings.Index(content, "<weather>"); idx != -1 {
+		return content[idx:]
+	}
 	return content
 }
