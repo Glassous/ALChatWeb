@@ -120,6 +120,16 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 
 	// Start background generation
 	go func() {
+		// Publish image_gen_start event with resolution
+		resolution := req.Resolution
+		if resolution == "" {
+			resolution = "2048x2048"
+		}
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+			Type:    "image_gen_start",
+			Content: resolution,
+		})
+
 		url, err := h.imageService.GenerateAndUploadImage(bgCtx, req.Prompt, req.Resolution, refImageURL)
 		if err != nil {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{

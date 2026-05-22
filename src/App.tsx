@@ -592,6 +592,16 @@ function ChatApp({
               return { ...msg, agent_steps: steps };
             })
           );
+        },
+        (resolution) => {
+          // image_gen_start: set resolution metadata on the assistant message for loading placeholder
+          setMessages((prev) =>
+            (Array.isArray(prev) ? prev : []).map((msg): Message =>
+              msg.id === assistantMsgId
+                ? { ...msg, status: 'loading', metadata: { ...msg.metadata, resolution } }
+                : msg
+            )
+          );
         }
       );
     } catch (error) {

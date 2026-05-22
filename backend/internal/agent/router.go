@@ -21,7 +21,8 @@ type DailyRouterConfig struct {
 	AgentBaseURL string
 	AgentModel   string
 	// Image Generation Service
-	ImageSvc ImageGenerator
+	ImageSvc        ImageGenerator
+	ImageGenStartCb func(resolution string)
 }
 
 func (r *Runner) RunDailyRouter(
@@ -109,6 +110,10 @@ func (r *Runner) RunDailyRouter(
 
 		if cfg.ImageSvc == nil {
 			return nil, fmt.Errorf("image generation service not configured")
+		}
+
+		if cfg.ImageGenStartCb != nil {
+			cfg.ImageGenStartCb(resolution)
 		}
 
 		ossURL, err := cfg.ImageSvc.GenerateAndUploadImage(ctx, prompt, resolution, "")

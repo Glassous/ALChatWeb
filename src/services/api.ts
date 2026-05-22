@@ -49,7 +49,7 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'agent_start' | 'agent_plan' | 'plan_item' | 'agent_step' | 'agent_done';
+  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'agent_start' | 'agent_plan' | 'plan_item' | 'agent_step' | 'agent_done' | 'image_gen_start';
   content?: string;
   data?: any;
 }
@@ -439,7 +439,8 @@ class APIClient {
     onTitle: (title: string) => void,
     onError: (error: string) => void,
     refImageUrl?: string,
-    parentMessageId?: string | null
+    parentMessageId?: string | null,
+    onImageGenStart?: (resolution: string) => void
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -498,7 +499,9 @@ class APIClient {
               const dataStr = line.trim().substring(6);
               const parsed = JSON.parse(dataStr) as ChatStreamResponse;
 
-              if (parsed.type === 'token') {
+              if (parsed.type === 'image_gen_start' && parsed.content) {
+                onImageGenStart?.(parsed.content);
+              } else if (parsed.type === 'token') {
                 onToken(parsed.content || '');
               } else if (parsed.type === 'done') {
                 onDone(parsed.data);
@@ -559,6 +562,7 @@ class APIClient {
     onAgentPlan?: (items: any[]) => void,
     onPlanItem?: (index: number) => void,
     onAgentStep?: (step: any) => void,
+    onImageGenStart?: (resolution: string) => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -621,7 +625,9 @@ class APIClient {
             try {
               const parsed: ChatStreamResponse = JSON.parse(data);
               
-              if (parsed.type === 'token' && parsed.content) {
+              if (parsed.type === 'image_gen_start' && parsed.content) {
+                onImageGenStart?.(parsed.content);
+              } else if (parsed.type === 'token' && parsed.content) {
                 onToken(parsed.content);
               } else if (parsed.type === 'reasoning' && parsed.content) {
                 onReasoning(parsed.content);

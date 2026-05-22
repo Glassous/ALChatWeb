@@ -459,6 +459,12 @@ func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatR
 		AgentBaseURL: agentBaseURL,
 		AgentModel:   agentModel,
 		ImageSvc:     h.imageService,
+		ImageGenStartCb: func(resolution string) {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
+				Type:    "image_gen_start",
+				Content: resolution,
+			})
+		},
 	}
 
 	var allSteps []models.AgentStepData

@@ -178,30 +178,21 @@ function MessageItem({
   };
 
   const renderContent = () => {
-    if (msg.status === 'loading' && msg.metadata?.resolution) {
-      const [width, height] = msg.metadata.resolution.split('x').map(Number);
-      const aspectRatio = width / height;
-      
-      return (
-        <div 
-          className="image-loading-placeholder" 
-          style={{ aspectRatio: `${aspectRatio}` }}
-        >
-          <div className="loading-spinner-container">
-            <div className="loading-spinner"></div>
-            <span>正在生成图片...</span>
-          </div>
-        </div>
-      );
-    }
-
-    if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search) {
+    if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
       return (
         <div className="thinking-container">
           <div className="thinking-spinner"></div>
           <span className="thinking-text">正在思考...</span>
         </div>
       );
+    }
+
+    // Determine if we should show image loading placeholder
+    const showImageLoader = msg.status === 'loading' && msg.metadata?.resolution && !msg.content.includes('<image');
+    let aspectRatio: number | undefined;
+    if (showImageLoader && msg.metadata?.resolution) {
+      const [w, h] = msg.metadata.resolution.split('x').map(Number);
+      aspectRatio = w / h;
     }
 
     const processedContent = msg.content
@@ -347,12 +338,25 @@ function MessageItem({
             </div>
           </div>
         )}
-        <ReactMarkdown 
-          remarkPlugins={[remarkGfm]}
-          components={markdownComponents}
-        >
-          {processedContent}
-        </ReactMarkdown>
+        {showImageLoader ? (
+          <div 
+            className="image-loading-placeholder" 
+            style={{ aspectRatio: `${aspectRatio}` }}
+          >
+            <div className="image-loading-shimmer"></div>
+            <div className="loading-spinner-container">
+              <div className="loading-spinner"></div>
+              <span>正在绘制您的灵感...</span>
+            </div>
+          </div>
+        ) : (
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {processedContent}
+          </ReactMarkdown>
+        )}
       </>
     );
   };
