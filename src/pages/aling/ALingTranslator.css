@@ -489,7 +489,7 @@
   transform: translateX(0);
 }
 
-.sidebar-header {
+.aling-translator-sidebar .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -499,13 +499,13 @@
   flex-shrink: 0;
 }
 
-.sidebar-header h3 {
+.aling-translator-sidebar .sidebar-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
 }
 
-.sidebar-close-btn {
+.aling-translator-sidebar .sidebar-close-btn {
   background: none;
   border: none;
   color: var(--text-muted);
@@ -518,12 +518,12 @@
   transition: color 0.2s, background-color 0.2s;
 }
 
-.sidebar-close-btn:hover {
+.aling-translator-sidebar .sidebar-close-btn:hover {
   color: var(--text-color);
   background-color: var(--surface-color);
 }
 
-.history-list-container {
+.aling-translator-sidebar .history-list-container {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
@@ -532,14 +532,14 @@
   gap: 12px;
 }
 
-.empty-history {
+.aling-translator-sidebar .empty-history {
   text-align: center;
   color: var(--text-muted);
   font-size: 14px;
   padding: 32px 0;
 }
 
-.history-item {
+.aling-translator-sidebar .history-item {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -552,19 +552,19 @@
   transition: background-color 0.2s, border-color 0.2s;
 }
 
-.history-item:hover {
+.aling-translator-sidebar .history-item:hover {
   background-color: var(--surface-hover);
   border-color: var(--text-muted);
 }
 
-.history-item-meta {
+.aling-translator-sidebar .history-item-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding-right: 24px;
 }
 
-.history-lang-badge {
+.aling-translator-sidebar .history-lang-badge {
   font-size: 11px;
   font-weight: 600;
   background-color: var(--text-color);
@@ -573,12 +573,12 @@
   border-radius: 10px;
 }
 
-.history-time {
+.aling-translator-sidebar .history-time {
   font-size: 11px;
   color: var(--text-muted);
 }
 
-.history-item-preview {
+.aling-translator-sidebar .history-item-preview {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -587,8 +587,8 @@
   padding-right: 16px;
 }
 
-.preview-source,
-.preview-target {
+.aling-translator-sidebar .preview-source,
+.aling-translator-sidebar .preview-target {
   word-break: break-all;
   white-space: pre-wrap;
   overflow: hidden;
@@ -599,15 +599,15 @@
   text-overflow: ellipsis;
 }
 
-.preview-source {
+.aling-translator-sidebar .preview-source {
   color: var(--text-muted);
 }
 
-.preview-target {
+.aling-translator-sidebar .preview-target {
   color: var(--text-color);
 }
 
-.delete-history-btn {
+.aling-translator-sidebar .delete-history-btn {
   position: absolute;
   bottom: 8px;
   right: 8px;
@@ -624,11 +624,11 @@
   transition: opacity 0.2s, color 0.2s, background-color 0.2s;
 }
 
-.history-item:hover .delete-history-btn {
+.aling-translator-sidebar .history-item:hover .delete-history-btn {
   opacity: 1;
 }
 
-.delete-history-btn:hover {
+.aling-translator-sidebar .delete-history-btn:hover {
   color: #ef4444;
   background-color: rgba(239, 68, 68, 0.1);
 }

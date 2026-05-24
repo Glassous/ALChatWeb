@@ -119,7 +119,7 @@ func main() {
 	shareHandler := handlers.NewShareHandler(shareService)
 
 	alingService := services.NewALingService(db, aiService, streamManager, memberService, ossService)
-	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService)
+	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService, db)
 
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())

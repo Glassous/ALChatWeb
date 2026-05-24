@@ -37,12 +37,32 @@
   justify-content: center;
 }
 
+/* Loading animations */
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 64px);
+}
+
+.aling-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--border-color);
+  border-top-color: var(--text-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .aling-tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px;
-  max-width: 900px;
-  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  width: 100%; /* Release max-width constraint for full screen display */
   align-content: start;
 }
 
@@ -55,11 +75,11 @@
   padding: 32px 24px;
   border: 1px solid var(--border-color);
   border-radius: 16px;
-  background-color: var(--surface-color);
+  background-color: var(--bg-color); /* White background in light mode, black in dark mode */
   cursor: pointer;
   transition: background-color 0.2s, transform 0.15s, box-shadow 0.2s;
   text-align: center;
-  color: var(--text-color);
+  color: var(--text-color); /* Black text in light mode, white in dark mode */
 }
 
 .aling-tool-card:hover:not(:disabled) {
@@ -79,14 +99,15 @@
   right: 12px;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #7b68ee, #b388ff);
+  color: var(--button-text);
+  background: var(--button-bg);
   padding: 3px 10px;
   border-radius: 8px;
 }
 
 .aling-tool-icon {
-  color: #b388ff;
+  color: var(--text-color); /* Black icon in light mode, white in dark mode */
+  flex-shrink: 0;
 }
 
 .aling-tool-info {

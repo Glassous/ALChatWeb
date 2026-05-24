@@ -1,14 +1,19 @@
 package handlers
 
 import (
+	"alchat-backend/internal/database"
+	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
+	"alchat-backend/internal/utils"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -16,10 +21,11 @@ type ALingHandler struct {
 	alingService  *services.ALingService
 	streamMgr     *services.StreamManager
 	memberService *services.MemberService
+	db            *database.MongoDB
 }
 
-func NewALingHandler(alingService *services.ALingService, streamMgr *services.StreamManager, memberService *services.MemberService) *ALingHandler {
-	return &ALingHandler{alingService: alingService, streamMgr: streamMgr, memberService: memberService}
+func NewALingHandler(alingService *services.ALingService, streamMgr *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ALingHandler {
+	return &ALingHandler{alingService: alingService, streamMgr: streamMgr, memberService: memberService, db: db}
 }
 
 // GET /api/aling/tools
@@ -28,7 +34,7 @@ func (h *ALingHandler) GetTools(c *gin.Context) {
 		{
 			"id":          "translator",
 			"name":        "AL翻译",
-			"description": "多语言智能翻译与历史记录",
+			"description": "多语言翻译",
 			"icon":        "translate",
 			"route":       "/aling/translator",
 			"enabled":     true,
@@ -171,6 +177,23 @@ func (h *ALingHandler) TranslateText(c *gin.Context) {
 		return
 	}
 
+	// 1. Check user credits and reset if needed
+	var user models.User
+	err = h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
+		log.Printf("Failed to reset credits: %v", err)
+	}
+
+	if user.Credits <= 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
+		return
+	}
+
 	// Set up SSE headers
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -210,11 +233,20 @@ func (h *ALingHandler) TranslateText(c *gin.Context) {
 			return false
 		}
 
-		// Stream the final "done" event containing the record details
+		// Deduct credits based on token count
+		costInput := utils.CountTokens(req.Text)
+		costOutput := utils.CountTokens(translatedText)
+		newCredits, deductErr := h.memberService.DeductCredits(context.Background(), userID, costInput, costOutput)
+		if deductErr != nil {
+			log.Printf("Failed to deduct credits for user %s: %v", userID.Hex(), deductErr)
+		}
+
+		// Stream the final "done" event containing the record details and new credits
 		data, _ := json.Marshal(gin.H{
 			"type":        "done",
 			"history_id":  record.ID.Hex(),
 			"target_text": translatedText,
+			"credits":     newCredits,
 		})
 		fmt.Fprintf(w, "data: %s\n\n", data)
 		w.(http.Flusher).Flush()
