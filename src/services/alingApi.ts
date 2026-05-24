@@ -8,6 +8,15 @@ export interface ALingToolItem {
   badge?: string;
 }
 
+export interface ALingTranslationHistory {
+  id: string;
+  user_id: string;
+  source_text: string;
+  target_text: string;
+  target_lang: string;
+  created_at: string;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 function getHeaders(): HeadersInit {
@@ -37,6 +46,63 @@ const alingApi = {
   async getTools(): Promise<{ tools: ALingToolItem[] }> {
     const r = await fetch(`${API_BASE_URL}/api/aling/tools`, { headers: getHeaders() });
     return handleResponse(r);
+  },
+
+  async getTranslatorLanguages(): Promise<{ languages: string[] }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/languages`, { headers: getHeaders() });
+    return handleResponse(r);
+  },
+
+  async addTranslatorLanguage(language: string): Promise<{ message: string }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/languages`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ language }),
+    });
+    return handleResponse(r);
+  },
+
+  async deleteTranslatorLanguage(language: string): Promise<{ message: string }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/languages`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ language }),
+    });
+    return handleResponse(r);
+  },
+
+  async resetTranslatorLanguages(): Promise<{ languages: string[] }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/languages/reset`, {
+      method: 'POST',
+      headers: getHeaders(),
+    });
+    return handleResponse(r);
+  },
+
+  async getTranslationHistory(): Promise<{ history: ALingTranslationHistory[] }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/history`, { headers: getHeaders() });
+    return handleResponse(r);
+  },
+
+  async deleteTranslationHistory(id: string): Promise<{ message: string }> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/history/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse(r);
+  },
+
+  async translateText(text: string, targetLang: string): Promise<Response> {
+    const r = await fetch(`${API_BASE_URL}/api/aling/translator/translate`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ text, target_lang: targetLang }),
+    });
+    if (!r.ok) {
+      const error = await r.json().catch(() => ({ error: 'Translation failed' }));
+      throw new Error(error.error || 'Translation failed');
+    }
+    return r;
   },
 };
 

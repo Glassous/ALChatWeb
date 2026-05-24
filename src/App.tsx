@@ -17,6 +17,7 @@ import { UserSettings } from './pages/UserSettings';
 import { SharedPage } from './pages/SharedPage/SharedPage';
 import { ShareDialog } from './components/ShareDialog/ShareDialog';
 import { ALingHome } from './pages/aling/ALingHome';
+import { ALingTranslator } from './pages/aling/ALingTranslator';
 import './App.css';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
@@ -974,6 +975,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ALingHome />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/aling/translator" 
+          element={
+            <ProtectedRoute>
+              <ALingTranslator />
             </ProtectedRoute>
           } 
         />

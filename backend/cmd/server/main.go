@@ -215,6 +215,13 @@ func main() {
 			aling := protected.Group("/aling")
 			{
 				aling.GET("/tools", alingHandler.GetTools)
+				aling.GET("/translator/languages", alingHandler.GetTranslatorLanguages)
+				aling.POST("/translator/languages", alingHandler.AddTranslatorLanguage)
+				aling.DELETE("/translator/languages", alingHandler.DeleteTranslatorLanguage)
+				aling.POST("/translator/languages/reset", alingHandler.ResetTranslatorLanguages)
+				aling.POST("/translator/translate", alingHandler.TranslateText)
+				aling.GET("/translator/history", alingHandler.GetTranslationHistory)
+				aling.DELETE("/translator/history/:id", alingHandler.DeleteTranslationHistory)
 			}
 
 			// Admin routes
