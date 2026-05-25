@@ -155,6 +155,162 @@
   animation: fadeIn 0.6s ease-out;
 }
 
+/* Chat Layout Split Body */
+.chat-layout-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+.chat-layout-body .chat-area-wrapper {
+  position: relative;
+  flex-grow: 1;
+  height: 100%;
+}
+
+.workspace-wrapper {
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 16px 0;
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Input Area transitions in split screen */
+.input-area-wrapper {
+  transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Resizer handle styles */
+.workspace-resizer {
+  position: absolute;
+  top: 16px;
+  left: -6px;
+  width: 12px;
+  height: calc(100% - 32px);
+  cursor: col-resize;
+  z-index: 100;
+  transition: background-color 0.2s ease;
+  border-radius: 6px;
+}
+
+.workspace-resizer:hover, body.is-resizing .workspace-resizer {
+  background-color: rgba(0, 122, 255, 0.3);
+}
+
+body.is-resizing * {
+  user-select: none !important;
+}
+
+body.is-resizing iframe {
+  pointer-events: none !important;
+}
+
+/* Bottom Sheet and Backdrop structures */
+.workspace-wrapper-container {
+  display: contents;
+}
+
+.workspace-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .workspace-wrapper-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .workspace-backdrop {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 1;
+  }
+
+  .workspace-wrapper {
+    position: relative;
+    width: 100% !important;
+    height: 85vh !important;
+    max-height: 85vh !important;
+    background-color: var(--surface-color);
+    border-top-left-radius: 36px;
+    border-top-right-radius: 36px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    overflow: hidden;
+    z-index: 2;
+    padding: 0 !important;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  .workspace-panel {
+    border-radius: 0 !important;
+    border: none !important;
+    height: calc(100% - 20px) !important;
+  }
+
+  .workspace-mobile-handle-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 20px;
+    width: 100%;
+    cursor: pointer;
+    background-color: var(--surface-color);
+    backdrop-filter: blur(12px);
+    z-index: 10;
+    border-top-left-radius: 36px;
+    border-top-right-radius: 36px;
+  }
+
+  .workspace-mobile-handle {
+    width: 40px;
+    height: 5px;
+    background-color: var(--text-muted);
+    opacity: 0.5;
+    border-radius: 3px;
+    transition: opacity 0.2s;
+  }
+
+  .workspace-mobile-handle-container:hover .workspace-mobile-handle {
+    opacity: 0.8;
+  }
+
+  .chat-layout-body {
+    flex-direction: column;
+  }
+  
+  .chat-layout-body .chat-area-wrapper {
+    height: 100%;
+  }
+}
+
+
+
 .empty-greeting {
   display: flex;
   align-items: center;

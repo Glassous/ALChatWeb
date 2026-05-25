@@ -72,6 +72,7 @@ interface InputAreaProps {
   userCredits?: number | null;
   userMemberType?: string;
   onShowUpgrade?: () => void;
+  style?: React.CSSProperties;
 }
 
 const RESOLUTIONS = [
@@ -91,7 +92,8 @@ export function InputArea({
   userMessages = [],
   userCredits = null,
   userMemberType = 'free',
-  onShowUpgrade
+  onShowUpgrade,
+  style
 }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
@@ -541,7 +543,7 @@ export function InputArea({
   const showWarning = userCredits !== null && userCredits > 0 && userCredits <= warningThreshold;
 
   return (
-    <div className="input-area-wrapper">
+    <div className="input-area-wrapper" style={style}>
       {showWarning && (
         <div className="credit-warning-container">
           <div className="credit-warning-text">

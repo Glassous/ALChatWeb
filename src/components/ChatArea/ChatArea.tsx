@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
@@ -41,6 +41,8 @@ interface ChatAreaProps {
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
   onSwitchBranch?: (messageId: string) => void;
+  onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
+  activeWorkspaceMessageId?: string | null;
 }
 
 export interface ChatAreaHandle {
@@ -78,7 +80,9 @@ function MessageItem({
   onShowSearch,
   onResend,
   onEdit,
-  onSwitchBranch
+  onSwitchBranch,
+  onOpenWorkspace,
+  activeWorkspaceMessageId
 }: { 
   msg: Message; 
   allMessages: Message[];
@@ -87,6 +91,8 @@ function MessageItem({
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
   onSwitchBranch?: (messageId: string) => void;
+  onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
+  activeWorkspaceMessageId?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -284,6 +290,50 @@ function MessageItem({
           );
         }
         return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+      },
+      pre: ({ children, ...props }: any) => {
+        const isHtmlCodeBlock = React.Children.toArray(children).some((child: any) => {
+          return child && (child as any).props && (child as any).props.className === 'language-html';
+        });
+        if (isHtmlCodeBlock) {
+          return <>{children}</>;
+        }
+        return <pre {...props}>{children}</pre>;
+      },
+      code: ({ node, inline, className, children, ...props }: any) => {
+        const match = /language-(\w+)/.exec(className || '');
+        const lang = match ? match[1] : '';
+        const codeContent = String(children).replace(/\n$/, '');
+        
+        if (!inline && lang === 'html') {
+          const isActive = activeWorkspaceMessageId === msg.id;
+          
+          return (
+            <div className={`html-preview-card ${isActive ? 'active' : ''}`}>
+              <div className="html-preview-card-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
+                  <path d="M320-240 120-440l200-200 56 56-144 144 144 144-56 56Zm320 0-56-56 144-144-144-144 56-56 200 200-200 200Z"/>
+                </svg>
+              </div>
+              <div className="html-preview-card-actions">
+                <button 
+                  className="html-preview-card-btn code-btn" 
+                  onClick={() => onOpenWorkspace?.(msg.id, codeContent, 'code')}
+                >
+                  代码
+                </button>
+                <button 
+                  className="html-preview-card-btn preview-btn" 
+                  onClick={() => onOpenWorkspace?.(msg.id, codeContent, 'preview')}
+                >
+                  预览
+                </button>
+              </div>
+            </div>
+          );
+        }
+        
+        return <code className={className} {...props}>{children}</code>;
       }
     };
 
@@ -541,7 +591,9 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   onShowSearch, 
   onResend, 
   onEdit,
-  onSwitchBranch
+  onSwitchBranch,
+  onOpenWorkspace,
+  activeWorkspaceMessageId
 }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
@@ -711,6 +763,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
               onResend={onResend}
               onEdit={onEdit}
               onSwitchBranch={onSwitchBranch}
+              onOpenWorkspace={onOpenWorkspace}
+              activeWorkspaceMessageId={activeWorkspaceMessageId}
             />
           </div>
         ))}

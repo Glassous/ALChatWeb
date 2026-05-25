@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
+import { Workspace } from './components/Workspace/Workspace';
 import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
@@ -21,6 +23,33 @@ import { ALingTranslator } from './pages/aling/ALingTranslator';
 import './App.css';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
+
+// Extract HTML code block content from markdown (supports active streaming)
+const extractHtmlFromMarkdown = (markdown: string): string | null => {
+  if (!markdown) return null;
+  const startTag = '```html';
+  const startIndex = markdown.indexOf(startTag);
+  if (startIndex === -1) return null;
+
+  const codeStartIndex = startIndex + startTag.length;
+  let actualStartIndex = codeStartIndex;
+  while (actualStartIndex < markdown.length && (markdown[actualStartIndex] === '\n' || markdown[actualStartIndex] === '\r' || markdown[actualStartIndex] === ' ')) {
+    actualStartIndex++;
+  }
+
+  const closingTag = '```';
+  const closingIndex = markdown.indexOf(closingTag, actualStartIndex);
+
+  if (closingIndex === -1) {
+    let content = markdown.substring(actualStartIndex);
+    if (content.endsWith('`')) {
+      content = content.replace(/`+$/, '');
+    }
+    return content;
+  } else {
+    return markdown.substring(actualStartIndex, closingIndex);
+  }
+};
 
 // Protected Route component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -67,6 +96,74 @@ function ChatApp({
   const [userMemberType, setUserMemberType] = useState('free');
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
+
+  // Workspace states
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceHtml, setWorkspaceHtml] = useState('');
+  const [workspaceMode, setWorkspaceMode] = useState<'code' | 'preview'>('preview');
+  const [workspaceTitle, setWorkspaceTitle] = useState('网页 HTML 预览');
+  const [workspaceMessageId, setWorkspaceMessageId] = useState<string | null>(null);
+
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [workspaceWidth, setWorkspaceWidth] = useState(() => {
+    return Math.min(1000, Math.floor(window.innerWidth * 0.65));
+  });
+  const isResizingRef = useRef(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    isResizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.classList.add('is-resizing');
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    isResizingRef.current = false;
+    document.body.style.cursor = '';
+    document.body.classList.remove('is-resizing');
+  }, []);
+
+  const resize = useCallback((mouseMoveEvent: MouseEvent) => {
+    if (!isResizingRef.current) return;
+    const newWidth = window.innerWidth - mouseMoveEvent.clientX;
+    const minWidth = 320;
+    const maxWidth = window.innerWidth * 0.85;
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      setWorkspaceWidth(newWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
+
+
+  const handleOpenWorkspace = (messageId: string, html: string, mode: 'code' | 'preview') => {
+    setWorkspaceMessageId(messageId);
+    setWorkspaceHtml(html);
+    setWorkspaceMode(mode);
+    setWorkspaceOpen(true);
+    
+    const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
+    if (titleMatch && titleMatch[1]) {
+      setWorkspaceTitle(titleMatch[1].trim());
+    } else {
+      setWorkspaceTitle('网页 HTML 预览');
+    }
+  };
 
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
@@ -458,13 +555,37 @@ function ChatApp({
         currentMode,
         (token) => {
           // Update assistant message with new token
-          setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg) =>
-              msg.id === assistantMsgId
-                ? { ...msg, content: msg.content + token, status: 'loading' }
-                : msg
-            )
-          );
+          setMessages((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            return list.map((msg) => {
+              if (msg.id === assistantMsgId) {
+                const newContent = msg.content + token;
+                
+                // Extract HTML code block during streaming and open workspace
+                const htmlCode = extractHtmlFromMarkdown(newContent);
+                if (htmlCode !== null) {
+                  setWorkspaceHtml(htmlCode);
+                  setWorkspaceMessageId(assistantMsgId);
+                  
+                  // Only auto-open on desktop!
+                  if (window.innerWidth > 768) {
+                    setWorkspaceOpen(true);
+                  }
+                  setWorkspaceMode('code'); // Force code view during stream
+                  
+                  const titleMatch = htmlCode.match(/<title>([\s\S]*?)<\/title>/i);
+                  if (titleMatch && titleMatch[1]) {
+                    setWorkspaceTitle(titleMatch[1].trim());
+                  } else {
+                    setWorkspaceTitle('网页 HTML 预览');
+                  }
+                }
+                
+                return { ...msg, content: newContent, status: 'loading' };
+              }
+              return msg;
+            });
+          });
         },
         (reasoning) => {
           // Update assistant message with reasoning token
@@ -511,6 +632,16 @@ function ChatApp({
 
           // Swap temporary IDs with real IDs immediately to stabilize the UI
           if (realAssistantId && realUserId) {
+            // Sync active workspace message ID
+            setWorkspaceMessageId((prevId) => {
+              if (prevId === assistantMsgId) {
+                return realAssistantId;
+              }
+              return prevId;
+            });
+            // Switch workspace mode to preview on completion
+            setWorkspaceMode('preview');
+
             setMessages((prev) => {
               const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                 if (msg.id === assistantMsgId) {
@@ -626,6 +757,9 @@ function ChatApp({
     setIsTempChat(false);
     setIsMobileDrawerOpen(false); // Close drawer on mobile
     setIsInitialLoad(false); // Disable animation for subsequent new chats
+    setWorkspaceOpen(false);
+    setWorkspaceHtml('');
+    setWorkspaceMessageId(null);
   };
 
   const handleNewTempChat = () => {
@@ -636,6 +770,9 @@ function ChatApp({
     setIsTempChat(true);
     setIsMobileDrawerOpen(false);
     setIsInitialLoad(false);
+    setWorkspaceOpen(false);
+    setWorkspaceHtml('');
+    setWorkspaceMessageId(null);
   };
 
   const handleSelectConversation = (conversationId: string) => {
@@ -643,6 +780,9 @@ function ChatApp({
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
     setIsInitialLoad(false);
+    setWorkspaceOpen(false);
+    setWorkspaceHtml('');
+    setWorkspaceMessageId(null);
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -858,7 +998,7 @@ function ChatApp({
           hasConversation={!!currentConversationId}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
-        <div className="chat-container">
+        <div className={`chat-container ${workspaceOpen ? 'workspace-active' : ''}`}>
           {!hasMessages ? (
             <div key="empty-state" className={`empty-state-container ${isExiting ? 'fade-out' : ''}`}>
               <div className={`empty-greeting ${isInitialLoad ? 'initial-animate' : ''}`}>
@@ -874,17 +1014,62 @@ function ChatApp({
               )}
             </div>
           ) : (
-            <div key="chat-content" className="chat-area-wrapper">
-              <ChatArea 
-                messages={activePath}
-                allMessages={messages}
-                ref={chatAreaRef} 
-                onScrollStateChange={setIsAtBottom}
-                onShowSearch={handleShowSearch}
-                onResend={handleResend}
-                onEdit={handleEdit}
-                onSwitchBranch={handleSwitchBranch}
-              />
+            <div className="chat-layout-body">
+              <div key="chat-content" className="chat-area-wrapper">
+                <ChatArea 
+                  messages={activePath}
+                  allMessages={messages}
+                  ref={chatAreaRef} 
+                  onScrollStateChange={setIsAtBottom}
+                  onShowSearch={handleShowSearch}
+                  onResend={handleResend}
+                  onEdit={handleEdit}
+                  onSwitchBranch={handleSwitchBranch}
+                  onOpenWorkspace={handleOpenWorkspace}
+                  activeWorkspaceMessageId={workspaceMessageId}
+                />
+              </div>
+              <AnimatePresence>
+                {workspaceOpen && (
+                  <div className="workspace-wrapper-container">
+                    <motion.div 
+                      className="workspace-backdrop" 
+                      onClick={() => setWorkspaceOpen(false)}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                    <motion.div 
+                      className="workspace-wrapper"
+                      style={isMobile ? undefined : { width: `${workspaceWidth}px` }}
+                      initial={isMobile ? { y: '100%' } : { width: 0, opacity: 0.8 }}
+                      animate={isMobile ? { y: 0 } : { width: workspaceWidth, opacity: 1 }}
+                      exit={isMobile ? { y: '100%' } : { width: 0, opacity: 0.8 }}
+                      transition={isMobile 
+                        ? { type: 'spring', damping: 30, stiffness: 350 } 
+                        : { type: 'tween', duration: 0.3, ease: [0.16, 1, 0.3, 1] }
+                      }
+                    >
+                      {!isMobile && <div className="workspace-resizer" onMouseDown={startResizing} />}
+                      {isMobile && (
+                        <div className="workspace-mobile-handle-container" onClick={() => setWorkspaceOpen(false)}>
+                          <div className="workspace-mobile-handle" />
+                        </div>
+                      )}
+                      <div style={isMobile ? { height: '100%' } : { width: workspaceWidth - 16, height: '100%', flexShrink: 0 }}>
+                        <Workspace 
+                          html={workspaceHtml}
+                          mode={workspaceMode}
+                          onChangeMode={setWorkspaceMode}
+                          onClose={() => setWorkspaceOpen(false)}
+                          title={workspaceTitle}
+                        />
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
             </div>
           )}
           {isTreeViewOpen && (
@@ -909,6 +1094,7 @@ function ChatApp({
             userCredits={userCredits}
             userMemberType={userMemberType}
             onShowUpgrade={() => navigate('/settings')}
+            style={(workspaceOpen && !isMobile) ? { right: `${workspaceWidth}px` } : undefined}
           />
         </div>
       </div>
