@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"alchat-backend/internal/agent/tools"
 	"alchat-backend/internal/models"
 	"context"
 	"encoding/json"
@@ -36,6 +37,12 @@ func (r *Runner) RunDailyRouter(
 	searchCb func(query string) (string, error),
 ) (*AgentResult, error) {
 	enabledTools := r.registry.GetEnabledTools()
+	var dailyTools []tools.ToolMeta
+	for _, tool := range enabledTools {
+		if tool.Name != "generate_image" {
+			dailyTools = append(dailyTools, tool)
+		}
+	}
 
 	var oaiMessages []openAIMessage
 	for _, m := range messages {
@@ -65,7 +72,7 @@ func (r *Runner) RunDailyRouter(
 		cfg.DailyBaseURL,
 		cfg.DailyModel,
 		oaiMessages,
-		enabledTools,
+		dailyTools,
 		tCb,
 		rCb,
 	)
@@ -411,7 +418,7 @@ func (r *Runner) RunDailyRouter(
 		cfg.AgentBaseURL,
 		cfg.AgentModel,
 		oaiMessages,
-		enabledTools,
+		dailyTools,
 		stepCb,
 		nil, // No plan for auto-routed steps
 		tokenCb,
