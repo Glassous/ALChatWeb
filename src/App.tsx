@@ -75,6 +75,10 @@ function ChatApp({
   const navigate = useNavigate();
   const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef<Message[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -283,8 +287,10 @@ function ChatApp({
     }
   };
 
-    const loadConversation = async (conversationId: string, targetNodeId?: string) => {
-    setIsMessageLoading(true);
+  const loadConversation = async (conversationId: string, targetNodeId?: string, silent = false) => {
+    if (!silent) {
+      setIsMessageLoading(true);
+    }
     try {
       let conv;
       if (isTempID(conversationId)) {
@@ -292,39 +298,72 @@ function ChatApp({
       } else {
         conv = await apiClient.getConversation(conversationId);
       }
-      const messages = Array.isArray(conv.messages) ? conv.messages : [];
-      setMessages(messages);
+      const newMessages = Array.isArray(conv.messages) ? conv.messages : [];
+
+      // Determine if there is a real change in messages list before setting state
+      // to avoid unnecessary re-renders (flicker-free visual update)
+      let needsUpdate = false;
+      const currentMessages = messagesRef.current;
+      if (newMessages.length !== currentMessages.length) {
+        needsUpdate = true;
+      } else {
+        for (let i = 0; i < newMessages.length; i++) {
+          const a = newMessages[i];
+          const b = currentMessages[i];
+          if (
+            a.id !== b.id ||
+            a.role !== b.role ||
+            a.content !== b.content ||
+            a.parent_id !== b.parent_id ||
+            JSON.stringify(a.agent_steps) !== JSON.stringify(b.agent_steps) ||
+            JSON.stringify(a.agent_plan) !== JSON.stringify(b.agent_plan)
+          ) {
+            needsUpdate = true;
+            break;
+          }
+        }
+      }
+
+      if (needsUpdate) {
+        setMessages(newMessages);
+      }
       setCurrentConversationId(conversationId);
-      setHasMessages(messages.length > 0);
+      setHasMessages(newMessages.length > 0);
       
       // Determine the next node ID to display.
       let nextNodeId: string | null = null;
-      if (targetNodeId && messages.some(m => m.id === targetNodeId)) {
+      if (targetNodeId && newMessages.some(m => m.id === targetNodeId)) {
         // 1. If targetNodeId is provided and exists in the new messages, use it.
         nextNodeId = targetNodeId;
-      } else if (messages.length > 0) {
+      } else if (newMessages.length > 0) {
         // 2. If not found (e.g. after sending a message where IDs change), 
         // find the latest leaf node in the conversation to ensure we stay on the newest branch.
-        const leaves = messages.filter(m => !messages.some(child => child.parent_id === m.id));
+        const leaves = newMessages.filter(m => !newMessages.some(child => child.parent_id === m.id));
         if (leaves.length > 0) {
           const sortedLeaves = [...leaves].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
           nextNodeId = sortedLeaves[0].id;
         } else {
-          nextNodeId = messages[messages.length - 1].id;
+          nextNodeId = newMessages[newMessages.length - 1].id;
         }
       }
       
       setCurrentNodeId(nextNodeId);
       
-      setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
+      if (!silent) {
+        setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
+      }
     } catch (error) {
       console.error('Failed to load conversation:', error);
-      setMessages([]);
-      setHasMessages(false);
+      if (!silent) {
+        setMessages([]);
+        setHasMessages(false);
+      }
     } finally {
-      setIsMessageLoading(false);
+      if (!silent) {
+        setIsMessageLoading(false);
+      }
     }
   };
 
@@ -484,7 +523,7 @@ function ChatApp({
 
               setIsLoading(false);
               if (conversationId) {
-                loadConversation(conversationId, realAssistantId || undefined);
+                loadConversation(conversationId, realAssistantId || undefined, true);
               }
             },
             (newTitle) => {
@@ -669,7 +708,7 @@ function ChatApp({
           
           // Sync with real database IDs to maintain correct tree structure
           if (conversationId) {
-            loadConversation(conversationId, realAssistantId || undefined);
+            loadConversation(conversationId, realAssistantId || undefined, true);
           }
         },
         (newTitle) => {
