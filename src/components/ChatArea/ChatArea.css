@@ -464,7 +464,8 @@
 }
 
 .assistant-text code {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-hover);
+  color: var(--text-color);
   padding: 2px 4px;
   border-radius: 4px;
   font-family: 'Fira Code', 'Cascadia Code', Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
@@ -472,17 +473,19 @@
 }
 
 .assistant-text pre {
-  background-color: #1e1e1e;
+  background-color: transparent;
+  box-shadow: none;
   padding: 16px;
-  border-radius: 8px;
+  border-radius: 24px;
   overflow-x: auto;
   margin: 12px 0;
+  border: 1px solid var(--border-color);
 }
 
 .assistant-text pre code {
   background-color: transparent;
   padding: 0;
-  color: #d4d4d4;
+  color: var(--text-color);
   font-size: 14px;
   display: block;
 }
@@ -1036,3 +1039,65 @@
 }
 
 
+.code-block-container {
+  background-color: transparent;
+  box-shadow: none;
+  border-radius: 24px;
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: transparent;
+  border-bottom: 1px solid var(--border-color);
+  user-select: none;
+}
+
+.code-block-lang {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.code-block-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.code-block-copy-btn:hover {
+  color: var(--text-color);
+  background-color: var(--surface-hover);
+}
+
+.code-block-copy-btn.copied {
+  color: var(--text-color);
+}
+
+.code-block-copy-btn svg {
+  display: block;
+}
+
+/* Reset styles for pre when inside the container */
+.assistant-text .code-block-container pre {
+  margin: 0;
+  background-color: transparent;
+  border-radius: 0;
+  padding: 12px 16px 16px 16px;
+  border: none;
+}

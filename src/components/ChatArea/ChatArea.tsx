@@ -57,6 +57,42 @@ const CheckIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
 );
 
+interface CodeBlockWrapperProps {
+  lang: string;
+  rawCode: string;
+  children: React.ReactNode;
+}
+
+const CodeBlockWrapper = ({ lang, rawCode, children }: CodeBlockWrapperProps) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(rawCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy code: ', err);
+    }
+  };
+
+  return (
+    <div className="code-block-container">
+      <div className="code-block-header">
+        <span className="code-block-lang">{lang || 'text'}</span>
+        <button 
+          className={`code-block-copy-btn ${copied ? 'copied' : ''}`}
+          onClick={handleCopy}
+          title="复制代码"
+        >
+          {copied ? <CheckIcon /> : <CopyIcon />}
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+};
+
 const ResendIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
 );
@@ -298,6 +334,33 @@ function MessageItem({
         if (isHtmlCodeBlock) {
           return <>{children}</>;
         }
+
+        const codeElement = React.Children.toArray(children).find((child: any) => {
+          return child && (child as any).props;
+        }) as any;
+
+        if (codeElement) {
+          const className = codeElement.props.className || '';
+          const match = /language-(\w+)/.exec(className);
+          const lang = match ? match[1] : '';
+          
+          const getRawText = (node: any): string => {
+            if (typeof node === 'string') return node;
+            if (typeof node === 'number') return String(node);
+            if (Array.isArray(node)) return node.map(getRawText).join('');
+            if (node && node.props && node.props.children) return getRawText(node.props.children);
+            return '';
+          };
+          
+          const rawCode = getRawText(codeElement.props.children).replace(/\n$/, '');
+
+          return (
+            <CodeBlockWrapper lang={lang} rawCode={rawCode}>
+              <pre {...props}>{children}</pre>
+            </CodeBlockWrapper>
+          );
+        }
+
         return <pre {...props}>{children}</pre>;
       },
       code: ({ node, inline, className, children, ...props }: any) => {
