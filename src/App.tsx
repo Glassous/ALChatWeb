@@ -1056,6 +1056,7 @@ function ChatApp({
             <div className="chat-layout-body">
               <div key="chat-content" className="chat-area-wrapper">
                 <ChatArea 
+                  key={currentConversationId || 'empty'}
                   messages={activePath}
                   allMessages={messages}
                   ref={chatAreaRef} 

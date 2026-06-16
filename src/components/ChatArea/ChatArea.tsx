@@ -664,6 +664,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const isAutoScrollEnabledRef = useRef(true);
   const prevMessagesLengthRef = useRef(messages.length);
+  const prevLastMessageIdRef = useRef<string | null>(messages[messages.length - 1]?.id || null);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -733,7 +734,19 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
 
   // Auto-scroll on new messages
   useEffect(() => {
-    const isNewMessage = messages.length > prevMessagesLengthRef.current;
+    const lastMessage = messages[messages.length - 1];
+    const lastMessageId = lastMessage?.id || null;
+    const prevLastMessageId = prevLastMessageIdRef.current;
+
+    // Check if the last message is actually new (not a rename of a temp message, and not an empty array transition)
+    const isRename = !!(prevLastMessageId?.startsWith('temp-') && lastMessageId && !lastMessageId.startsWith('temp-'));
+    const isNewMessage = 
+      messages.length > 0 && 
+      prevLastMessageId !== null && 
+      lastMessageId !== prevLastMessageId && 
+      !isRename;
+
+    prevLastMessageIdRef.current = lastMessageId;
     prevMessagesLengthRef.current = messages.length;
 
     // If it's a completely new message (user sent it or assistant just replied),
@@ -742,7 +755,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       isAutoScrollEnabledRef.current = true;
       // Use smooth for new messages
       scrollToBottom('smooth');
-    } else if (isAutoScrollEnabledRef.current) {
+    } else if (isAutoScrollEnabledRef.current && lastMessage?.status === 'loading') {
       // Use auto (instant) for streaming to avoid jitter and interrupted smooth scrolling
       scrollToBottom('auto');
     }
