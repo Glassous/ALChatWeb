@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Workspace.css';
 
 interface WorkspaceProps {
@@ -18,10 +18,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 }) => {
   const [localHtml, setLocalHtml] = useState(html);
   const [previewKey, setPreviewKey] = useState(0); // For forcing iframe reload
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isCodeAutoScrollRef = useRef(true);
 
   // Sync state when external HTML changes (e.g. streaming update)
   useEffect(() => {
     setLocalHtml(html);
+  }, [html]);
+
+  // Auto-scroll textarea to bottom during streaming if user hasn't scrolled up
+  const handleCodeScroll = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
+    isCodeAutoScrollRef.current = isNearBottom;
+  }, []);
+
+  useEffect(() => {
+    if (isCodeAutoScrollRef.current && textareaRef.current) {
+      textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
+    }
   }, [html]);
 
   const handleDownload = () => {
@@ -91,11 +107,13 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           <div className="workspace-editor-container">
             <pre className="workspace-line-numbers">{lineNumbers}</pre>
             <textarea
+              ref={textareaRef}
               className="workspace-textarea"
               value={localHtml}
               readOnly={true}
               placeholder="在这里查看 HTML 代码..."
               spellCheck="false"
+              onScroll={handleCodeScroll}
             />
           </div>
         ) : (

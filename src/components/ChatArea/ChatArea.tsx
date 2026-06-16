@@ -606,8 +606,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     
-    // We consider it near bottom if within 150px
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+    // We consider it near bottom if within 10px
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 10;
     isAutoScrollEnabledRef.current = isNearBottom;
     onScrollStateChange?.(isNearBottom);
 
