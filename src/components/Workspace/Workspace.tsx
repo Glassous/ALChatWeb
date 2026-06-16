@@ -21,6 +21,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   const [localHtml, setLocalHtml] = useState(html);
   const [previewKey, setPreviewKey] = useState(0); // For forcing iframe reload
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLPreElement>(null);
   const isCodeAutoScrollRef = useRef(true);
 
   // Sync state when external HTML changes (e.g. streaming update)
@@ -29,18 +30,26 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   }, [html]);
 
   // Auto-scroll textarea to bottom during streaming if user hasn't scrolled up
+  const syncLineNumbers = useCallback(() => {
+    if (lineNumbersRef.current && textareaRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  }, []);
+
   const handleCodeScroll = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
     isCodeAutoScrollRef.current = isNearBottom;
-  }, []);
+    syncLineNumbers();
+  }, [syncLineNumbers]);
 
   useEffect(() => {
     if (textareaRef.current && (isLoading || isCodeAutoScrollRef.current)) {
       textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
+      syncLineNumbers();
     }
-  }, [html, isLoading]);
+  }, [html, isLoading, syncLineNumbers]);
 
   const handleDownload = () => {
     const blob = new Blob([localHtml], { type: 'text/html;charset=utf-8' });
@@ -107,7 +116,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
       <div className="workspace-body">
         {mode === 'code' ? (
           <div className="workspace-editor-container">
-            <pre className="workspace-line-numbers">{lineNumbers}</pre>
+            <pre ref={lineNumbersRef} className="workspace-line-numbers">{lineNumbers}</pre>
             <textarea
               ref={textareaRef}
               className={`workspace-textarea${isLoading ? ' loading' : ''}`}
