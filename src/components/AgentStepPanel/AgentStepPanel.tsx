@@ -206,8 +206,11 @@ export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: Agent
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isStreaming) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isStreaming && bottomRef.current) {
+      // Use block: 'nearest' to only scroll within the panel's own overflow container,
+      // NOT the parent chat scroll area. 'smooth' + 'end'/'start' can cause the parent
+      // to forcefully scroll, especially when streaming ends.
+      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [steps, isStreaming]);
 

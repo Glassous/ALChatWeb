@@ -663,8 +663,37 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const isAutoScrollEnabledRef = useRef(true);
-  const prevMessagesLengthRef = useRef(messages.length);
   const prevLastMessageIdRef = useRef<string | null>(messages[messages.length - 1]?.id || null);
+  const isFirstRenderRef = useRef(true);
+  // Track user-initiated scroll interactions to prevent content-change scrolls
+  // from falsely re-enabling auto-scroll
+  const isUserScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Detect user scroll interactions (wheel, touch, scrollbar drag)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const markUserScrolling = () => {
+      isUserScrollingRef.current = true;
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrollingRef.current = false;
+      }, 200);
+    };
+
+    el.addEventListener('wheel', markUserScrolling, { passive: true });
+    el.addEventListener('touchmove', markUserScrolling, { passive: true });
+    el.addEventListener('mousedown', markUserScrolling);
+
+    return () => {
+      el.removeEventListener('wheel', markUserScrolling);
+      el.removeEventListener('touchmove', markUserScrolling);
+      el.removeEventListener('mousedown', markUserScrolling);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -672,7 +701,13 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     
     // We consider it near bottom if within 10px
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 10;
-    isAutoScrollEnabledRef.current = isNearBottom;
+    // CRITICAL: Only update auto-scroll tracking on user-initiated scrolls.
+    // Content height changes (e.g., reasoning collapse, agent plan finalization)
+    // can shift scroll position near bottom, which should NOT re-enable auto-scroll.
+    if (isUserScrollingRef.current) {
+      isAutoScrollEnabledRef.current = isNearBottom;
+    }
+    // Always report to parent for scroll-to-bottom button visibility
     onScrollStateChange?.(isNearBottom);
 
     // Manual active message detection for better accuracy, especially at bottom
@@ -737,28 +772,45 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     const lastMessage = messages[messages.length - 1];
     const lastMessageId = lastMessage?.id || null;
     const prevLastMessageId = prevLastMessageIdRef.current;
+    const isCurrentlyStreaming = lastMessage?.status === 'loading';
 
-    // Check if the last message is actually new (not a rename of a temp message, and not an empty array transition)
-    const isRename = !!(prevLastMessageId?.startsWith('temp-') && lastMessageId && !lastMessageId.startsWith('temp-'));
-    const isNewMessage = 
-      messages.length > 0 && 
-      prevLastMessageId !== null && 
-      lastMessageId !== prevLastMessageId && 
+    // Case 1: First render after mount — scroll to bottom immediately
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      prevLastMessageIdRef.current = lastMessageId;
+      if (messages.length > 0) {
+        scrollToBottom('auto');
+      }
+      return;
+    }
+
+    // Detect genuinely new messages (excluding temp->real ID renames)
+    const isRename = !!(
+      prevLastMessageId?.startsWith('temp-') &&
+      lastMessageId &&
+      !lastMessageId.startsWith('temp-')
+    );
+    const isGenuinelyNew =
+      lastMessageId !== null &&
+      lastMessageId !== prevLastMessageId &&
       !isRename;
 
     prevLastMessageIdRef.current = lastMessageId;
-    prevMessagesLengthRef.current = messages.length;
 
-    // If it's a completely new message (user sent it or assistant just replied),
-    // we should force auto-scroll
-    if (isNewMessage) {
+    // Case 2: A genuinely new message was added → force scroll to bottom
+    if (isGenuinelyNew) {
       isAutoScrollEnabledRef.current = true;
-      // Use smooth for new messages
       scrollToBottom('smooth');
-    } else if (isAutoScrollEnabledRef.current && lastMessage?.status === 'loading') {
-      // Use auto (instant) for streaming to avoid jitter and interrupted smooth scrolling
-      scrollToBottom('auto');
+      return;
     }
+
+    // Case 3: Streaming update → auto-scroll only if user hasn't scrolled up
+    if (isCurrentlyStreaming && isAutoScrollEnabledRef.current) {
+      scrollToBottom('auto');
+      return;
+    }
+
+    // Case 4: Generation ended, content update, ID rename, etc. → do NOTHING
   }, [messages, scrollToBottom]);
 
   const handleDownload = async () => {
