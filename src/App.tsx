@@ -1103,6 +1103,7 @@ function ChatApp({
                           onChangeMode={setWorkspaceMode}
                           onClose={() => setWorkspaceOpen(false)}
                           title={workspaceTitle}
+                          isLoading={isLoading}
                         />
                       </div>
                     </motion.div>

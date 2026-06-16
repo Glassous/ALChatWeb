@@ -189,6 +189,10 @@
   background-color: rgba(255, 255, 255, 0.16);
 }
 
+.workspace-textarea.loading {
+  overflow-y: hidden;
+}
+
 /* Preview view styling */
 .workspace-preview-container {
   flex-grow: 1;

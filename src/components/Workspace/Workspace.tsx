@@ -7,6 +7,7 @@ interface WorkspaceProps {
   onChangeMode: (mode: 'code' | 'preview') => void;
   onClose: () => void;
   title: string;
+  isLoading?: boolean;
 }
 
 export const Workspace: React.FC<WorkspaceProps> = ({
@@ -15,6 +16,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   onChangeMode,
   onClose,
   title,
+  isLoading = false,
 }) => {
   const [localHtml, setLocalHtml] = useState(html);
   const [previewKey, setPreviewKey] = useState(0); // For forcing iframe reload
@@ -35,10 +37,10 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isCodeAutoScrollRef.current && textareaRef.current) {
+    if (textareaRef.current && (isLoading || isCodeAutoScrollRef.current)) {
       textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
     }
-  }, [html]);
+  }, [html, isLoading]);
 
   const handleDownload = () => {
     const blob = new Blob([localHtml], { type: 'text/html;charset=utf-8' });
@@ -108,7 +110,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             <pre className="workspace-line-numbers">{lineNumbers}</pre>
             <textarea
               ref={textareaRef}
-              className="workspace-textarea"
+              className={`workspace-textarea${isLoading ? ' loading' : ''}`}
               value={localHtml}
               readOnly={true}
               placeholder="在这里查看 HTML 代码..."
