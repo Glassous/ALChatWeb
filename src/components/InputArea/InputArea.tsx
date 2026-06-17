@@ -765,6 +765,7 @@ export function InputArea({
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
                       onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
                       title={mode === 'daily' ? '日常模式' : '专家模式'}
+                      disabled={disabled || isUploading}
                     >
                       {mode === 'daily' ? '日常' : '专家'}
                     </button>
@@ -786,6 +787,7 @@ export function InputArea({
                         setIsImageMode(!isImageMode);
                       }}
                       title="图片生成"
+                      disabled={disabled || isUploading}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
@@ -807,6 +809,7 @@ export function InputArea({
                       <button 
                         className="resolution-btn"
                         onClick={() => setShowResolutions(!showResolutions)}
+                        disabled={disabled || isUploading}
                       >
                         {resolution}
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -869,6 +872,7 @@ export function InputArea({
                         onClick={handleUploadClick}
                         title="上传参考图"
                         style={{ marginLeft: 4 }}
+                        disabled={disabled || isUploading}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                           <path d="M440-440ZM120-120q-33 0-56.5-23.5T40-200v-480q0-33 23.5-56.5T120-760h126l74-80h240v80H355l-73 80H120v480h640v-360h80v360q0 33-23.5 56.5T760-120H120Zm640-560v-80h-80v-80h80v-80h80v80h80v80h-80v80h-80ZM440-260q75 0 127.5-52.5T620-440q0-75-52.5-127.5T440-620q-75 0-127.5 52.5T260-440q0 75 52.5 127.5T440-260Zm0-80q-42 0-71-29t-29-71q0-42 29-71t71-29q42 0 71 29t29 71q0 42-29 71t-71 29Z"/>
@@ -925,6 +929,7 @@ export function InputArea({
                         className="tool-btn attachment-btn"
                         onClick={handleAttachmentClick}
                         title="添加附件"
+                        disabled={disabled || isUploading}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                           <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
@@ -979,6 +984,7 @@ export function InputArea({
                     className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
                     onClick={toggleExpand}
                     title={isExpanded ? "缩小输入框" : "放大输入框"}
+                    disabled={disabled || isUploading}
                   >
                     {isExpanded ? (
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M240-120v-120H120v-80h200v200h-80Zm400 0v-200h200v80H720v120h-80ZM120-640v-80h120v-120h80v200H120Zm520 0v-200h80v120h120v80H640Z"/></svg>

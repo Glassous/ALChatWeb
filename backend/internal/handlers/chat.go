@@ -165,9 +165,18 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			}
 		}
 
+		// Check if any message contains multimodal content (<file> or <image> tags)
+		hasMultimodal := false
+		for _, m := range aiMessages {
+			if strings.Contains(m.Content, "<file") || strings.Contains(m.Content, "<image") {
+				hasMultimodal = true
+				break
+			}
+		}
+
 		userIDObj, _ := primitive.ObjectIDFromHex(userID)
 
-		if req.Mode == "daily" && h.agentRunner != nil {
+		if !hasMultimodal && req.Mode == "daily" && h.agentRunner != nil {
 			h.handleDailyAutoRoute(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
 			return
 		}
@@ -782,9 +791,18 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			log.Printf("[TempChat] Failed to fetch user: %v", err)
 		}
 
+		// Check if any message contains multimodal content (<file> or <image> tags)
+		hasMultimodal := false
+		for _, m := range aiMessages {
+			if strings.Contains(m.Content, "<file") || strings.Contains(m.Content, "<image") {
+				hasMultimodal = true
+				break
+			}
+		}
+
 		// Agent mode not supported for temp chat in this version to keep it simple,
 		// but we could easily add it if needed.
-		if req.Mode == "agent" {
+		if !hasMultimodal && req.Mode == "agent" {
 			// Converting models.Message for agent mode
 			modelAssistantMsg := assistantMsg.ToModel()
 			modelUserMsg := userMsg.ToModel()
@@ -799,7 +817,6 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			return
 		}
 
-		// Construct system prompt (same as normal chat)
 		var systemPromptBuilder strings.Builder
 		if user.SystemPrompt != "" {
 			systemPromptBuilder.WriteString(user.SystemPrompt)
