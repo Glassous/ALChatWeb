@@ -20,7 +20,7 @@ type ALingService struct {
 	aiService *AIService
 }
 
-func NewALingService(db *database.MongoDB, aiService *AIService, streamMgr *StreamManager, memberService *MemberService, ossService *OSSService) *ALingService {
+func NewALingService(db *database.MongoDB, aiService *AIService, streamMgr *StreamManager, memberService *MemberService, ossService *COSService) *ALingService {
 	return &ALingService{
 		db:        db,
 		aiService: aiService,

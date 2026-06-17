@@ -28,10 +28,11 @@ type Config struct {
 	TitleAIModel       string
 	TitleAIBaseURL     string
 	TitleAIAPIKey      string
-	OSSEndpoint        string
-	OSSAccessKeyID     string
-	OSSAccessKeySecret string
-	OSSBucketName      string
+	COSSecretID     string
+	COSSecretKey    string
+	COSBucket       string
+	COSRegion       string
+	COSCustomDomain string
 	VolcengineAPIKey   string
 	VolcengineImageEP  string
 	BochaAPIKey        string
@@ -83,10 +84,11 @@ func Load() *Config {
 		TitleAIModel:       getEnv("TITLE_AI_MODEL", ""),
 		TitleAIBaseURL:     getEnv("TITLE_AI_BASE_URL", ""),
 		TitleAIAPIKey:      getEnv("TITLE_AI_API_KEY", ""),
-		OSSEndpoint:        getEnv("OSS_ENDPOINT", ""),
-		OSSAccessKeyID:     getEnv("OSS_ACCESS_KEY_ID", ""),
-		OSSAccessKeySecret: getEnv("OSS_ACCESS_KEY_SECRET", ""),
-		OSSBucketName:      getEnv("OSS_BUCKET_NAME", ""),
+		COSSecretID:     getEnv("COS_SECRET_ID", ""),
+		COSSecretKey:    getEnv("COS_SECRET_KEY", ""),
+		COSBucket:       getEnv("COS_BUCKET", ""),
+		COSRegion:       getEnv("COS_REGION", ""),
+		COSCustomDomain: getEnv("COS_CUSTOM_DOMAIN", ""),
 		VolcengineAPIKey:   getEnv("VOLCENGINE_API_KEY", ""),
 		VolcengineImageEP:  getEnv("VOLCENGINE_IMAGE_EP", ""),
 		BochaAPIKey:        getEnv("BOCHA_API_KEY", ""),
@@ -110,19 +112,19 @@ func Load() *Config {
 	}
 
 	// Enhanced Debug Logging for OSS
-	if cfg.OSSAccessKeyID != "" {
-		idLen := len(cfg.OSSAccessKeyID)
-		secretLen := len(cfg.OSSAccessKeySecret)
+	if cfg.COSSecretID != "" {
+		idLen := len(cfg.COSSecretID)
+		secretLen := len(cfg.COSSecretKey)
 		maskID := ""
 		if idLen > 8 {
-			maskID = cfg.OSSAccessKeyID[:4] + "****" + cfg.OSSAccessKeyID[idLen-4:]
+			maskID = cfg.COSSecretID[:4] + "****" + cfg.COSSecretID[idLen-4:]
 		} else {
 			maskID = "****"
 		}
-		log.Printf("[Config] OSS Loaded - ID: %s (len:%d), Secret Len: %d, Endpoint: %s",
-			maskID, idLen, secretLen, cfg.OSSEndpoint)
+		log.Printf("[Config] COS Loaded - ID: %s (len:%d), Secret Len: %d, Bucket: %s, Region: %s, CustomDomain: %s",
+			maskID, idLen, secretLen, cfg.COSBucket, cfg.COSRegion, cfg.COSCustomDomain)
 	} else {
-		log.Println("[Config] WARNING: OSS_ACCESS_KEY_ID is empty!")
+		log.Println("[Config] WARNING: COS_SECRET_ID is empty!")
 	}
 
 	return cfg

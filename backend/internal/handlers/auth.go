@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,13 +25,13 @@ type AuthHandler struct {
 	db            *database.MongoDB
 	rdb           *database.Redis
 	jwtSecret     string
-	ossService    *services.OSSService
+	ossService    *services.COSService
 	memberService *services.MemberService
 	tokenService  *services.TokenService
 	emailService  *services.EmailService
 }
 
-func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.OSSService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.COSService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AuthHandler {
 	return &AuthHandler{
 		db:            db,
 		rdb:           rdb,
@@ -329,13 +330,61 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	}
 
 	if h.ossService == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OSS service not configured"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "COS service not configured"})
 		return
 	}
 
-	// Limit total multipart memory (e.g. 15MB + some overhead)
-	// Gin's default is 32MB, but we can be more specific if needed.
-	// However, the user wants 15MB per file.
+	// 1. Check if request is JSON containing the direct upload URL
+	if strings.Contains(c.GetHeader("Content-Type"), "application/json") {
+		var req struct {
+			AvatarURL string `json:"avatar_url" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+
+		var user models.User
+		err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+		if err != nil {
+			fmt.Printf("Warning: Failed to find user %s to get old avatar: %v\n", userID.Hex(), err)
+		}
+		oldAvatarURL := user.Avatar
+
+		_, err = h.db.Users().UpdateOne(
+			ctx,
+			bson.M{"_id": userID},
+			bson.M{"$set": bson.M{"avatar": req.AvatarURL, "updated_at": time.Now()}},
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user avatar in database"})
+			return
+		}
+
+		// Delete old avatar from COS asynchronously
+		if oldAvatarURL != "" {
+			go func(oldURL string) {
+				u, err := url.Parse(oldURL)
+				if err == nil {
+					key := strings.TrimPrefix(u.Path, "/")
+					if key != "" {
+						_ = h.ossService.DeleteFile(key)
+					}
+				}
+			}(oldAvatarURL)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Avatar updated successfully",
+			"avatar":  req.AvatarURL,
+		})
+		return
+	}
+
+	// 2. Original multipart file upload flow (fallback/admin usage)
 	const maxFileSize = 15 * 1024 * 1024 // 15MB
 
 	form, err := c.MultipartForm()
@@ -357,7 +406,6 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 
 	header := files[0] // Only take the first one for avatar
 
-	// 1. Check file size
 	if header.Size > maxFileSize {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds 15MB limit"})
 		return
@@ -370,14 +418,12 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 2. Check MIME type using Magic Number
 	buffer := make([]byte, 512)
 	_, err = file.Read(buffer)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file header"})
 		return
 	}
-	// Reset file pointer after reading header
 	if _, err := file.Seek(0, 0); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reset file pointer"})
 		return
@@ -396,7 +442,7 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		return
 	}
 
-	// Upload to OSS
+	// Upload to COS
 	avatarURL, err := h.ossService.UploadFile(file, header.Filename, "avatars")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload avatar: %v", err)})
@@ -406,17 +452,13 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	// 1. Find existing user to get old avatar URL
 	var user models.User
 	err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
 	if err != nil {
-		// Even if we fail to get the user, we should probably still try to update it,
-		// but we won't be able to delete the old avatar.
 		fmt.Printf("Warning: Failed to find user %s to get old avatar: %v\n", userID.Hex(), err)
 	}
 	oldAvatarURL := user.Avatar
 
-	// 2. Update database with new avatar URL
 	_, err = h.db.Users().UpdateOne(
 		ctx,
 		bson.M{"_id": userID},
@@ -427,27 +469,16 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		return
 	}
 
-	// 3. If update successful and old avatar exists, delete old avatar from OSS
-	if oldAvatarURL != "" && strings.Contains(oldAvatarURL, "aliyuncs.com") {
-		// Extract object key from URL
-		// Example URL: https://bucket-name.oss-cn-beijing.aliyuncs.com/avatars/123.jpg
-		// We need to extract: avatars/123.jpg
-
-		// Find the index after ".com/"
-		idx := strings.Index(oldAvatarURL, ".com/")
-		if idx != -1 {
-			objectKey := oldAvatarURL[idx+5:]
-
-			// Run deletion asynchronously so it doesn't block the response
-			go func(key string) {
-				delErr := h.ossService.DeleteFile(key)
-				if delErr != nil {
-					fmt.Printf("Failed to delete old avatar from OSS (key: %s): %v\n", key, delErr)
-				} else {
-					fmt.Printf("Successfully deleted old avatar from OSS: %s\n", key)
+	if oldAvatarURL != "" {
+		go func(oldURL string) {
+			u, err := url.Parse(oldURL)
+			if err == nil {
+				key := strings.TrimPrefix(u.Path, "/")
+				if key != "" {
+					_ = h.ossService.DeleteFile(key)
 				}
-			}(objectKey)
-		}
+			}
+		}(oldAvatarURL)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

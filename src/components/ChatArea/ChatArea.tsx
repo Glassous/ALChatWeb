@@ -296,16 +296,28 @@ function MessageItem({
     }
 
     const markdownComponents: any = {
-      img: ({ src, alt }: { src?: string, alt?: string }) => (
-        <span className="image-container-msg">
-          <img 
-            src={src} 
-            alt={alt || "Generated"} 
-            className="generated-image" 
-            onClick={() => onImageClick(src!)}
-          />
-        </span>
-      ),
+      img: ({ src, alt }: { src?: string, alt?: string }) => {
+        const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+          const target = e.target as HTMLImageElement;
+          if (src && src.includes('alchatfiles.fiacloud.top')) {
+            const fallback = src.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+            if (target.src !== fallback) {
+              target.src = fallback;
+            }
+          }
+        };
+        return (
+          <span className="image-container-msg">
+            <img 
+              src={src} 
+              alt={alt || "Generated"} 
+              className="generated-image" 
+              onClick={() => onImageClick(src!)}
+              onError={handleImgError}
+            />
+          </span>
+        );
+      },
       a: ({ href, children }: { href?: string, children?: React.ReactNode }) => {
         const isRef = href?.startsWith('ref:');
         const childrenText = typeof children === 'string' ? children : '';
@@ -518,11 +530,26 @@ function MessageItem({
                       <>
                         {images.length > 0 && (
                           <div className="user-images-grid">
-                            {images.map((url, idx) => (
-                              <div key={idx} className="user-ref-image-card" onClick={() => onImageClick(url)}>
-                                <img src={url} alt={`Reference ${idx}`} />
-                              </div>
-                            ))}
+                            {images.map((url, idx) => {
+                              const handleUserImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                                const target = e.target as HTMLImageElement;
+                                if (url && url.includes('alchatfiles.fiacloud.top')) {
+                                  const fallback = url.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+                                  if (target.src !== fallback) {
+                                    target.src = fallback;
+                                  }
+                                }
+                              };
+                              return (
+                                <div key={idx} className="user-ref-image-card" onClick={() => onImageClick(url)}>
+                                  <img 
+                                    src={url} 
+                                    alt={`Reference ${idx}`} 
+                                    onError={handleUserImgError}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                         {textContent && <div className="user-message-text">{textContent}</div>}

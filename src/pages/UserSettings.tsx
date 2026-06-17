@@ -216,7 +216,20 @@ export function UserSettings() {
                 <div className="avatar-edit-wrapper">
                   <div className="avatar-edit-container" onClick={handleAvatarClick}>
                     {userAvatar ? (
-                      <img src={userAvatar} alt="Avatar" className="avatar-large" />
+                      <img 
+                        src={userAvatar} 
+                        alt="Avatar" 
+                        className="avatar-large" 
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          if (userAvatar && userAvatar.includes('alchatfiles.fiacloud.top')) {
+                            const fallback = userAvatar.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+                            if (target.src !== fallback) {
+                              target.src = fallback;
+                            }
+                          }
+                        }}
+                      />
                     ) : (
                       <div className="avatar-large-placeholder">
                         <svg xmlns="http://www.w3.org/2000/svg" height="48px" viewBox="0 -960 960 960" width="48px" fill="currentColor">

@@ -13,10 +13,10 @@ import (
 type ImageService struct {
 	client     *arkruntime.Client
 	endpointID string
-	ossService *OSSService
+	ossService *COSService
 }
 
-func NewImageService(apiKey, endpointID string, ossService *OSSService) (*ImageService, error) {
+func NewImageService(apiKey, endpointID string, ossService *COSService) (*ImageService, error) {
 	if apiKey == "" || endpointID == "" {
 		return nil, fmt.Errorf("volcengine API key or endpoint ID is missing")
 	}

@@ -19,14 +19,14 @@ import (
 type ImageHandler struct {
 	imageService        *services.ImageService
 	conversationService *services.ConversationService
-	ossService          *services.OSSService
+	ossService          *services.COSService
 	aiService           *services.AIService
 	streamManager       *services.StreamManager
 	memberService       *services.MemberService
 	db                  *database.MongoDB
 }
 
-func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.OSSService, aiService *services.AIService, streamManager *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ImageHandler {
+func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.COSService, aiService *services.AIService, streamManager *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ImageHandler {
 	return &ImageHandler{
 		imageService:        imageService,
 		conversationService: conversationService,
@@ -299,5 +299,39 @@ func (h *ImageHandler) UploadReferenceImage(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"url": url,
+	})
+}
+
+func (h *ImageHandler) GetPresignedURL(c *gin.Context) {
+	var req struct {
+		Filename string `json:"filename" binding:"required"`
+		Folder   string `json:"folder" binding:"required"`
+		MimeType string `json:"mime_type" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	validFolders := map[string]bool{
+		"avatars":         true,
+		"reference_files": true,
+		"images":          true,
+	}
+	if !validFolders[req.Folder] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid folder name"})
+		return
+	}
+
+	uploadURL, finalURL, err := h.ossService.GetPresignedPutURL(c.Request.Context(), req.Folder, req.Filename, req.MimeType)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"upload_url": uploadURL,
+		"url":        finalURL,
 	})
 }

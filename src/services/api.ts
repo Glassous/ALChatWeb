@@ -251,16 +251,33 @@ class APIClient {
   }
 
   async updateAvatar(file: File) {
-    const formData = new FormData();
-    formData.append('avatar', file);
+    const presignRes = await fetch(`${this.baseURL}/api/cos/presign`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        filename: file.name,
+        folder: 'avatars',
+        mime_type: file.type || 'image/jpeg',
+      }),
+    });
+    const { upload_url, url } = await this.handleResponse(presignRes);
 
-    const headers = { ...this.getHeaders() } as any;
-    delete headers['Content-Type']; // Let browser set it for FormData
+    const uploadResponse = await fetch(upload_url, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'image/jpeg',
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload avatar to COS');
+    }
 
     const response = await fetch(`${this.baseURL}/api/auth/avatar`, {
       method: 'POST',
-      headers: headers,
-      body: formData,
+      headers: this.getHeaders(),
+      body: JSON.stringify({ avatar_url: url }),
     });
     return this.handleResponse(response);
   }
@@ -523,19 +540,30 @@ class APIClient {
   }
 
   async uploadReferenceImage(file: File): Promise<string> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const headers = { ...this.getHeaders() } as any;
-    delete headers['Content-Type'];
-
-    const response = await fetch(`${this.baseURL}/api/chat/upload-reference`, {
+    const presignRes = await fetch(`${this.baseURL}/api/cos/presign`, {
       method: 'POST',
-      headers: headers,
-      body: formData,
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        filename: file.name,
+        folder: 'reference_files',
+        mime_type: file.type || 'application/octet-stream',
+      }),
     });
-    const data = await this.handleResponse(response);
-    return data.url;
+    const { upload_url, url } = await this.handleResponse(presignRes);
+
+    const uploadResponse = await fetch(upload_url, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Failed to upload file to COS');
+    }
+
+    return url;
   }
 
   async deleteReferenceImage(url: string) {

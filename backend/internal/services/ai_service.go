@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -329,6 +330,18 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []mod
 					Type: "text",
 					Text: text[lastIdx : lastIdx+idx],
 				})
+			}
+
+			// Map custom domain back to default COS domain for external multimodal APIs
+			customDomain := os.Getenv("COS_CUSTOM_DOMAIN")
+			bucket := os.Getenv("COS_BUCKET")
+			region := os.Getenv("COS_REGION")
+			if customDomain != "" && bucket != "" && region != "" {
+				customDomainClean := strings.TrimSuffix(strings.TrimPrefix(customDomain, "https://"), "/")
+				defaultDomain := fmt.Sprintf("%s.cos.%s.myqcloud.com", bucket, region)
+				if strings.Contains(url, customDomainClean) {
+					url = strings.Replace(url, customDomainClean, defaultDomain, -1)
+				}
 			}
 
 			contents = append(contents, oaiContent{

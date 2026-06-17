@@ -663,7 +663,19 @@ export function InputArea({
         <div className="previews-container">
           {refImageUrl && (
             <div className="ref-image-preview-card">
-              <img src={refImageUrl} alt="Reference" />
+              <img 
+                src={refImageUrl} 
+                alt="Reference" 
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (refImageUrl && refImageUrl.includes('alchatfiles.fiacloud.top')) {
+                    const fallback = refImageUrl.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+                    if (target.src !== fallback) {
+                      target.src = fallback;
+                    }
+                  }
+                }}
+              />
               <button className="remove-ref-image" onClick={removeRefImage}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -674,7 +686,19 @@ export function InputArea({
           {attachments.map((att, index) => (
             <div key={index} className="ref-image-preview-card">
               {att.type === 'image' ? (
-                <img src={att.url} alt={`Attachment ${index}`} />
+                <img 
+                  src={att.url} 
+                  alt={`Attachment ${index}`} 
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    if (att.url && att.url.includes('alchatfiles.fiacloud.top')) {
+                      const fallback = att.url.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+                      if (target.src !== fallback) {
+                        target.src = fallback;
+                      }
+                    }
+                  }}
+                />
               ) : (
                 <div className="video-preview-placeholder">
                   <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">

@@ -88,9 +88,9 @@ func main() {
 	}
 
 	conversationService := services.NewConversationService(db, rdb)
-	ossService, err := services.NewOSSService(cfg)
+	ossService, err := services.NewCOSService(cfg)
 	if err != nil {
-		log.Printf("Warning: Failed to initialize OSS service: %v. Avatar upload will be disabled.", err)
+		log.Printf("Warning: Failed to initialize COS service: %v. Avatar upload will be disabled.", err)
 	}
 
 	memberService := services.NewMemberService(db)
@@ -201,6 +201,7 @@ func main() {
 
 			protected.POST("/chat/upload-reference", imageHandler.UploadReferenceImage)
 			protected.DELETE("/chat/reference-image", imageHandler.DeleteReferenceImage)
+			protected.POST("/cos/presign", imageHandler.GetPresignedURL)
 
 			// Location route
 			protected.POST("/location/resolve", locationHandler.Resolve)

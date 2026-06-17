@@ -423,7 +423,22 @@ export function Sidebar({
                       if (userStr) {
                         const user = JSON.parse(userStr);
                         if (user.avatar) {
-                          return <img src={user.avatar} alt="Avatar" className="user-mini-avatar" />;
+                          return (
+                            <img 
+                              src={user.avatar} 
+                              alt="Avatar" 
+                              className="user-mini-avatar" 
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                if (user.avatar && user.avatar.includes('alchatfiles.fiacloud.top')) {
+                                  const fallback = user.avatar.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+                                  if (target.src !== fallback) {
+                                    target.src = fallback;
+                                  }
+                                }
+                              }}
+                            />
+                          );
                         }
                       }
                     } catch { }
