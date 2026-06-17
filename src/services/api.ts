@@ -42,6 +42,7 @@ export interface Message {
   agent_steps?: AgentStepData[];
   agent_plan?: AgentPlanItemData[];
   created_at: string;
+  clientId?: string;
 }
 
 export interface ConversationWithMessages extends Conversation {

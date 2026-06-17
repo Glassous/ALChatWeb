@@ -30,6 +30,7 @@ export interface Message {
   metadata?: {
     resolution?: string;
   };
+  clientId?: string;
 }
 
 
@@ -876,7 +877,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       <div className="chat-content">
         {messages.map((msg) => (
           <div 
-            key={msg.id} 
+            key={msg.clientId || msg.id} 
             data-message-id={msg.id}
             ref={(el) => {
               if (el) messageRefs.current.set(msg.id, el);
@@ -904,7 +905,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
           <div className="navigator-card">
             {messages.filter(m => m.role === 'user').map((msg) => (
               <div 
-                key={msg.id} 
+                key={msg.clientId || msg.id} 
                 className={`navigator-item ${activeMessageId === msg.id ? 'active' : ''}`}
                 onClick={() => scrollToMessage(msg.id)}
               >

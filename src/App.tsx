@@ -300,15 +300,25 @@ function ChatApp({
       }
       const newMessages = Array.isArray(conv.messages) ? conv.messages : [];
 
+      // Map server messages to preserve clientIds from local messages
+      const currentMessages = messagesRef.current;
+      const localMsgMap = new Map(currentMessages.map(m => [m.id, m]));
+      const mergedMessages = newMessages.map(msg => {
+        const localMsg = localMsgMap.get(msg.id);
+        if (localMsg && localMsg.clientId) {
+          return { ...msg, clientId: localMsg.clientId };
+        }
+        return msg;
+      });
+
       // Determine if there is a real change in messages list before setting state
       // to avoid unnecessary re-renders (flicker-free visual update)
       let needsUpdate = false;
-      const currentMessages = messagesRef.current;
-      if (newMessages.length !== currentMessages.length) {
+      if (mergedMessages.length !== currentMessages.length) {
         needsUpdate = true;
       } else {
-        for (let i = 0; i < newMessages.length; i++) {
-          const a = newMessages[i];
+        for (let i = 0; i < mergedMessages.length; i++) {
+          const a = mergedMessages[i];
           const b = currentMessages[i];
           if (
             a.id !== b.id ||
@@ -325,7 +335,7 @@ function ChatApp({
       }
 
       if (needsUpdate) {
-        setMessages(newMessages);
+        setMessages(mergedMessages);
       }
       setCurrentConversationId(conversationId);
       setHasMessages(newMessages.length > 0);
@@ -439,6 +449,7 @@ function ChatApp({
       role: 'user',
       content: userMsgContent,
       created_at: new Date().toISOString(),
+      clientId: userMsgId,
     };
     
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), newUserMsg]);
@@ -458,7 +469,8 @@ function ChatApp({
         status: 'loading',
         metadata: {
           resolution: options.resolution
-        }
+        },
+        clientId: assistantMsgId,
       };
       setMessages((prev) => [...(Array.isArray(prev) ? prev : []), loadingMsg]);
       setIsLoading(true);
@@ -570,6 +582,7 @@ function ChatApp({
       reasoning: '',
       status: 'loading',
       created_at: new Date().toISOString(),
+      clientId: assistantMsgId,
     };
     setMessages((prev) => [...(Array.isArray(prev) ? prev : []), assistantMsg]);
     setCurrentNodeId(assistantMsgId);
