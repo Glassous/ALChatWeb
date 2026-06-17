@@ -538,6 +538,99 @@ export function InputArea({
     }
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled || isUploading) return;
+
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const filesToUpload: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          filesToUpload.push(file);
+        }
+      }
+    }
+
+    if (filesToUpload.length === 0) return;
+
+    // 1. 画图模式下的类型和数量校验
+    if (isImageMode) {
+      const hasNonImage = filesToUpload.some(file => !file.type.startsWith('image/'));
+      if (hasNonImage) {
+        alert('图片生成模式下只能上传图片');
+        return;
+      }
+      if (refImageUrl || attachments.length >= 1 || filesToUpload.length > 1) {
+        alert('图片生成模式下只能上传一张图片');
+        return;
+      }
+
+      setIsUploading(true);
+      try {
+        const url = await apiClient.uploadReferenceImage(filesToUpload[0]);
+        setRefImageUrl(url);
+      } catch (error) {
+        console.error('Failed to upload pasted image:', error);
+        alert('上传图片失败，请重试');
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    // 2. 普通聊天模式下的类型和混合互斥校验
+    let currentType = selectedAttachmentType;
+    const newFiles: File[] = [];
+
+    for (const file of filesToUpload) {
+      const isImg = file.type.startsWith('image/');
+      const isVid = file.type.startsWith('video/');
+
+      if (!isImg && !isVid) {
+        alert('仅支持粘贴图片或视频文件');
+        return;
+      }
+
+      const fileType = isImg ? 'image' : 'video';
+
+      if (currentType === null) {
+        currentType = fileType;
+      } else if (currentType !== fileType) {
+        const errorMsg = currentType === 'image' ? '已有图片，请先移除才能粘贴视频' : '已有视频，请先移除才能粘贴图片';
+        alert(errorMsg);
+        return;
+      }
+      newFiles.push(file);
+    }
+
+    const hasImages = newFiles.some(f => f.type.startsWith('image/'));
+    const hasVideos = newFiles.some(f => f.type.startsWith('video/'));
+    if (hasImages && hasVideos) {
+      alert('不能同时上传图片和视频');
+      return;
+    }
+
+    setSelectedAttachmentType(currentType);
+    setIsUploading(true);
+    try {
+      const newAttachments = [...attachments];
+      for (const file of newFiles) {
+        const url = await apiClient.uploadReferenceImage(file);
+        newAttachments.push({ url, type: currentType! });
+      }
+      setAttachments(newAttachments);
+    } catch (error) {
+      console.error('Failed to upload pasted files:', error);
+      alert('上传文件失败，请重试');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const isExhausted = userCredits !== null && userCredits <= 0;
   const warningThreshold = userMemberType === 'free' ? 50 : 100;
   const showWarning = userCredits !== null && userCredits > 0 && userCredits <= warningThreshold;
@@ -625,6 +718,7 @@ export function InputArea({
                 onChange={handleTextChange}
                 onKeyDown={handleKeyDown}
                 onScroll={handleScroll}
+                onPaste={handlePaste}
                 disabled={disabled || isUploading}
                 rows={1}
                 ref={textareaRef}
