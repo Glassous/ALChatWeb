@@ -20,6 +20,8 @@ interface TopBarProps {
   onBack?: () => void;
   hasMessages?: boolean;
   hasConversation?: boolean;
+  isImageMode?: boolean;
+  mode?: 'daily' | 'expert';
 }
 
 export function TopBar({ 
@@ -40,9 +42,11 @@ export function TopBar({
   showBackButton,
   onBack,
   hasMessages = false,
-  hasConversation = false
+  hasConversation = false,
+  isImageMode = false,
+  mode = 'daily'
 }: TopBarProps) {
-  const showTempChatBtn = !(hasMessages && hasConversation);
+  const showTempChatBtn = !(hasMessages && hasConversation) && !isImageMode && mode !== 'expert';
 
   return (
     <header className={`topbar ${hasConversation ? 'has-conversation' : ''}`}>

@@ -73,6 +73,9 @@ interface InputAreaProps {
   userMemberType?: string;
   onShowUpgrade?: () => void;
   style?: React.CSSProperties;
+  isTemp?: boolean;
+  onModeChange?: (mode: 'daily' | 'expert') => void;
+  onImageModeChange?: (isImageMode: boolean) => void;
 }
 
 const RESOLUTIONS = [
@@ -93,11 +96,22 @@ export function InputArea({
   userCredits = null,
   userMemberType = 'free',
   onShowUpgrade,
-  style
+  style,
+  isTemp = false,
+  onModeChange,
+  onImageModeChange
 }: InputAreaProps) {
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
+
+  useEffect(() => {
+    onModeChange?.(mode);
+  }, [mode, onModeChange]);
+
+  useEffect(() => {
+    onImageModeChange?.(isImageMode);
+  }, [isImageMode, onImageModeChange]);
   const [resolution, setResolution] = useState(RESOLUTIONS[0].value);
   const [showResolutions, setShowResolutions] = useState(false);
   const [refImageUrl, setRefImageUrl] = useState<string | null>(null);
@@ -315,11 +329,13 @@ export function InputArea({
     }
   };
 
-  const handleUploadClick = () => {
+   const handleUploadClick = () => {
+    if (isTemp) return;
     fileInputRef.current?.click();
   };
 
   const handleAttachmentClick = () => {
+    if (isTemp) return;
     if (selectedAttachmentType) {
       attachmentInputRef.current?.click();
     } else {
@@ -424,7 +440,7 @@ export function InputArea({
     e.preventDefault();
     e.stopPropagation();
 
-    if (disabled || isUploading) return;
+    if (isTemp || disabled || isUploading) return;
 
     const items = e.dataTransfer.items;
     if (items && items.length > 0) {
@@ -503,7 +519,7 @@ export function InputArea({
     setDragStatus('none');
     setDragMessage('');
 
-    if (disabled || isUploading || status !== 'supported') return;
+    if (isTemp || disabled || isUploading || status !== 'supported') return;
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
@@ -539,7 +555,7 @@ export function InputArea({
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (disabled || isUploading) return;
+    if (isTemp || disabled || isUploading) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -775,7 +791,7 @@ export function InputArea({
           <div className="input-bottom-row">
             <motion.div className="tools-left" layout>
               <AnimatePresence initial={false}>
-                {!isImageMode && attachments.length === 0 && (
+                {!isTemp && !isImageMode && attachments.length === 0 && (
                   <motion.div
                     key="mode-toggle"
                     layout
@@ -795,7 +811,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {attachments.length === 0 && (
+                {!isTemp && attachments.length === 0 && (
                   <motion.div
                     key="image-mode"
                     layout
@@ -938,7 +954,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isImageMode && (
+                {!isTemp && !isImageMode && (
                   <motion.div
                     key="attachment"
                     layout

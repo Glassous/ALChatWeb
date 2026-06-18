@@ -100,6 +100,8 @@ function ChatApp({
   const [userMemberType, setUserMemberType] = useState('free');
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [webMode, setWebMode] = useState<'daily' | 'expert'>('daily');
+  const [webIsImageMode, setWebIsImageMode] = useState(false);
 
   // Workspace states
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -1048,6 +1050,8 @@ function ChatApp({
           onShowUpgrade={() => navigate('/settings')}
           hasMessages={hasMessages}
           hasConversation={!!currentConversationId}
+          isImageMode={webIsImageMode}
+          mode={webMode}
         />
         {isMessageLoading && <div className="loading-bar"></div>}
         <div className={`chat-container ${workspaceOpen ? 'workspace-active' : ''}`}>
@@ -1149,6 +1153,9 @@ function ChatApp({
             userMemberType={userMemberType}
             onShowUpgrade={() => navigate('/settings')}
             style={(workspaceOpen && !isMobile) ? { right: `${workspaceWidth}px` } : undefined}
+            isTemp={isTempChat}
+            onModeChange={setWebMode}
+            onImageModeChange={setWebIsImageMode}
           />
         </div>
       </div>
