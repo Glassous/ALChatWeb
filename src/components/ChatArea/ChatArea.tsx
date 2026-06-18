@@ -5,6 +5,7 @@ import { type SearchData } from '../SearchSidebar/SearchSidebar';
 import { AgentStepPanel } from '../AgentStepPanel/AgentStepPanel';
 import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import type { AgentStepData, AgentPlanItemData } from '../../services/api';
+import { getThumbnailUrl } from '../../utils/image';
 import './ChatArea.css';
 
 export interface Message {
@@ -309,7 +310,7 @@ function MessageItem({
         return (
           <span className="image-container-msg">
             <img 
-              src={src} 
+              src={getThumbnailUrl(src)} 
               alt={alt || "Generated"} 
               className="generated-image" 
               onClick={() => onImageClick(src!)}
@@ -543,7 +544,7 @@ function MessageItem({
                               return (
                                 <div key={idx} className="user-ref-image-card" onClick={() => onImageClick(url)}>
                                   <img 
-                                    src={url} 
+                                    src={getThumbnailUrl(url)} 
                                     alt={`Reference ${idx}`} 
                                     onError={handleUserImgError}
                                   />
@@ -955,7 +956,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
             </button>
           </div>
           <div className="preview-content" onClick={e => e.stopPropagation()}>
-            <img src={previewUrl} alt="Preview" className="preview-image" />
+            <img src={getThumbnailUrl(previewUrl)} alt="Preview" className="preview-image" />
           </div>
         </div>
       )}
