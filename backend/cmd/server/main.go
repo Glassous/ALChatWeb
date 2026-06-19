@@ -7,6 +7,7 @@ import (
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/handlers"
 	"alchat-backend/internal/middleware"
+	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
 	"context"
 	"log"
@@ -49,6 +50,20 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	// Connect to MySQL
+	mysqlDB, err := database.NewMySQL(cfg.MySQLDSN, cfg.GinMode != gin.ReleaseMode)
+	if err != nil {
+		slog.Error("Failed to connect to MySQL", "error", err)
+		os.Exit(1)
+	}
+	defer mysqlDB.Close()
+
+	// Auto migrate MySQL schemas
+	if err := mysqlDB.DB.AutoMigrate(&models.User{}, &models.ModelConfig{}, &models.Announcement{}, &models.Feedback{}); err != nil {
+		slog.Error("Failed to auto migrate MySQL schemas", "error", err)
+		os.Exit(1)
+	}
 
 	// Connect to Redis
 	rdb, err := database.NewRedis(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
@@ -93,14 +108,14 @@ func main() {
 		log.Printf("Warning: Failed to initialize COS service: %v. Avatar upload will be disabled.", err)
 	}
 
-	memberService := services.NewMemberService(db)
+	memberService := services.NewMemberService(db, mysqlDB)
 	memberService.StartExpiryChecker(context.Background())
 	tokenService := services.NewTokenService(cfg.JWTSecret)
 	emailService := services.NewEmailService(cfg)
 	streamManager := services.NewStreamManager()
 	tempConvService := services.NewTempConversationService(rdb)
 
-	shareService := services.NewShareService(db)
+	shareService := services.NewShareService(db, mysqlDB)
 
 	imageService, err := services.NewImageService(cfg.VolcengineAPIKey, cfg.VolcengineImageEP, ossService)
 	if err != nil {
@@ -108,18 +123,18 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(db, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
+	authHandler := handlers.NewAuthHandler(db, mysqlDB, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, streamManager, imageService)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, mysqlDB, streamManager, imageService)
 	chatHandler.SetTempConversationService(tempConvService)
-	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db)
-	adminHandler := handlers.NewAdminHandler(db, rdb, aiService, memberService, tokenService, emailService)
+	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db, mysqlDB)
+	adminHandler := handlers.NewAdminHandler(db, mysqlDB, rdb, aiService, memberService, tokenService, emailService)
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
 
 	alingService := services.NewALingService(db, aiService, streamManager, memberService, ossService)
-	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService, db)
+	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService, db, mysqlDB)
 
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -26,6 +25,7 @@ type ChatHandler struct {
 	conversationService *services.ConversationService
 	memberService       *services.MemberService
 	db                  *database.MongoDB
+	mysqlDB             *database.MySQL
 	streamManager       *services.StreamManager
 	tempConvService     *services.TempConversationService
 	imageService        *services.ImageService
@@ -36,12 +36,13 @@ type ChatHandler struct {
 	}
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
 		memberService:       memberService,
 		db:                  db,
+		mysqlDB:             mysqlDB,
 		streamManager:       streamManager,
 		imageService:        imageService,
 	}
@@ -75,7 +76,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	// 1. Check user credits and reset if needed
 	userIDObj, _ := primitive.ObjectIDFromHex(userID)
 	var user models.User
-	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
+	err := h.mysqlDB.DB.WithContext(c.Request.Context()).Where("id = ?", userIDObj.Hex()).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
@@ -188,7 +189,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 		// Get user settings for system prompt
 		var user models.User
-		h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user)
+		h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&user)
 
 		// Construct system prompt
 		var systemPromptBuilder strings.Builder
@@ -506,7 +507,7 @@ func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatR
 
 	// Get user settings for system prompt
 	var user models.User
-	h.db.Users().FindOne(ctx, bson.M{"_id": userIDObj}).Decode(&user)
+	h.mysqlDB.DB.WithContext(ctx).Where("id = ?", userIDObj.Hex()).First(&user)
 
 	// Construct system prompt and inject it to the beginning of the context
 	var systemPromptBuilder strings.Builder
@@ -787,7 +788,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 
 		// Re-fetch user to get latest settings (system prompt, etc.)
 		var user models.User
-		if err := h.db.Users().FindOne(bgCtx, bson.M{"_id": userIDObj}).Decode(&user); err != nil {
+		if err := h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&user).Error; err != nil {
 			log.Printf("[TempChat] Failed to fetch user: %v", err)
 		}
 

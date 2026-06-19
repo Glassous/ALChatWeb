@@ -7,15 +7,15 @@ import (
 )
 
 type Announcement struct {
-	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Title       string             `bson:"title" json:"title"`
-	Content     string             `bson:"content" json:"content"`
-	Type        string             `bson:"type" json:"type"` // info | warning | critical
-	IsActive    bool               `bson:"is_active" json:"is_active"`
-	PublishedAt *time.Time         `bson:"published_at,omitempty" json:"published_at,omitempty"`
-	CreatedBy   primitive.ObjectID `bson:"created_by" json:"created_by"`
-	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`
-	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at"`
+	ID          primitive.ObjectID `bson:"_id,omitempty" json:"id" gorm:"primaryKey;type:varchar(24);serializer:objectid"`
+	Title       string             `bson:"title" json:"title" gorm:"type:varchar(255);not null"`
+	Content     string             `bson:"content" json:"content" gorm:"type:text"`
+	Type        string             `bson:"type" json:"type" gorm:"type:varchar(50);default:'info'"` // info | warning | critical
+	IsActive    bool               `bson:"is_active" json:"is_active" gorm:"type:boolean;default:false"`
+	PublishedAt *time.Time         `bson:"published_at,omitempty" json:"published_at,omitempty" gorm:"type:datetime"`
+	CreatedBy   primitive.ObjectID `bson:"created_by" json:"created_by" gorm:"type:varchar(24);serializer:objectid"`
+	CreatedAt   time.Time          `bson:"created_at" json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time          `bson:"updated_at" json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 type CreateAnnouncementRequest struct {

@@ -17,11 +17,12 @@ import (
 )
 
 type ShareService struct {
-	db *database.MongoDB
+	db      *database.MongoDB
+	mysqlDB *database.MySQL
 }
 
-func NewShareService(db *database.MongoDB) *ShareService {
-	return &ShareService{db: db}
+func NewShareService(db *database.MongoDB, mysqlDB *database.MySQL) *ShareService {
+	return &ShareService{db: db, mysqlDB: mysqlDB}
 }
 
 func generateShareToken() string {
@@ -43,7 +44,7 @@ func (s *ShareService) CreateShare(ctx context.Context, userID, conversationID p
 	}
 
 	var user models.User
-	err = s.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	err = s.mysqlDB.DB.WithContext(ctx).Where("id = ?", userID.Hex()).First(&user).Error
 	if err != nil {
 		return nil, fmt.Errorf("用户不存在")
 	}

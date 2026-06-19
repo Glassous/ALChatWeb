@@ -15,14 +15,14 @@ import (
 	"alchat-backend/internal/services"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
 	db            *database.MongoDB
+	mysqlDB       *database.MySQL
 	rdb           *database.Redis
 	jwtSecret     string
 	ossService    *services.COSService
@@ -31,9 +31,10 @@ type AuthHandler struct {
 	emailService  *services.EmailService
 }
 
-func NewAuthHandler(db *database.MongoDB, rdb *database.Redis, jwtSecret string, ossService *services.COSService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AuthHandler {
+func NewAuthHandler(db *database.MongoDB, mysqlDB *database.MySQL, rdb *database.Redis, jwtSecret string, ossService *services.COSService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AuthHandler {
 	return &AuthHandler{
 		db:            db,
+		mysqlDB:       mysqlDB,
 		rdb:           rdb,
 		jwtSecret:     jwtSecret,
 		ossService:    ossService,
@@ -96,9 +97,13 @@ func (h *AuthHandler) SendCode(c *gin.Context) {
 	// If resetting password, check if user exists
 	if req.Scene == "reset" {
 		var user models.User
-		err := h.db.Users().FindOne(c.Request.Context(), bson.M{"email": req.Email}).Decode(&user)
+		err := h.mysqlDB.DB.WithContext(c.Request.Context()).Where("email = ?", req.Email).First(&user).Error
 		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			}
 			return
 		}
 	}
@@ -139,7 +144,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// Check if email already exists
 	var existingUser models.User
-	err = h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&existingUser)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("email = ?", req.Email).First(&existingUser).Error
 	if err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
 		return
@@ -169,7 +174,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		UpdatedAt:         time.Now(),
 	}
 
-	_, err = h.db.Users().InsertOne(ctx, user)
+	err = h.mysqlDB.DB.WithContext(ctx).Create(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
@@ -201,9 +206,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	defer cancel()
 
 	var user models.User
-	err := h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&user)
+	err := h.mysqlDB.DB.WithContext(ctx).Where("email = ?", req.Email).First(&user).Error
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -258,17 +263,16 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	result, err := h.db.Users().UpdateOne(
-		ctx,
-		bson.M{"email": req.Email},
-		bson.M{"$set": bson.M{"password": string(hashedPassword), "updated_at": time.Now()}},
-	)
-	if err != nil {
+	res := h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("email = ?", req.Email).Updates(map[string]interface{}{
+		"password":   string(hashedPassword),
+		"updated_at": time.Now(),
+	})
+	if res.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
 		return
 	}
 
-	if result.MatchedCount == 0 {
+	if res.RowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User with this email not found"})
 		return
 	}
@@ -303,11 +307,10 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err = h.db.Users().UpdateOne(
-		ctx,
-		bson.M{"_id": userID},
-		bson.M{"$set": bson.M{"nickname": req.Nickname, "updated_at": time.Now()}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
+		"nickname":   req.Nickname,
+		"updated_at": time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
 		return
@@ -348,17 +351,17 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 		defer cancel()
 
 		var user models.User
-		err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+		err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", userID.Hex()).First(&user).Error
 		if err != nil {
-			fmt.Printf("Warning: Failed to find user %s to get old avatar: %v\n", userID.Hex(), err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+			return
 		}
 		oldAvatarURL := user.Avatar
 
-		_, err = h.db.Users().UpdateOne(
-			ctx,
-			bson.M{"_id": userID},
-			bson.M{"$set": bson.M{"avatar": req.AvatarURL, "updated_at": time.Now()}},
-		)
+		err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
+			"avatar":     req.AvatarURL,
+			"updated_at": time.Now(),
+		}).Error
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user avatar in database"})
 			return
@@ -453,17 +456,16 @@ func (h *AuthHandler) UpdateAvatar(c *gin.Context) {
 	defer cancel()
 
 	var user models.User
-	err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", userID.Hex()).First(&user).Error
 	if err != nil {
 		fmt.Printf("Warning: Failed to find user %s to get old avatar: %v\n", userID.Hex(), err)
 	}
 	oldAvatarURL := user.Avatar
 
-	_, err = h.db.Users().UpdateOne(
-		ctx,
-		bson.M{"_id": userID},
-		bson.M{"$set": bson.M{"avatar": avatarURL, "updated_at": time.Now()}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
+		"avatar":     avatarURL,
+		"updated_at": time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user avatar in database"})
 		return
@@ -506,11 +508,8 @@ func (h *AuthHandler) Upgrade(c *gin.Context) {
 
 	memberType, err := h.memberService.UpgradeWithInvitationCode(c.Request.Context(), userID, req.Code)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or used invitation code"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upgrade"})
-		}
+		// Since invitation code check uses mongodb which throws ErrNoDocuments, we will check if it's that or gorm record not found
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or used invitation code"})
 		return
 	}
 
@@ -527,7 +526,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	userID, _ := primitive.ObjectIDFromHex(userIDStr.(string))
 
 	var user models.User
-	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userID}).Decode(&user)
+	err := h.mysqlDB.DB.WithContext(c.Request.Context()).Where("id = ?", userID.Hex()).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch profile"})
 		return
@@ -558,7 +557,7 @@ func (h *AuthHandler) GetSystemPrompt(c *gin.Context) {
 	defer cancel()
 
 	var user models.User
-	err = h.db.Users().FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", userID.Hex()).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
@@ -597,16 +596,12 @@ func (h *AuthHandler) UpdateSystemPrompt(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err = h.db.Users().UpdateOne(
-		ctx,
-		bson.M{"_id": userID},
-		bson.M{"$set": bson.M{
-			"system_prompt":    req.SystemPrompt,
-			"include_datetime": req.IncludeDateTime,
-			"include_location": req.IncludeLocation,
-			"updated_at":       time.Now(),
-		}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
+		"system_prompt":    req.SystemPrompt,
+		"include_date_time": req.IncludeDateTime,
+		"include_location": req.IncludeLocation,
+		"updated_at":       time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update system prompt"})
 		return
@@ -637,14 +632,10 @@ func (h *AuthHandler) UpdateTheme(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err = h.db.Users().UpdateOne(
-		ctx,
-		bson.M{"_id": userID},
-		bson.M{"$set": bson.M{
-			"theme_config": req,
-			"updated_at":   time.Now(),
-		}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
+		"theme_config": req,
+		"updated_at":   time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update theme config"})
 		return

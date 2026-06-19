@@ -53,6 +53,7 @@ type Config struct {
 	RedisDB            int
 	AllowOrigins       []string
 	GinMode            string
+	MySQLDSN           string
 }
 
 func Load() *Config {
@@ -109,6 +110,7 @@ func Load() *Config {
 		RedisDB:            getEnvInt("REDIS_DB", 0),
 		AllowOrigins:       getEnvSlice("ALLOW_ORIGINS", []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:3001"}),
 		GinMode:            getEnv("GIN_MODE", "debug"),
+		MySQLDSN:           getEnv("MYSQL_DSN", ""),
 	}
 
 	// Enhanced Debug Logging for OSS

@@ -18,10 +18,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type AdminHandler struct {
 	db            *database.MongoDB
+	mysqlDB       *database.MySQL
 	rdb           *database.Redis
 	aiService     *services.AIService
 	memberService *services.MemberService
@@ -37,9 +39,10 @@ type AdminHandler struct {
 	}
 }
 
-func NewAdminHandler(db *database.MongoDB, rdb *database.Redis, aiService *services.AIService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AdminHandler {
+func NewAdminHandler(db *database.MongoDB, mysqlDB *database.MySQL, rdb *database.Redis, aiService *services.AIService, memberService *services.MemberService, tokenService *services.TokenService, emailService *services.EmailService) *AdminHandler {
 	return &AdminHandler{
 		db:            db,
+		mysqlDB:       mysqlDB,
 		rdb:           rdb,
 		aiService:     aiService,
 		memberService: memberService,
@@ -79,7 +82,7 @@ func (h *AdminHandler) AdminRegister(c *gin.Context) {
 
 	// Check if email already exists
 	var existingUser models.User
-	err = h.db.Users().FindOne(ctx, bson.M{"email": req.Email}).Decode(&existingUser)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("email = ?", req.Email).First(&existingUser).Error
 	if err == nil {
 		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
 		return
@@ -109,7 +112,7 @@ func (h *AdminHandler) AdminRegister(c *gin.Context) {
 		UpdatedAt:         time.Now(),
 	}
 
-	_, err = h.db.Users().InsertOne(ctx, user)
+	err = h.mysqlDB.DB.WithContext(ctx).Create(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create admin user"})
 		return
@@ -138,8 +141,11 @@ func (h *AdminHandler) GetDashboardStats(c *gin.Context) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	totalUsers, _ := h.db.Users().CountDocuments(ctx, bson.M{})
-	todayNewUsers, _ := h.db.Users().CountDocuments(ctx, bson.M{"created_at": bson.M{"$gte": todayStart}})
+	var totalUsers int64
+	h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Count(&totalUsers)
+
+	var todayNewUsers int64
+	h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("created_at >= ?", todayStart).Count(&todayNewUsers)
 
 	totalConvs, _ := h.db.Conversations().CountDocuments(ctx, bson.M{})
 	todayActiveConvs, _ := h.db.Conversations().CountDocuments(ctx, bson.M{"updated_at": bson.M{"$gte": todayStart}})
@@ -162,21 +168,11 @@ func (h *AdminHandler) GetModelConfigs(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cursor, err := h.db.Configs().Find(ctx, bson.M{})
+	var configs []models.ModelConfig
+	err := h.mysqlDB.DB.WithContext(ctx).Find(&configs).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	defer cursor.Close(ctx)
-
-	var configs []models.ModelConfig
-	if err := cursor.All(ctx, &configs); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if configs == nil {
-		configs = []models.ModelConfig{}
 	}
 
 	c.JSON(http.StatusOK, configs)
@@ -193,13 +189,8 @@ func (h *AdminHandler) UpdateModelConfig(c *gin.Context) {
 	defer cancel()
 
 	req.UpdatedAt = time.Now()
-	opts := options.Update().SetUpsert(true)
-	_, err := h.db.Configs().UpdateOne(
-		ctx,
-		bson.M{"mode": req.Mode},
-		bson.M{"$set": req},
-		opts,
-	)
+	// GORM Save will insert or update (upsert) because Mode is the primaryKey
+	err := h.mysqlDB.DB.WithContext(ctx).Save(&req).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -220,15 +211,9 @@ func (h *AdminHandler) GetUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cursor, err := h.db.Users().Find(ctx, bson.M{}, options.Find().SetSort(bson.M{"created_at": -1}))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer cursor.Close(ctx)
-
 	var users []models.User
-	if err := cursor.All(ctx, &users); err != nil {
+	err := h.mysqlDB.DB.WithContext(ctx).Order("created_at desc").Find(&users).Error
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -248,9 +233,13 @@ func (h *AdminHandler) GetUser(c *gin.Context) {
 	defer cancel()
 
 	var user models.User
-	err = h.db.Users().FindOne(ctx, bson.M{"_id": id}).Decode(&user)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", id.Hex()).First(&user).Error
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
 		return
 	}
 
@@ -276,7 +265,10 @@ func (h *AdminHandler) UpdateUserRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err = h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"role": req.Role, "updated_at": time.Now()}})
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", id.Hex()).Updates(map[string]interface{}{
+		"role":       req.Role,
+		"updated_at": time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -297,7 +289,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	defer cancel()
 
 	// Delete user, their conversations, and their messages
-	_, err = h.db.Users().DeleteOne(ctx, bson.M{"_id": id})
+	err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", id.Hex()).Delete(&models.User{}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -421,14 +413,9 @@ func (h *AdminHandler) SearchMessages(c *gin.Context) {
 
 // LoadConfigs loads all model configurations from DB into AIService
 func (h *AdminHandler) LoadConfigs(ctx context.Context) {
-	cursor, err := h.db.Configs().Find(ctx, bson.M{})
-	if err != nil {
-		return
-	}
-	defer cursor.Close(ctx)
-
 	var configs []models.ModelConfig
-	if err := cursor.All(ctx, &configs); err != nil {
+	err := h.mysqlDB.DB.WithContext(ctx).Find(&configs).Error
+	if err != nil {
 		return
 	}
 
@@ -452,7 +439,10 @@ func (h *AdminHandler) UpdateUserCredits(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err := h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"credits": req.Credits, "updated_at": time.Now()}})
+	err := h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", id.Hex()).Updates(map[string]interface{}{
+		"credits":    req.Credits,
+		"updated_at": time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -476,7 +466,10 @@ func (h *AdminHandler) UpdateUserMemberType(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	_, err := h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"member_type": req.MemberType, "updated_at": time.Now()}})
+	err := h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", id.Hex()).Updates(map[string]interface{}{
+		"member_type": req.MemberType,
+		"updated_at":  time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -506,13 +499,13 @@ func (h *AdminHandler) UpdateUserMember(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	update := bson.M{
+	update := map[string]interface{}{
 		"updated_at": time.Now(),
+		"credits":    req.Credits,
 	}
 	if req.MemberType != "" {
 		update["member_type"] = req.MemberType
 	}
-	update["credits"] = req.Credits
 	if req.MemberExpiry != nil {
 		// Round to the next day's 00:00:00 of the selected date
 		e := *req.MemberExpiry
@@ -522,7 +515,7 @@ func (h *AdminHandler) UpdateUserMember(c *gin.Context) {
 		update["member_expiry"] = nil
 	}
 
-	_, err = h.db.Users().UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": update})
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", id.Hex()).Updates(update).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -716,11 +709,6 @@ func (h *AdminHandler) ToggleAgentTool(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Tool state updated", "name": name, "enabled": req.Enabled})
 }
 
-const (
-	collectionAnnouncements = "announcements"
-	collectionFeedbacks     = "feedbacks"
-)
-
 // Admin: Create announcement
 func (h *AdminHandler) CreateAnnouncement(c *gin.Context) {
 	var req models.CreateAnnouncementRequest
@@ -750,7 +738,7 @@ func (h *AdminHandler) CreateAnnouncement(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	if _, err := h.db.Collection(collectionAnnouncements).InsertOne(ctx, ann); err != nil {
+	if err := h.mysqlDB.DB.WithContext(ctx).Create(&ann).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create announcement"})
 		return
 	}
@@ -762,24 +750,11 @@ func (h *AdminHandler) ListAnnouncements(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cur, err := h.db.Collection(collectionAnnouncements).Find(
-		ctx,
-		bson.M{},
-		options.Find().SetSort(bson.M{"created_at": -1}),
-	)
+	var items []models.Announcement
+	err := h.mysqlDB.DB.WithContext(ctx).Order("created_at desc").Find(&items).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	defer cur.Close(ctx)
-
-	var items []models.Announcement
-	if err := cur.All(ctx, &items); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if items == nil {
-		items = []models.Announcement{}
 	}
 	c.JSON(http.StatusOK, items)
 }
@@ -799,7 +774,7 @@ func (h *AdminHandler) UpdateAnnouncement(c *gin.Context) {
 		return
 	}
 
-	set := bson.M{"updated_at": time.Now()}
+	set := map[string]interface{}{"updated_at": time.Now()}
 	if req.Title != nil {
 		set["title"] = *req.Title
 	}
@@ -813,9 +788,8 @@ func (h *AdminHandler) UpdateAnnouncement(c *gin.Context) {
 		set["is_active"] = *req.IsActive
 	}
 	if req.Publish != nil && *req.Publish {
-		t := time.Now()
 		set["is_active"] = true
-		set["published_at"] = t
+		set["published_at"] = time.Now()
 	}
 	if req.Unpublish != nil && *req.Unpublish {
 		set["is_active"] = false
@@ -824,11 +798,7 @@ func (h *AdminHandler) UpdateAnnouncement(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	_, err = h.db.Collection(collectionAnnouncements).UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.M{"$set": set},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.Announcement{}).Where("id = ?", id.Hex()).Updates(set).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update"})
 		return
@@ -847,7 +817,7 @@ func (h *AdminHandler) DeleteAnnouncement(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	if _, err := h.db.Collection(collectionAnnouncements).DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+	if err := h.mysqlDB.DB.WithContext(ctx).Where("id = ?", id.Hex()).Delete(&models.Announcement{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete"})
 		return
 	}
@@ -859,24 +829,11 @@ func (h *AdminHandler) ListFeedbacks(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cur, err := h.db.Collection(collectionFeedbacks).Find(
-		ctx,
-		bson.M{},
-		options.Find().SetSort(bson.M{"created_at": -1}),
-	)
+	var items []models.Feedback
+	err := h.mysqlDB.DB.WithContext(ctx).Order("created_at desc").Find(&items).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	defer cur.Close(ctx)
-
-	var items []models.Feedback
-	if err := cur.All(ctx, &items); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if items == nil {
-		items = []models.Feedback{}
 	}
 	c.JSON(http.StatusOK, items)
 }
@@ -898,11 +855,10 @@ func (h *AdminHandler) UpdateFeedbackStatus(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	_, err = h.db.Collection(collectionFeedbacks).UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.M{"$set": bson.M{"status": req.Status, "updated_at": time.Now()}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.Feedback{}).Where("id = ?", id.Hex()).Updates(map[string]interface{}{
+		"status":     req.Status,
+		"updated_at": time.Now(),
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
 		return
@@ -929,23 +885,19 @@ func (h *AdminHandler) ReplyFeedback(c *gin.Context) {
 	defer cancel()
 
 	var feedback models.Feedback
-	err = h.db.Collection(collectionFeedbacks).FindOne(ctx, bson.M{"_id": id}).Decode(&feedback)
+	err = h.mysqlDB.DB.WithContext(ctx).Where("id = ?", id.Hex()).First(&feedback).Error
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Feedback not found"})
 		return
 	}
 
 	now := time.Now()
-	_, err = h.db.Collection(collectionFeedbacks).UpdateOne(
-		ctx,
-		bson.M{"_id": id},
-		bson.M{"$set": bson.M{
-			"status":        "replied",
-			"reply_content": req.ReplyContent,
-			"replied_at":    &now,
-			"updated_at":    now,
-		}},
-	)
+	err = h.mysqlDB.DB.WithContext(ctx).Model(&feedback).Updates(map[string]interface{}{
+		"status":        "replied",
+		"reply_content": req.ReplyContent,
+		"replied_at":    &now,
+		"updated_at":    now,
+	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update feedback"})
 		return
@@ -973,7 +925,7 @@ func (h *AdminHandler) DeleteFeedback(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	if _, err := h.db.Collection(collectionFeedbacks).DeleteOne(ctx, bson.M{"_id": id}); err != nil {
+	if err := h.mysqlDB.DB.WithContext(ctx).Where("id = ?", id.Hex()).Delete(&models.Feedback{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete"})
 		return
 	}
@@ -985,24 +937,11 @@ func (h *AdminHandler) PublicListActiveAnnouncements(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
-	cur, err := h.db.Collection(collectionAnnouncements).Find(
-		ctx,
-		bson.M{"is_active": true},
-		options.Find().SetSort(bson.M{"published_at": -1}).SetLimit(20),
-	)
+	var items []models.Announcement
+	err := h.mysqlDB.DB.WithContext(ctx).Where("is_active = ?", true).Order("published_at desc").Limit(20).Find(&items).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	defer cur.Close(ctx)
-
-	var items []models.Announcement
-	if err := cur.All(ctx, &items); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if items == nil {
-		items = []models.Announcement{}
 	}
 	c.JSON(http.StatusOK, items)
 }
@@ -1037,7 +976,7 @@ func (h *AdminHandler) PublicSubmitFeedback(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
-	if _, err := h.db.Collection(collectionFeedbacks).InsertOne(ctx, item); err != nil {
+	if err := h.mysqlDB.DB.WithContext(ctx).Create(&item).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to submit feedback"})
 		return
 	}
@@ -1046,13 +985,14 @@ func (h *AdminHandler) PublicSubmitFeedback(c *gin.Context) {
 
 // SetupAdmin ensures at least one admin exists
 func (h *AdminHandler) SetupAdmin(ctx context.Context) {
-	count, _ := h.db.Users().CountDocuments(ctx, bson.M{"role": "admin"})
+	var count int64
+	h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("role = ?", "admin").Count(&count)
 	if count == 0 {
 		// No admin found, let's make the first user an admin if exists
 		var firstUser models.User
-		err := h.db.Users().FindOne(ctx, bson.M{}).Decode(&firstUser)
+		err := h.mysqlDB.DB.WithContext(ctx).First(&firstUser).Error
 		if err == nil {
-			h.db.Users().UpdateOne(ctx, bson.M{"_id": firstUser.ID}, bson.M{"$set": bson.M{"role": "admin"}})
+			h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", firstUser.ID.Hex()).Update("role", "admin")
 			println("Warning: No admin found. Promoted user '" + firstUser.Email + "' to admin.")
 		} else {
 			println("Notice: No users found. First registered user will need manual promotion to admin via DB.")

@@ -13,7 +13,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -22,10 +21,11 @@ type ALingHandler struct {
 	streamMgr     *services.StreamManager
 	memberService *services.MemberService
 	db            *database.MongoDB
+	mysqlDB       *database.MySQL
 }
 
-func NewALingHandler(alingService *services.ALingService, streamMgr *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ALingHandler {
-	return &ALingHandler{alingService: alingService, streamMgr: streamMgr, memberService: memberService, db: db}
+func NewALingHandler(alingService *services.ALingService, streamMgr *services.StreamManager, memberService *services.MemberService, db *database.MongoDB, mysqlDB *database.MySQL) *ALingHandler {
+	return &ALingHandler{alingService: alingService, streamMgr: streamMgr, memberService: memberService, db: db, mysqlDB: mysqlDB}
 }
 
 // GET /api/aling/tools
@@ -179,7 +179,7 @@ func (h *ALingHandler) TranslateText(c *gin.Context) {
 
 	// 1. Check user credits and reset if needed
 	var user models.User
-	err = h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userID}).Decode(&user)
+	err = h.mysqlDB.DB.WithContext(c.Request.Context()).Where("id = ?", userID.Hex()).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return

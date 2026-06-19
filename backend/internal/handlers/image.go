@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -24,9 +23,10 @@ type ImageHandler struct {
 	streamManager       *services.StreamManager
 	memberService       *services.MemberService
 	db                  *database.MongoDB
+	mysqlDB             *database.MySQL
 }
 
-func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.COSService, aiService *services.AIService, streamManager *services.StreamManager, memberService *services.MemberService, db *database.MongoDB) *ImageHandler {
+func NewImageHandler(imageService *services.ImageService, conversationService *services.ConversationService, ossService *services.COSService, aiService *services.AIService, streamManager *services.StreamManager, memberService *services.MemberService, db *database.MongoDB, mysqlDB *database.MySQL) *ImageHandler {
 	return &ImageHandler{
 		imageService:        imageService,
 		conversationService: conversationService,
@@ -35,6 +35,7 @@ func NewImageHandler(imageService *services.ImageService, conversationService *s
 		streamManager:       streamManager,
 		memberService:       memberService,
 		db:                  db,
+		mysqlDB:             mysqlDB,
 	}
 }
 
@@ -57,7 +58,7 @@ func (h *ImageHandler) GenerateImage(c *gin.Context) {
 	// Check user credits and reset if needed
 	userIDObj, _ := primitive.ObjectIDFromHex(userID)
 	var user models.User
-	err := h.db.Users().FindOne(c.Request.Context(), bson.M{"_id": userIDObj}).Decode(&user)
+	err := h.mysqlDB.DB.WithContext(c.Request.Context()).Where("id = ?", userIDObj.Hex()).First(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
 		return
