@@ -88,6 +88,7 @@ func main() {
 		cfg.SearchBaseURL,
 		cfg.SearchModel,
 		cfg.BochaAPIKey,
+		cfg.TavilyAPIKey,
 		cfg.MultimodalAPIKey,
 		cfg.MultimodalBaseURL,
 		cfg.MultimodalModel,

@@ -55,6 +55,7 @@ type SearchResult struct {
 type SearchData struct {
 	Query   string         `bson:"query" json:"query"`
 	Status  string         `bson:"status" json:"status"` // "searching", "completed"
+	Source  string         `bson:"source,omitempty" json:"source,omitempty"`
 	Results []SearchResult `bson:"results,omitempty" json:"results,omitempty"`
 }
 

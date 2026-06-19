@@ -33,6 +33,7 @@ export interface Message {
   search?: {
     query: string;
     status: 'searching' | 'completed';
+    source?: string;
     results?: Array<{
       title: string;
       url: string;

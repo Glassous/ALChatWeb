@@ -36,6 +36,7 @@ type Config struct {
 	VolcengineAPIKey   string
 	VolcengineImageEP  string
 	BochaAPIKey        string
+	TavilyAPIKey       string
 	SearchAPIKey       string
 	SearchBaseURL      string
 	SearchModel        string
@@ -93,6 +94,7 @@ func Load() *Config {
 		VolcengineAPIKey:   getEnv("VOLCENGINE_API_KEY", ""),
 		VolcengineImageEP:  getEnv("VOLCENGINE_IMAGE_EP", ""),
 		BochaAPIKey:        getEnv("BOCHA_API_KEY", ""),
+		TavilyAPIKey:       getEnv("TAVILY_API_KEY", ""),
 		SearchAPIKey:       getEnv("SEARCH_API_KEY", ""),
 		SearchBaseURL:      getEnv("SEARCH_BASE_URL", "https://api.openai.com/v1"),
 		SearchModel:        getEnv("SEARCH_MODEL", "gpt-4"),

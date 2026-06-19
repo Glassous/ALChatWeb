@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -334,8 +336,22 @@ func (s *ConversationService) AutoGenerateTitle(ctx context.Context, conversatio
 	}
 
 	aiMsgs := make([]models.AIMessage, len(history))
+	reSearch := regexp.MustCompile(`(?s)\n?<search>.*?</search>\n?`)
+	reWeather := regexp.MustCompile(`(?s)\n?<weather>.*?</weather>\n?`)
+	reImage := regexp.MustCompile(`(?i)<image src="([^"]+)">`)
+
 	for i, m := range history {
-		aiMsgs[i] = models.AIMessage{Role: m.Role, Content: m.Content}
+		content := m.Content
+		if m.Role == "assistant" {
+			content = reSearch.ReplaceAllString(content, "")
+			content = reWeather.ReplaceAllString(content, "")
+			content = reImage.ReplaceAllString(content, "![image]($1)")
+			content = strings.TrimSpace(content)
+			if content == "" {
+				content = "[已为您完成]"
+			}
+		}
+		aiMsgs[i] = models.AIMessage{Role: m.Role, Content: content}
 	}
 
 	title, err := aiService.GenerateTitle(ctx, aiMsgs)

@@ -32,7 +32,7 @@ type ChatHandler struct {
 	agentRunner         interface {
 		Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
 		RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
-		RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string) (string, error)) (*agent.AgentResult, error)
+		RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string, source string) (string, error)) (*agent.AgentResult, error)
 	}
 }
 
@@ -51,7 +51,7 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 func (h *ChatHandler) SetAgentRunner(runner interface {
 	Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
 	RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
-	RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string) (string, error)) (*agent.AgentResult, error)
+	RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string, source string) (string, error)) (*agent.AgentResult, error)
 }) {
 	h.agentRunner = runner
 }
@@ -602,8 +602,8 @@ func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatR
 		}
 	}
 
-	searchCb := func(query string) (string, error) {
-		results, augmentedQuery, err := h.aiService.PerformSearch(ctx, aiMessages, func(searchData models.SearchData) error {
+	searchCb := func(query string, source string) (string, error) {
+		results, augmentedQuery, err := h.aiService.PerformSearch(ctx, aiMessages, source, func(searchData models.SearchData) error {
 			lastSearchData = &searchData
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
 				Type: "search",
@@ -621,6 +621,7 @@ func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatR
 		searchData := map[string]any{
 			"query":   augmentedQuery,
 			"results": results,
+			"source":  source,
 		}
 		searchJSON, _ := json.Marshal(searchData)
 		searchTag.Write(searchJSON)

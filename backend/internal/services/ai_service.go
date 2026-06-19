@@ -34,6 +34,8 @@ type AIService struct {
 	multimodalModel   string
 	bochaAPIKey       string
 	searchService     *SearchService
+	tavilyAPIKey      string
+	tavilyService     *TavilyService
 	agentAPIKey       string
 	agentBaseURL      string
 	agentModel        string
@@ -42,7 +44,7 @@ type AIService struct {
 	alingModel        string
 }
 
-func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, tavilyAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
 	s := &AIService{
 		apiKey:            apiKey,
 		baseURL:           baseURL,
@@ -61,6 +63,8 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		multimodalModel:   multimodalModel,
 		bochaAPIKey:       bochaAPIKey,
 		searchService:     NewSearchService(bochaAPIKey),
+		tavilyAPIKey:      tavilyAPIKey,
+		tavilyService:     NewTavilyService(tavilyAPIKey),
 		agentAPIKey:       agentAPIKey,
 		agentBaseURL:      agentBaseURL,
 		agentModel:        agentModel,
@@ -339,9 +343,7 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []mod
 			if customDomain != "" && bucket != "" && region != "" {
 				customDomainClean := strings.TrimSuffix(strings.TrimPrefix(customDomain, "https://"), "/")
 				defaultDomain := fmt.Sprintf("%s.cos.%s.myqcloud.com", bucket, region)
-				if strings.Contains(url, customDomainClean) {
-					url = strings.Replace(url, customDomainClean, defaultDomain, -1)
-				}
+				url = strings.Replace(url, customDomainClean, defaultDomain, -1)
 			}
 
 			contents = append(contents, oaiContent{
@@ -460,7 +462,7 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []mod
 }
 
 // PerformSearch handles the full search flow: keyword generation and web search
-func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessage, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
+func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessage, source string, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
 	// 1. Generate search keywords
 	query, _, _, err := s.GenerateKeywords(ctx, messages)
 	if err != nil {
@@ -475,17 +477,25 @@ func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessa
 		searchCallback(models.SearchData{
 			Query:  query,
 			Status: "searching",
+			Source: source,
 		})
 	}
 
 	// 3. Perform search
 	s.mu.RLock()
 	searchService := s.searchService
+	tavilyService := s.tavilyService
 	s.mu.RUnlock()
 
-	results, err := searchService.Search(ctx, query, 10)
+	var results []models.SearchResult
+	if source == "tavily" {
+		results, err = tavilyService.Search(ctx, query, 10)
+	} else {
+		results, err = searchService.Search(ctx, query, 10)
+	}
+
 	if err != nil {
-		log.Printf("[AIService] Search error: %v", err)
+		log.Printf("[AIService] Search error (source: %s): %v", source, err)
 		results = []models.SearchResult{}
 	}
 
@@ -494,6 +504,7 @@ func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessa
 		searchCallback(models.SearchData{
 			Query:   query,
 			Status:  "completed",
+			Source:  source,
 			Results: results,
 		})
 	}
@@ -508,7 +519,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []models.
 	model := s.searchModel
 	s.mu.RUnlock()
 
-	results, query, err := s.PerformSearch(ctx, messages, searchCallback)
+	results, query, err := s.PerformSearch(ctx, messages, "bocha", searchCallback)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -519,6 +530,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []models.
 	searchData := map[string]any{
 		"query":   query,
 		"results": results,
+		"source":  "bocha",
 	}
 	searchJSON, _ := json.Marshal(searchData)
 	searchTag.Write(searchJSON)

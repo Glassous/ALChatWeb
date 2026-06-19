@@ -17,6 +17,7 @@ export interface SearchResult {
 export interface SearchData {
   query: string;
   status: 'searching' | 'completed';
+  source?: string;
   results?: SearchResult[];
 }
 
@@ -76,7 +77,14 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
       >
         <div className="search-sidebar-header">
           <div className="header-content">
-            <h2 className="search-title">搜索结果</h2>
+            <h2 className="search-title">
+              搜索结果
+              {searchData.source && (
+                <span className="search-engine-badge">
+                  {searchData.source === 'tavily' ? '国际' : '国内'}
+                </span>
+              )}
+            </h2>
             <p className="search-query">{searchData.query}</p>
           </div>
           <md-icon-button onClick={onClose}>

@@ -116,10 +116,15 @@ var toolParameters = map[string]any{
 		"properties": map[string]any{
 			"query": map[string]any{
 				"type":        "string",
-				"description": "Search query keywords",
+				"description": "Search query keywords. 注意：如果 source 选择 'tavily'，这里的 query 必须翻译并使用英文进行检索。",
+			},
+			"source": map[string]any{
+				"type":        "string",
+				"description": "检索数据源选择。涉及中国本土、中文特定时事、国内天气或国内政策等国内问题，必须使用 'bocha'；涉及全球时事、英文问题、技术开发文档、国际学术等全球/国际问题，必须使用 'tavily'。",
+				"enum":        []string{"bocha", "tavily"},
 			},
 		},
-		"required": []string{"query"},
+		"required": []string{"query", "source"},
 	},
 	"generate_image": map[string]any{
 		"type": "object",

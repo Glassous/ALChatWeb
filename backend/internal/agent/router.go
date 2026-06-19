@@ -34,7 +34,7 @@ func (r *Runner) RunDailyRouter(
 	stepCb StepCallback,
 	tokenCb func(string),
 	reasoningCb func(string),
-	searchCb func(query string) (string, error),
+	searchCb func(query string, source string) (string, error),
 ) (*AgentResult, error) {
 	enabledTools := r.registry.GetEnabledTools()
 	var dailyTools []tools.ToolMeta
@@ -161,8 +161,12 @@ func (r *Runner) RunDailyRouter(
 	if hasWebSearch {
 		inputMap := parseToolInput(webSearchCall.Function.Arguments)
 		query, _ := inputMap["query"].(string)
+		source, _ := inputMap["source"].(string)
+		if source == "" {
+			source = "bocha"
+		}
 
-		searchContext, err := searchCb(query)
+		searchContext, err := searchCb(query, source)
 		if err != nil {
 			return nil, fmt.Errorf("failed to perform search: %w", err)
 		}
