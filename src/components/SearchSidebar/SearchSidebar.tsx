@@ -4,6 +4,7 @@ import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/divider/divider.js';
 import './SearchSidebar.css';
+import { API_BASE_URL } from '../../services/api';
 
 export interface SearchResult {
   title: string;
@@ -115,7 +116,7 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
                       <div slot="supporting-text" className="result-meta">
                         {result.site_icon && (
                           <img 
-                            src={result.site_icon} 
+                            src={`${API_BASE_URL}/api/proxy/icon?url=${encodeURIComponent(result.site_icon)}`} 
                             alt="" 
                             className="result-site-icon" 
                             onError={(e) => { e.currentTarget.style.display = 'none'; }}

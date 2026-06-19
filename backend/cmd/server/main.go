@@ -133,6 +133,7 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(db, mysqlDB, rdb, aiService, memberService, tokenService, emailService)
 	locationHandler := handlers.NewLocationHandler()
 	shareHandler := handlers.NewShareHandler(shareService)
+	proxyHandler := handlers.NewProxyHandler()
 
 	alingService := services.NewALingService(db, aiService, streamManager, memberService, ossService)
 	alingHandler := handlers.NewALingHandler(alingService, streamManager, memberService, db, mysqlDB)
@@ -172,6 +173,9 @@ func main() {
 
 		// Announcements (public)
 		api.GET("/announcements", adminHandler.PublicListActiveAnnouncements)
+
+		// Icon Proxy (public)
+		api.GET("/proxy/icon", proxyHandler.ProxyIcon)
 
 		// Feedback (public submit, with basic rate limit)
 		feedbackGroup := api.Group("/feedback")
