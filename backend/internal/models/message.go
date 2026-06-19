@@ -44,15 +44,18 @@ type ChatRequest struct {
 }
 
 type SearchResult struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Snippet string `json:"snippet"`
+	Title         string `bson:"title" json:"title"`
+	URL           string `bson:"url" json:"url"`
+	Snippet       string `bson:"snippet" json:"snippet"`
+	SiteName      string `bson:"site_name,omitempty" json:"site_name,omitempty"`
+	SiteIcon      string `bson:"site_icon,omitempty" json:"site_icon,omitempty"`
+	DatePublished string `bson:"date_published,omitempty" json:"date_published,omitempty"`
 }
 
 type SearchData struct {
-	Query   string         `json:"query"`
-	Status  string         `json:"status"` // "searching", "completed"
-	Results []SearchResult `json:"results,omitempty"`
+	Query   string         `bson:"query" json:"query"`
+	Status  string         `bson:"status" json:"status"` // "searching", "completed"
+	Results []SearchResult `bson:"results,omitempty" json:"results,omitempty"`
 }
 
 type ChatStreamResponse struct {

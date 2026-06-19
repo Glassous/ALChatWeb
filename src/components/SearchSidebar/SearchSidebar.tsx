@@ -9,6 +9,9 @@ export interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+  site_name?: string;
+  site_icon?: string;
+  date_published?: string;
 }
 
 export interface SearchData {
@@ -21,6 +24,21 @@ interface SearchSidebarProps {
   isOpen: boolean;
   searchData: SearchData | null;
   onClose: () => void;
+}
+
+function formatDate(dateStr?: string) {
+  if (!dateStr) return '';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      // If not ISO format, just return first part or as is
+      return dateStr.split('T')[0];
+    }
+    // Format to YYYY-MM-DD or user locale format
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+  } catch (e) {
+    return dateStr;
+  }
 }
 
 export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProps) {
@@ -53,7 +71,7 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
       )}
       
       <div 
-        ref={sidebarRef}
+         ref={sidebarRef}
         className={`search-sidebar ${isOpen ? 'open' : ''} ${isMobile ? 'mobile' : 'desktop'}`}
       >
         <div className="search-sidebar-header">
@@ -85,6 +103,21 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
                       <span className="result-title">{result.title}</span>
                     </div>
                     <div slot="supporting-text" className="result-url">{result.url}</div>
+                    {(result.site_name || result.date_published) && (
+                      <div slot="supporting-text" className="result-meta">
+                        {result.site_icon && (
+                          <img 
+                            src={result.site_icon} 
+                            alt="" 
+                            className="result-site-icon" 
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        {result.site_name && <span className="result-site-name">{result.site_name}</span>}
+                        {result.site_name && result.date_published && <span className="result-meta-divider">•</span>}
+                        {result.date_published && <span className="result-date">{formatDate(result.date_published)}</span>}
+                      </div>
+                    )}
                     <div slot="supporting-text" className="result-snippet">{result.snippet}</div>
                   </md-list-item>
                 </a>

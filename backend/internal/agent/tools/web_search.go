@@ -41,9 +41,12 @@ func NewWebSearchFn(apiKey string) func(ctx context.Context, input map[string]an
 }
 
 type bochaSearchResult struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Snippet string `json:"snippet"`
+	Title         string `json:"title"`
+	URL           string `json:"url"`
+	Snippet       string `json:"snippet"`
+	SiteName      string `json:"site_name,omitempty"`
+	SiteIcon      string `json:"site_icon,omitempty"`
+	DatePublished string `json:"date_published,omitempty"`
 }
 
 func bochaSearch(ctx context.Context, apiKey, query string, count int) ([]bochaSearchResult, error) {
@@ -80,9 +83,12 @@ func bochaSearch(ctx context.Context, apiKey, query string, count int) ([]bochaS
 		Data struct {
 			WebPages struct {
 				Value []struct {
-					Name    string `json:"name"`
-					URL     string `json:"url"`
-					Snippet string `json:"snippet"`
+					Name          string `json:"name"`
+					URL           string `json:"url"`
+					Snippet       string `json:"snippet"`
+					SiteName      string `json:"siteName"`
+					SiteIcon      string `json:"siteIcon"`
+					DatePublished string `json:"datePublished"`
 				} `json:"value"`
 			} `json:"webPages"`
 		} `json:"data"`
@@ -95,9 +101,12 @@ func bochaSearch(ctx context.Context, apiKey, query string, count int) ([]bochaS
 	searchResults := make([]bochaSearchResult, 0, len(result.Data.WebPages.Value))
 	for _, v := range result.Data.WebPages.Value {
 		searchResults = append(searchResults, bochaSearchResult{
-			Title:   v.Name,
-			URL:     v.URL,
-			Snippet: v.Snippet,
+			Title:         v.Name,
+			URL:           v.URL,
+			Snippet:       v.Snippet,
+			SiteName:      v.SiteName,
+			SiteIcon:      v.SiteIcon,
+			DatePublished: v.DatePublished,
 		})
 	}
 

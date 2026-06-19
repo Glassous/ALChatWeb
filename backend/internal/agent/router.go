@@ -45,6 +45,19 @@ func (r *Runner) RunDailyRouter(
 	}
 
 	var oaiMessages []openAIMessage
+	// Prepend system prompt to guide daily router to answer directly unless web search is strictly required.
+	routingSystemPrompt := "【工具调用规范】\n" +
+		"作为智能助手，你的第一选择是直接回答用户的问题。\n" +
+		"请仅在以下情况下调用工具（如联网搜索 web_search）：\n" +
+		"1. 用户明确要求进行联网搜索、获取最新资讯、天气或实时数据。\n" +
+		"2. 问题涉及你完全无法确定的最新时事、特定事实或需要实时查询的数据（如今日天气、最新新闻、实时股票等）。\n" +
+		"对于任何常识性问题、逻辑推理、编程/代码问题、闲聊、翻译、文学创作或可以通过你的已知知识直接回答的问题，请**绝对不要**调用任何工具，必须直接进行回答。"
+
+	oaiMessages = append(oaiMessages, openAIMessage{
+		Role:    "system",
+		Content: routingSystemPrompt,
+	})
+
 	for _, m := range messages {
 		oaiMessages = append(oaiMessages, openAIMessage{
 			Role:    m.Role,

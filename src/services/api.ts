@@ -37,6 +37,9 @@ export interface Message {
       title: string;
       url: string;
       snippet: string;
+      site_name?: string;
+      site_icon?: string;
+      date_published?: string;
     }>;
   };
   agent_steps?: AgentStepData[];

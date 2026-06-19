@@ -58,9 +58,12 @@ func (s *SearchService) Search(ctx context.Context, query string, count int) ([]
 		Data struct {
 			WebPages struct {
 				Value []struct {
-					Name    string `json:"name"`
-					URL     string `json:"url"`
-					Snippet string `json:"snippet"`
+					Name          string `json:"name"`
+					URL           string `json:"url"`
+					Snippet       string `json:"snippet"`
+					SiteName      string `json:"siteName"`
+					SiteIcon      string `json:"siteIcon"`
+					DatePublished string `json:"datePublished"`
 				} `json:"value"`
 			} `json:"webPages"`
 		} `json:"data"`
@@ -73,9 +76,12 @@ func (s *SearchService) Search(ctx context.Context, query string, count int) ([]
 	searchResults := make([]models.SearchResult, 0, len(result.Data.WebPages.Value))
 	for _, v := range result.Data.WebPages.Value {
 		searchResults = append(searchResults, models.SearchResult{
-			Title:   v.Name,
-			URL:     v.URL,
-			Snippet: v.Snippet,
+			Title:         v.Name,
+			URL:           v.URL,
+			Snippet:       v.Snippet,
+			SiteName:      v.SiteName,
+			SiteIcon:      v.SiteIcon,
+			DatePublished: v.DatePublished,
 		})
 	}
 
