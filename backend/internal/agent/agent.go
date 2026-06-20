@@ -258,6 +258,7 @@ func (r *Runner) executePythonAgent(
 				})
 
 				if step.Err == "" && tokenCb != nil {
+					// weather 工具: 将天气数据注入到消息内容流中，用于前端渲染天气卡片
 					if step.ToolName == "weather" {
 						var wRes map[string]any
 						if json.Unmarshal([]byte(step.ToolOutput), &wRes) == nil {
@@ -268,23 +269,9 @@ func (r *Runner) executePythonAgent(
 							}
 						}
 					}
-					if step.ToolName == "web_search" {
-						var sRes map[string]any
-						if json.Unmarshal([]byte(step.ToolOutput), &sRes) == nil {
-							sourceVal, _ := sRes["source"].(string)
-							if sourceVal == "" {
-								sourceVal = "bocha"
-							}
-							searchJSON, _ := json.Marshal(map[string]any{
-								"query":   sRes["query"],
-								"results": sRes["results"],
-								"source":  sourceVal,
-							})
-							searchTag := fmt.Sprintf("\n<search>%s</search>\n", string(searchJSON))
-							tokenCb(searchTag)
-							finalAnswer.WriteString(searchTag)
-						}
-					}
+					// web_search 不再注入 <search> 标签:
+					// agent 模式下搜索结果已通过 agent_step 事件和 AgentSteps 字段完整传递，
+					// 额外注入会导致 Android/Web 出现重复的搜索卡片。
 				}
 			}
 		case "reasoning":
