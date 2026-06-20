@@ -945,6 +945,10 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 	ch := h.streamManager.Subscribe(conversationID)
 	defer h.streamManager.Unsubscribe(conversationID, ch)
 
+	// 每 30 秒发一次心跳注释，防止 Cloudflare 等反向代理因空闲超时（100s）断开 SSE 连接
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
 	// Stream events
 	c.Stream(func(w io.Writer) bool {
 		select {
@@ -956,6 +960,10 @@ func (h *ChatHandler) Stream(c *gin.Context) {
 			}
 			data, _ := json.Marshal(resp)
 			fmt.Fprintf(w, "data: %s\n\n", data)
+			return true
+		case <-heartbeat.C:
+			// SSE 注释行，客户端忽略，但能防止代理层超时断开
+			fmt.Fprintf(w, ": ping\n\n")
 			return true
 		}
 	})

@@ -20,6 +20,9 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - alchat-shared  # 连接共享网络以访问 FiaLangChain 容器
 
 
   mongodb:
@@ -56,3 +59,8 @@ volumes:
   mongodb_data:
   mysql_data:
   redis_data:
+
+networks:
+  default: {}  # alchatweb 内部网络（backend/mongo/mysql/redis）
+  alchat-shared:
+    external: true  # 必须提前创建: docker network create alchat-shared
