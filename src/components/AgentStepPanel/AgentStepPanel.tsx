@@ -201,9 +201,25 @@ function SearchInlineResults({ results, onViewAll }: { results: SearchResultData
 }
 
 export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: AgentStepPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  // 流式进行时展开（显示实时进度），流式结束后自动折叠；历史消息默认折叠
+  const [isExpanded, setIsExpanded] = useState(!!isStreaming);
   const hasContent = (plan && plan.length > 0) || steps.filter(step => !hiddenTools.includes(step.tool_name)).length > 0;
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 流式开始时自动展开
+  useEffect(() => {
+    if (isStreaming) {
+      setIsExpanded(true);
+    }
+  }, [isStreaming]);
+
+  // 流式结束时延迟折叠（给用户短暂看到完成状态的机会）
+  useEffect(() => {
+    if (!isStreaming) {
+      const timer = setTimeout(() => setIsExpanded(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming]);
 
   useEffect(() => {
     if (isStreaming && bottomRef.current) {
@@ -213,6 +229,7 @@ export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: Agent
       bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [steps, isStreaming]);
+
 
   if (!hasContent) return null;
 
