@@ -177,12 +177,18 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 		userIDObj, _ := primitive.ObjectIDFromHex(userID)
 
-		if !hasMultimodal && req.Mode == "daily" && h.agentRunner != nil {
-			h.handleDailyAutoRoute(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
-			return
+		effectiveMode := req.Mode
+		if !hasMultimodal && req.Mode == "daily" {
+			needSearch, source, err := h.determineIfSearchNeeded(bgCtx, aiMessages)
+			if err != nil {
+				log.Printf("[Router] Failed to determine if search is needed: %v", err)
+			}
+			if needSearch {
+				effectiveMode = "search_" + source
+			}
 		}
 
-		if req.Mode == "agent" {
+		if effectiveMode == "agent" {
 			h.handleAgentMode(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
 			return
 		}
@@ -224,7 +230,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		extraInput, extraOutput, err := h.aiService.GenerateStream(
 			bgCtx,
 			aiMessages,
-			req.Mode,
+			effectiveMode,
 			systemPromptBuilder.String(),
 			func(token string, reasoning string) error {
 				if reasoning != "" {
@@ -802,9 +808,20 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			}
 		}
 
+		effectiveMode := req.Mode
+		if !hasMultimodal && req.Mode == "daily" {
+			needSearch, source, err := h.determineIfSearchNeeded(bgCtx, aiMessages)
+			if err != nil {
+				log.Printf("[Router] Failed to determine if search is needed for temp chat: %v", err)
+			}
+			if needSearch {
+				effectiveMode = "search_" + source
+			}
+		}
+
 		// Agent mode not supported for temp chat in this version to keep it simple,
 		// but we could easily add it if needed.
-		if !hasMultimodal && req.Mode == "agent" {
+		if !hasMultimodal && effectiveMode == "agent" {
 			// Converting models.Message for agent mode
 			modelAssistantMsg := assistantMsg.ToModel()
 			modelUserMsg := userMsg.ToModel()
@@ -849,7 +866,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 		extraInput, extraOutput, err := h.aiService.GenerateStream(
 			bgCtx,
 			aiMessages,
-			req.Mode,
+			effectiveMode,
 			systemPromptBuilder.String(),
 			func(token string, reasoning string) error {
 				if reasoning != "" {
@@ -955,4 +972,51 @@ func cleanTransitionalText(content string) string {
 		return content[idx:]
 	}
 	return content
+}
+
+func (h *ChatHandler) determineIfSearchNeeded(ctx context.Context, messages []models.AIMessage) (bool, string, error) {
+	classifyPrompt := "你是一个极其克制的搜索引擎使用与源选择判断助手。请根据提供的用户对话历史，判断当前用户的问题是否必须通过联网搜索来获取最新实时信息或事实知识。\n" +
+		"【判断与选择原则】\n" +
+		"1. 尽可能不要搜索！对于常识性问题、技术概念解释、日常闲聊、创意写作、代码编写、翻译、逻辑推理，以及不需要实时新鲜资讯的问题，一律不需要搜索，直接回答。\n" +
+		"2. 只有在用户明确查询今天/最近发生的最新实时事件、近期新闻动态、实时天气、极其精确的时效性计算或当前确切系统时间等，且模型已有知识库确实无法覆盖的领域时，才允许搜索。\n" +
+		"3. 在必须搜索时，根据语言和内容特征选择搜索源：\n" +
+		"   - 如果问题是关于中国国内资讯、中文本土事件或日常中文问答，选择使用 Bocha。输出：'SEARCH_BOCHA'。\n" +
+		"   - 如果问题是关于国际新闻、英文资讯、前沿英文技术文档、学术论文或代码相关的全球最新动态，选择使用 Tavily。输出：'SEARCH_TAVILY'。\n" +
+		"4. 如果不需要搜索（可以直接回答），输出：'DIRECT'。\n" +
+		"请只输出 'SEARCH_BOCHA'、'SEARCH_TAVILY' 或 'DIRECT'，绝对不要包含任何其他字样、标点或 Markdown 格式。"
+
+	var lastMsg string
+	if len(messages) > 0 {
+		lastMsg = messages[len(messages)-1].Content
+	}
+
+	classifyMessages := []models.AIMessage{
+		{
+			Role:    "system",
+			Content: classifyPrompt,
+		},
+		{
+			Role:    "user",
+			Content: lastMsg,
+		},
+	}
+
+	var result strings.Builder
+	err := h.aiService.GeneratePlainStream(ctx, classifyMessages, func(token string, reasoning string) error {
+		result.WriteString(token)
+		return nil
+	})
+	if err != nil {
+		return false, "", err
+	}
+
+	trimmed := strings.ToUpper(strings.TrimSpace(result.String()))
+	log.Printf("[Router] Search decision result: %s", trimmed)
+	if strings.Contains(trimmed, "SEARCH_TAVILY") {
+		return true, "tavily", nil
+	}
+	if strings.Contains(trimmed, "SEARCH_BOCHA") || strings.Contains(trimmed, "SEARCH") {
+		return true, "bocha", nil
+	}
+	return false, "", nil
 }

@@ -12,7 +12,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -26,415 +28,167 @@ type AgentResult struct {
 }
 
 type Runner struct {
-	apiKey   string
-	baseURL  string
-	model    string
-	registry *tools.Registry
-	db       *database.MongoDB
+	apiKey            string
+	baseURL           string
+	model             string
+	registry          *tools.Registry
+	db                *database.MongoDB
+	client            *http.Client
+	fialangchainURL   string
+	fialangchainToken string
+	bochaAPIKey       string
+	tavilyAPIKey      string
 }
 
 func NewRunner(apiKey, baseURL, model string, registry *tools.Registry, db *database.MongoDB) *Runner {
+	url := os.Getenv("FIALANGCHAIN_URL")
+	if url == "" {
+		url = "http://localhost:8086/api/v1/agent"
+	}
+	token := os.Getenv("FIALANGCHAIN_TOKEN")
+	if token == "" {
+		token = "your_secure_internal_token_here"
+	}
+
 	return &Runner{
-		apiKey:   apiKey,
-		baseURL:  baseURL,
-		model:    model,
-		registry: registry,
-		db:       db,
+		apiKey:            apiKey,
+		baseURL:           baseURL,
+		model:             model,
+		registry:          registry,
+		db:                db,
+		client:            &http.Client{Timeout: 10 * time.Minute},
+		fialangchainURL:   url,
+		fialangchainToken: token,
+		bochaAPIKey:       os.Getenv("BOCHA_API_KEY"),
+		tavilyAPIKey:      os.Getenv("TAVILY_API_KEY"),
 	}
 }
 
-type openAIToolCallFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+type pythonSSEEvent struct {
+	Type    string          `json:"type"`
+	Content string          `json:"content,omitempty"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-type openAIToolCall struct {
-	ID       string                 `json:"id"`
-	Type     string                 `json:"type"`
-	Function openAIToolCallFunction `json:"function"`
+type pythonChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type openAIMessage struct {
-	Role       string           `json:"role"`
-	Content    any              `json:"content"`
-	Name       string           `json:"name,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
-	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+type pythonModelConfig struct {
+	Model        string  `json:"model"`
+	Temperature  float64 `json:"temperature"`
+	APIKey       string  `json:"api_key,omitempty"`
+	BaseURL      string  `json:"base_url,omitempty"`
+	BochaAPIKey  string  `json:"bocha_api_key,omitempty"`
+	TavilyAPIKey string  `json:"tavily_api_key,omitempty"`
 }
 
-type streamToolCallFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-type streamToolCall struct {
-	Index    *int                   `json:"index,omitempty"`
-	ID       string                 `json:"id,omitempty"`
-	Type     string                 `json:"type,omitempty"`
-	Function streamToolCallFunction `json:"function,omitempty"`
-}
-
-var toolParameters = map[string]any{
-	"calculator": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"expression": map[string]any{
-				"type":        "string",
-				"description": "Math expression to evaluate",
-			},
-		},
-		"required": []string{"expression"},
-	},
-	"get_time": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"timezone": map[string]any{
-				"type":        "string",
-				"description": "Optional timezone, e.g. Asia/Shanghai, America/New_York",
-			},
-		},
-	},
-	"weather": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"location": map[string]any{
-				"type":        "string",
-				"description": "City name, e.g. 北京, Shanghai",
-			},
-			"latitude": map[string]any{
-				"type":        "number",
-				"description": "Latitude coordinate",
-			},
-			"longitude": map[string]any{
-				"type":        "number",
-				"description": "Longitude coordinate",
-			},
-		},
-	},
-	"web_search": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{
-				"type":        "string",
-				"description": "Search query keywords. 注意：如果 source 选择 'tavily'，这里的 query 必须翻译并使用英文进行检索。",
-			},
-			"source": map[string]any{
-				"type":        "string",
-				"description": "检索数据源选择。涉及中国本土、中文特定时事、国内天气或国内政策等国内问题，必须使用 'bocha'；涉及全球时事、英文问题、技术开发文档、国际学术等全球/国际问题，必须使用 'tavily'。",
-				"enum":        []string{"bocha", "tavily"},
-			},
-		},
-		"required": []string{"query", "source"},
-	},
-	"generate_image": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"prompt": map[string]any{
-				"type":        "string",
-				"description": "Detailed text description of the image to generate.",
-			},
-			"resolution": map[string]any{
-				"type":        "string",
-				"description": "Image resolution enum: '2048x2048' (1:1 square, default), '2304x1728' (4:3 horizontal landscape), '1728x2304' (3:4 vertical portrait), '2560x1440' (16:9 widescreen wallpaper/landscape/横屏), '1440x2560' (9:16 mobile phone wallpaper/vertical portrait/竖屏). Choose the closest ratio specified in the user's prompt description.",
-				"enum":        []string{"2048x2048", "2304x1728", "1728x2304", "2560x1440", "1440x2560"},
-			},
-		},
-		"required": []string{"prompt"},
-	},
+type pythonChatRequest struct {
+	Messages     []pythonChatMessage `json:"messages"`
+	SystemPrompt string              `json:"system_prompt"`
+	Tools        []string            `json:"tools"`
+	ModelConfig  pythonModelConfig   `json:"model_config"`
 }
 
 func (r *Runner) Run(ctx context.Context, messages []models.AIMessage, callback StepCallback) (*AgentResult, error) {
-	if r.model == "" {
-		return nil, fmt.Errorf("agent model not configured")
-	}
-
-	enabledTools := r.registry.GetEnabledTools()
-	if len(enabledTools) == 0 {
-		return nil, fmt.Errorf("no tools available")
-	}
-
-	plan, err := r.generatePlan(ctx, messages, enabledTools)
+	var ans strings.Builder
+	var reasoning strings.Builder
+	
+	_, err := r.RunWithStreaming(ctx, messages, callback, func(token string) {
+		ans.WriteString(token)
+	}, func(reas string) {
+		reasoning.WriteString(reas)
+	})
 	if err != nil {
-		log.Printf("[Agent] Plan generation failed, falling back to no-plan mode: %v", err)
+		return nil, err
 	}
 
-	if plan != nil && len(plan.Items) > 0 {
-		callback(AgentStep{Plan: plan})
-		return r.runLoop(ctx, messages, enabledTools, callback, plan, nil, nil)
-	}
-
-	return r.runLoop(ctx, messages, enabledTools, callback, nil, nil, nil)
+	return &AgentResult{
+		Answer:    ans.String(),
+		Reasoning: reasoning.String(),
+	}, nil
 }
 
-func (r *Runner) RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb StepCallback, tokenCb func(string), reasoningCb func(string)) (*AgentResult, error) {
-	if r.model == "" {
-		return nil, fmt.Errorf("agent model not configured")
-	}
-
-	enabledTools := r.registry.GetEnabledTools()
-	if len(enabledTools) == 0 {
-		return nil, fmt.Errorf("no tools available")
-	}
-
-	plan, err := r.generatePlan(ctx, messages, enabledTools)
-	if err != nil {
-		log.Printf("[Agent] Plan generation failed, falling back to no-plan mode: %v", err)
-	}
-
-	if plan != nil && len(plan.Items) > 0 {
-		stepCb(AgentStep{Plan: plan})
-		return r.runLoop(ctx, messages, enabledTools, stepCb, plan, tokenCb, reasoningCb)
-	}
-
-	return r.runLoop(ctx, messages, enabledTools, stepCb, nil, tokenCb, reasoningCb)
-}
-
-func (r *Runner) runLoop(
+func (r *Runner) RunWithStreaming(
 	ctx context.Context,
 	messages []models.AIMessage,
-	enabledTools []tools.ToolMeta,
-	callback StepCallback,
-	plan *PlanResponse,
+	stepCb StepCallback,
 	tokenCb func(string),
 	reasoningCb func(string),
 ) (*AgentResult, error) {
-	return r.runLoopWith(ctx, r.apiKey, r.baseURL, r.model, messages, enabledTools, callback, plan, tokenCb, reasoningCb)
+	return r.executePythonAgent(ctx, messages, "", r.model, stepCb, tokenCb, reasoningCb)
 }
 
-func (r *Runner) runLoopWith(
+func (r *Runner) executePythonAgent(
 	ctx context.Context,
-	apiKey, baseURL, model string,
 	messages []models.AIMessage,
-	enabledTools []tools.ToolMeta,
-	callback StepCallback,
-	plan *PlanResponse,
+	systemPrompt string,
+	model string,
+	stepCb StepCallback,
 	tokenCb func(string),
 	reasoningCb func(string),
 ) (*AgentResult, error) {
-	var oaiMessages []openAIMessage
-	for _, m := range messages {
-		oaiMessages = append(oaiMessages, openAIMessage{
+	// 1. Gather enabled tools
+	var enabledTools []string
+	if r.registry != nil {
+		for _, t := range r.registry.GetEnabledTools() {
+			enabledTools = append(enabledTools, t.Name)
+		}
+	}
+
+	// 2. Build Python Chat Request payload
+	pyMessages := make([]pythonChatMessage, len(messages))
+	for i, m := range messages {
+		pyMessages[i] = pythonChatMessage{
 			Role:    m.Role,
 			Content: m.Content,
-		})
-	}
-	return r.runLoopInternal(ctx, apiKey, baseURL, model, oaiMessages, enabledTools, callback, plan, tokenCb, reasoningCb)
-}
-
-func (r *Runner) runLoopInternal(
-	ctx context.Context,
-	apiKey, baseURL, model string,
-	oaiMessages []openAIMessage,
-	enabledTools []tools.ToolMeta,
-	callback StepCallback,
-	plan *PlanResponse,
-	tokenCb func(string),
-	reasoningCb func(string),
-) (*AgentResult, error) {
-	maxIterations := 10
-	iteration := 0
-	planIndex := 0
-
-	var allReasoning strings.Builder
-
-	for iteration < maxIterations {
-		iteration++
-
-		// Define streaming token and reasoning callbacks
-		var currentReasoning strings.Builder
-		tCb := func(token string) {
-			if tokenCb != nil {
-				tokenCb(token)
-			}
-		}
-		rCb := func(reasoning string) {
-			currentReasoning.WriteString(reasoning)
-			allReasoning.WriteString(reasoning)
-			if reasoningCb != nil {
-				reasoningCb(reasoning)
-			}
-		}
-
-		toolCalls, finalContent, err := r.callChatCompletionsStreamWith(ctx, apiKey, baseURL, model, oaiMessages, enabledTools, tCb, rCb)
-		if err != nil {
-			return nil, fmt.Errorf("generation error: %w", err)
-		}
-
-		if len(toolCalls) == 0 {
-			return &AgentResult{
-				Answer:    finalContent,
-				Reasoning: allReasoning.String(),
-			}, nil
-		}
-
-		if plan != nil && planIndex < len(plan.Items) {
-			callback(AgentStep{
-				Index:     iteration,
-				ToolName:  "plan_progress",
-				PlanIndex: &planIndex,
-			})
-		}
-
-		// Save the assistant message with tool calls delta
-		assistantMsg := openAIMessage{
-			Role:      "assistant",
-			ToolCalls: toolCalls,
-		}
-		if finalContent != "" {
-			assistantMsg.Content = finalContent
-		}
-		oaiMessages = append(oaiMessages, assistantMsg)
-
-		for _, tc := range toolCalls {
-			inputMap := parseToolInput(tc.Function.Arguments)
-
-			toolMeta, exists := r.registry.GetToolMeta(tc.Function.Name)
-			if !exists {
-				errOutput := map[string]any{"error": fmt.Sprintf("tool %s not found", tc.Function.Name)}
-				callback(AgentStep{
-					Index:      iteration,
-					ToolName:   tc.Function.Name,
-					ToolInput:  inputMap,
-					ToolOutput: formatOutput(errOutput),
-					Err:        fmt.Sprintf("tool %s not found", tc.Function.Name),
-					PlanIndex:  getPlanIndex(plan, planIndex),
-				})
-				oaiMessages = append(oaiMessages, openAIMessage{
-					Role:       "tool",
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-					Content:    formatOutput(errOutput),
-				})
-				continue
-			}
-
-			output, err := toolMeta.Fn(ctx, inputMap)
-			if err != nil {
-				errOutput := map[string]any{"error": err.Error()}
-				callback(AgentStep{
-					Index:      iteration,
-					ToolName:   tc.Function.Name,
-					ToolInput:  inputMap,
-					ToolOutput: formatOutput(errOutput),
-					Err:        err.Error(),
-					PlanIndex:  getPlanIndex(plan, planIndex),
-				})
-				oaiMessages = append(oaiMessages, openAIMessage{
-					Role:       "tool",
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-					Content:    formatOutput(errOutput),
-				})
-			} else {
-				callback(AgentStep{
-					Index:      iteration,
-					ToolName:   tc.Function.Name,
-					ToolInput:  inputMap,
-					ToolOutput: formatOutput(output),
-					PlanIndex:  getPlanIndex(plan, planIndex),
-				})
-				oaiMessages = append(oaiMessages, openAIMessage{
-					Role:       "tool",
-					ToolCallID: tc.ID,
-					Name:       tc.Function.Name,
-					Content:    formatOutput(output),
-				})
-			}
-		}
-
-		if plan != nil {
-			if planIndex < len(plan.Items) {
-				plan.Items[planIndex].Status = PlanStatusCompleted
-				callback(AgentStep{
-					Index:     iteration,
-					ToolName:  "plan_item",
-					PlanIndex: &planIndex,
-				})
-			}
-			planIndex++
 		}
 	}
 
-	return nil, fmt.Errorf("agent exceeded maximum iterations (%d)", maxIterations)
-}
-
-func (r *Runner) callChatCompletionsStream(
-	ctx context.Context,
-	oaiMessages []openAIMessage,
-	enabledTools []tools.ToolMeta,
-	tokenCb func(string),
-	reasoningCb func(string),
-) ([]openAIToolCall, string, error) {
-	return r.callChatCompletionsStreamWith(ctx, r.apiKey, r.baseURL, r.model, oaiMessages, enabledTools, tokenCb, reasoningCb)
-}
-
-func (r *Runner) callChatCompletionsStreamWith(
-	ctx context.Context,
-	apiKey, baseURL, model string,
-	oaiMessages []openAIMessage,
-	enabledTools []tools.ToolMeta,
-	tokenCb func(string),
-	reasoningCb func(string),
-) ([]openAIToolCall, string, error) {
-	var toolsParam []any
-	for _, t := range enabledTools {
-		paramSchema, exists := toolParameters[t.Name]
-		if !exists {
-			paramSchema = map[string]any{
-				"type": "object",
-			}
-		}
-		toolsParam = append(toolsParam, map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        t.Name,
-				"description": t.Description,
-				"parameters":  paramSchema,
-			},
-		})
-	}
-
-	requestBodyMap := map[string]any{
-		"model":    model,
-		"messages": oaiMessages,
-		"stream":   true,
-		"thinking": map[string]any{
-			"type": "disabled",
+	pyReq := pythonChatRequest{
+		Messages:     pyMessages,
+		SystemPrompt: systemPrompt,
+		Tools:        enabledTools,
+		ModelConfig: pythonModelConfig{
+			Model:        model,
+			Temperature:  0.7,
+			APIKey:       r.apiKey,
+			BaseURL:      r.baseURL,
+			BochaAPIKey:  r.bochaAPIKey,
+			TavilyAPIKey: r.tavilyAPIKey,
 		},
 	}
-	if len(toolsParam) > 0 {
-		requestBodyMap["tools"] = toolsParam
-		requestBodyMap["tool_choice"] = "auto"
+
+	jsonData, err := json.Marshal(pyReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	requestBodyBytes, err := json.Marshal(requestBodyMap)
+	// 3. Make HTTP request to FiaLangChain
+	url := fmt.Sprintf("%s/chat", r.fialangchainURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, "", err
-	}
-
-	url := fmt.Sprintf("%s/chat/completions", baseURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
-	if err != nil {
-		return nil, "", err
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	req.Header.Set("Authorization", "Bearer "+r.fialangchainToken)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := r.client.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, fmt.Errorf("request to FiaLangChain failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, "", fmt.Errorf("Agent model API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("FiaLangChain returned error status %d: %s", resp.StatusCode, string(body))
 	}
 
+	// 4. Stream SSE response
 	reader := bufio.NewReader(resp.Body)
-	accumulatedTools := make(map[int]*openAIToolCall)
-	var finalTextBuilder strings.Builder
+	var finalAnswer strings.Builder
+	var finalReasoning strings.Builder
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -442,7 +196,7 @@ func (r *Runner) callChatCompletionsStreamWith(
 			if err == io.EOF {
 				break
 			}
-			return nil, "", err
+			return nil, err
 		}
 
 		line = strings.TrimSpace(line)
@@ -450,223 +204,122 @@ func (r *Runner) callChatCompletionsStreamWith(
 			continue
 		}
 
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
-
-		type streamResponse struct {
-			Choices []struct {
-				Delta struct {
-					Content          string           `json:"content"`
-					ReasoningContent string           `json:"reasoning_content"`
-					ToolCalls        []streamToolCall `json:"tool_calls"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-
-		var chunk streamResponse
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		dataStr := strings.TrimPrefix(line, "data: ")
+		var ev pythonSSEEvent
+		if err := json.Unmarshal([]byte(dataStr), &ev); err != nil {
+			log.Printf("[AgentClient] Failed to unmarshal SSE event: %v", err)
 			continue
 		}
 
-		if len(chunk.Choices) > 0 {
-			delta := chunk.Choices[0].Delta
-			if delta.Content != "" {
-				finalTextBuilder.WriteString(delta.Content)
-				if tokenCb != nil {
-					tokenCb(delta.Content)
-				}
+		// Dispatch events to callbacks
+		switch ev.Type {
+		case "start":
+			// Handled, nothing to do
+		case "agent_plan":
+			var plan PlanResponse
+			if err := json.Unmarshal(ev.Data, &plan); err == nil {
+				stepCb(AgentStep{Plan: &plan})
 			}
-			if delta.ReasoningContent != "" {
-				if reasoningCb != nil {
-					reasoningCb(delta.ReasoningContent)
-				}
+		case "plan_item":
+			var item struct {
+				Index  int    `json:"index"`
+				Status string `json:"status"`
 			}
-			for _, tc := range delta.ToolCalls {
-				idx := 0
-				if tc.Index != nil {
-					idx = *tc.Index
+			if err := json.Unmarshal(ev.Data, &item); err == nil {
+				toolName := "plan_progress"
+				if item.Status == "completed" {
+					toolName = "plan_item"
 				}
-				acc, exists := accumulatedTools[idx]
-				if !exists {
-					acc = &openAIToolCall{
-						Type: "function",
+				stepCb(AgentStep{
+					ToolName:  toolName,
+					PlanIndex: &item.Index,
+				})
+			}
+		case "agent_step":
+			var step struct {
+				Index      int            `json:"index"`
+				ToolName   string         `json:"tool_name"`
+				ToolInput  string         `json:"tool_input"`
+				ToolOutput string         `json:"tool_output"`
+				Err        string         `json:"err"`
+				PlanIndex  *int           `json:"plan_index,omitempty"`
+			}
+			if err := json.Unmarshal(ev.Data, &step); err == nil {
+				var inputMap map[string]any
+				_ = json.Unmarshal([]byte(step.ToolInput), &inputMap)
+
+				stepCb(AgentStep{
+					Index:      step.Index,
+					ToolName:   step.ToolName,
+					ToolInput:  inputMap,
+					ToolOutput: step.ToolOutput,
+					Err:        step.Err,
+					PlanIndex:  step.PlanIndex,
+				})
+
+				if step.Err == "" && tokenCb != nil {
+					if step.ToolName == "weather" {
+						var wRes map[string]any
+						if json.Unmarshal([]byte(step.ToolOutput), &wRes) == nil {
+							if weatherJSON, ok := wRes["weather_data"].(string); ok {
+								weatherTag := fmt.Sprintf("<weather>%s</weather>\n", weatherJSON)
+								tokenCb(weatherTag)
+								finalAnswer.WriteString(weatherTag)
+							}
+						}
 					}
-					accumulatedTools[idx] = acc
-				}
-				if tc.ID != "" {
-					acc.ID = tc.ID
-				}
-				if tc.Function.Name != "" {
-					acc.Function.Name = tc.Function.Name
-				}
-				if tc.Function.Arguments != "" {
-					acc.Function.Arguments += tc.Function.Arguments
+					if step.ToolName == "web_search" {
+						var sRes map[string]any
+						if json.Unmarshal([]byte(step.ToolOutput), &sRes) == nil {
+							sourceVal, _ := sRes["source"].(string)
+							if sourceVal == "" {
+								sourceVal = "bocha"
+							}
+							searchJSON, _ := json.Marshal(map[string]any{
+								"query":   sRes["query"],
+								"results": sRes["results"],
+								"source":  sourceVal,
+							})
+							searchTag := fmt.Sprintf("\n<search>%s</search>\n", string(searchJSON))
+							tokenCb(searchTag)
+							finalAnswer.WriteString(searchTag)
+						}
+					}
 				}
 			}
+		case "reasoning":
+			finalReasoning.WriteString(ev.Content)
+			if reasoningCb != nil {
+				reasoningCb(ev.Content)
+			}
+		case "token":
+			finalAnswer.WriteString(ev.Content)
+			if tokenCb != nil {
+				tokenCb(ev.Content)
+			}
+		case "error":
+			return nil, fmt.Errorf("Python Agent error: %s", ev.Content)
+		case "done":
+			return &AgentResult{
+				Answer:    finalAnswer.String(),
+				Reasoning: finalReasoning.String(),
+			}, nil
 		}
 	}
 
-	var toolCalls []openAIToolCall
-	for i := 0; i < len(accumulatedTools); i++ {
-		if tc, exists := accumulatedTools[i]; exists {
-			toolCalls = append(toolCalls, *tc)
-		}
-	}
-	if len(toolCalls) == 0 && len(accumulatedTools) > 0 {
-		for _, tc := range accumulatedTools {
-			toolCalls = append(toolCalls, *tc)
-		}
-	}
-
-	return toolCalls, finalTextBuilder.String(), nil
+	return &AgentResult{
+		Answer:    finalAnswer.String(),
+		Reasoning: finalReasoning.String(),
+	}, nil
 }
 
-func parseToolInput(arguments string) map[string]any {
-	if arguments == "" {
-		return nil
-	}
-	var inputMap map[string]any
-	if err := json.Unmarshal([]byte(arguments), &inputMap); err != nil {
-		return map[string]any{"arguments": arguments}
-	}
-	return inputMap
-}
-
-func formatOutput(output any) string {
-	if output == nil {
-		return ""
-	}
-	if s, ok := output.(string); ok {
-		return s
-	}
-	b, _ := json.Marshal(output)
-	return string(b)
-}
-
-func getPlanIndex(plan *PlanResponse, planIndex int) *int {
-	if plan != nil && planIndex < len(plan.Items) {
-		return &planIndex
-	}
-	return nil
-}
-
-func (r *Runner) generatePlan(ctx context.Context, messages []models.AIMessage, enabledTools []tools.ToolMeta) (*PlanResponse, error) {
-	var toolDescs []map[string]string
-	for _, t := range enabledTools {
-		toolDescs = append(toolDescs, map[string]string{
-			"name":        t.Name,
-			"description": t.Description,
-		})
-	}
-
-	toolDescJSON, _ := json.Marshal(toolDescs)
-
-	planPrompt := fmt.Sprintf(`你是一个任务规划助手。根据用户的问题和可用工具，制定一个执行计划。
-
-可用工具：
-%s
-
-请以JSON格式返回执行计划，格式如下：
-{"items": [{"id": 1, "description": "步骤描述", "tool_name": "工具名"}, ...]}
-
-如果不需要任何工具，返回空数组：{"items": []}
-只返回JSON，不要包含其他内容。`, string(toolDescJSON))
-
-	var oaiMessages []openAIMessage
-	oaiMessages = append(oaiMessages, openAIMessage{
-		Role:    "system",
-		Content: planPrompt,
-	})
-	for _, m := range messages {
-		oaiMessages = append(oaiMessages, openAIMessage{
-			Role:    m.Role,
-			Content: m.Content,
-		})
-	}
-
-	requestBodyMap := map[string]any{
-		"model":    r.model,
-		"messages": oaiMessages,
-		"thinking": map[string]any{
-			"type": "disabled",
-		},
-	}
-
-	requestBodyBytes, err := json.Marshal(requestBodyMap)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/chat/completions", r.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(requestBodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.apiKey))
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("plan generation model API error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var response struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, err
-	}
-
-	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no choices returned in plan generation")
-	}
-
-	text := cleanJSONString(response.Choices[0].Message.Content)
-
-	var plan PlanResponse
-	if err := json.Unmarshal([]byte(text), &plan); err != nil {
-		return nil, fmt.Errorf("failed to parse plan: %w", err)
-	}
-
-	if len(plan.Items) > 10 {
-		plan.Items = plan.Items[:10]
-	}
-
-	for i := range plan.Items {
-		plan.Items[i].ID = i + 1
-		plan.Items[i].Status = PlanStatusPending
-	}
-
-	return &plan, nil
-}
-
-func cleanJSONString(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "```") {
-		s = strings.TrimPrefix(s, "```")
-		s = strings.TrimPrefix(s, "json")
-		s = strings.TrimSuffix(s, "```")
-		s = strings.TrimSpace(s)
-	}
-	return s
-}
+// Registry and Tool Management functions delegated to local MongoDB state
 
 func (r *Runner) GetToolNames() []string {
 	var names []string
+	if r.registry == nil {
+		return names
+	}
 	for _, t := range r.registry.GetAllTools() {
 		names = append(names, t.Name)
 	}
@@ -675,6 +328,9 @@ func (r *Runner) GetToolNames() []string {
 
 func (r *Runner) GetToolDescriptions() map[string]string {
 	descs := make(map[string]string)
+	if r.registry == nil {
+		return descs
+	}
 	for _, t := range r.registry.GetAllTools() {
 		descs[t.Name] = t.Description
 	}
@@ -682,6 +338,9 @@ func (r *Runner) GetToolDescriptions() map[string]string {
 }
 
 func (r *Runner) IsToolEnabled(name string) bool {
+	if r.registry == nil {
+		return false
+	}
 	t, ok := r.registry.GetToolMeta(name)
 	if !ok {
 		return false
@@ -690,11 +349,13 @@ func (r *Runner) IsToolEnabled(name string) bool {
 }
 
 func (r *Runner) SetToolEnabled(name string, enabled bool) {
-	r.registry.SetEnabled(name, enabled)
+	if r.registry != nil {
+		r.registry.SetEnabled(name, enabled)
+	}
 }
 
 func (r *Runner) SaveToolStates(ctx context.Context) error {
-	if r.db == nil {
+	if r.db == nil || r.registry == nil {
 		return nil
 	}
 
@@ -716,7 +377,7 @@ func (r *Runner) SaveToolStates(ctx context.Context) error {
 }
 
 func (r *Runner) LoadToolStates(ctx context.Context) {
-	if r.db == nil {
+	if r.db == nil || r.registry == nil {
 		return
 	}
 

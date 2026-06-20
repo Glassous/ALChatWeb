@@ -100,7 +100,7 @@ function ChatApp({
   const [userMemberType, setUserMemberType] = useState('free');
   const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [webMode, setWebMode] = useState<'daily' | 'expert'>('daily');
+  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'agent'>('daily');
   const [webIsImageMode, setWebIsImageMode] = useState(false);
 
   // Workspace states
@@ -316,7 +316,9 @@ function ChatApp({
       // Determine if there is a real change in messages list before setting state
       // to avoid unnecessary re-renders (flicker-free visual update)
       let needsUpdate = false;
-      if (mergedMessages.length !== currentMessages.length) {
+      if (targetNodeId) {
+        needsUpdate = true;
+      } else if (mergedMessages.length !== currentMessages.length) {
         needsUpdate = true;
       } else {
         for (let i = 0; i < mergedMessages.length; i++) {
@@ -723,6 +725,7 @@ function ChatApp({
           
           // Sync with real database IDs to maintain correct tree structure
           if (conversationId) {
+            apiClient.invalidateCache(conversationId);
             loadConversation(conversationId, realAssistantId || undefined, true);
           }
         },

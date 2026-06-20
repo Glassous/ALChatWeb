@@ -257,18 +257,22 @@ function MessageItem({
       .replace(/\n?<weather>[\s\S]*?<\/weather>\n?/g, '') // Remove weather tag
       .replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`);
 
+    const isAgent = (msg.agent_plan && msg.agent_plan.length > 0) || (msg.agent_steps && msg.agent_steps.length > 0);
+
     let displayWeather: WeatherData | null = null;
-    const weatherMatch = msg.content.match(/<weather>([\s\S]*?)<\/weather>/);
-    if (weatherMatch && weatherMatch[1]) {
-      try {
-        displayWeather = JSON.parse(weatherMatch[1].trim());
-      } catch (e) {
-        console.error('Failed to parse weather data:', e);
+    if (!isAgent) {
+      const weatherMatch = msg.content.match(/<weather>([\s\S]*?)<\/weather>/);
+      if (weatherMatch && weatherMatch[1]) {
+        try {
+          displayWeather = JSON.parse(weatherMatch[1].trim());
+        } catch (e) {
+          console.error('Failed to parse weather data:', e);
+        }
       }
     }
     // Fallback search data if msg.search is missing but exists in content
-    let displaySearch = msg.search;
-    if (!displaySearch && msg.content.includes('<search>')) {
+    let displaySearch = isAgent ? undefined : msg.search;
+    if (!isAgent && !displaySearch && msg.content.includes('<search>')) {
       const match = msg.content.match(/<search>([\s\S]*?)<\/search>/);
       if (match && match[1]) {
         try {
@@ -295,6 +299,7 @@ function MessageItem({
         }
       }
     }
+
 
     const markdownComponents: any = {
       img: ({ src, alt }: { src?: string, alt?: string }) => {

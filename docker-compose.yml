@@ -18,6 +18,9 @@ services:
       - mysql
       - redis
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 
   mongodb:
     image: mongo:latest

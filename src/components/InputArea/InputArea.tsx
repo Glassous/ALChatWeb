@@ -63,7 +63,7 @@ const rightToolVariants: Variants = {
 };
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'agent' }) => void;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -74,7 +74,7 @@ interface InputAreaProps {
   onShowUpgrade?: () => void;
   style?: React.CSSProperties;
   isTemp?: boolean;
-  onModeChange?: (mode: 'daily' | 'expert') => void;
+  onModeChange?: (mode: 'daily' | 'expert' | 'search' | 'agent') => void;
   onImageModeChange?: (isImageMode: boolean) => void;
 }
 
@@ -104,10 +104,18 @@ export function InputArea({
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
+  const [isAgent, setIsAgent] = useState(false);
+  const [isSearch, setIsSearch] = useState(false);
 
   useEffect(() => {
-    onModeChange?.(mode);
-  }, [mode, onModeChange]);
+    let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'agent' = mode;
+    if (isAgent) {
+      currentEffectiveMode = 'agent';
+    } else if (mode === 'daily' && isSearch) {
+      currentEffectiveMode = 'search';
+    }
+    onModeChange?.(currentEffectiveMode);
+  }, [mode, isAgent, isSearch, onModeChange]);
 
   useEffect(() => {
     onImageModeChange?.(isImageMode);
@@ -119,6 +127,12 @@ export function InputArea({
   const [attachments, setAttachments] = useState<Array<{url: string, type: 'image' | 'video'}>>([]);
   const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+
+  useEffect(() => {
+    if (isImageMode || mode !== 'daily' || attachments.length > 0) {
+      setIsAgent(false);
+    }
+  }, [isImageMode, mode, attachments?.length]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [dragStatus, setDragStatus] = useState<'none' | 'supported' | 'unsupported'>('none');
   const [dragMessage, setDragMessage] = useState<string>('');
@@ -131,6 +145,33 @@ export function InputArea({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleModeSelect = (selected: 'expert' | 'agent' | 'image') => {
+    if (disabled || isUploading) return;
+
+    let targetExpert = false;
+    let targetAgent = false;
+    let targetImage = false;
+
+    if (selected === 'expert') {
+      targetExpert = mode !== 'expert';
+    } else if (selected === 'agent') {
+      targetAgent = !isAgent;
+    } else if (selected === 'image') {
+      targetImage = !isImageMode;
+    }
+
+    setMode(targetExpert ? 'expert' : 'daily');
+    setIsAgent(targetAgent);
+    setIsImageMode(targetImage);
+    setIsSearch(false);
+
+    if (targetAgent || targetImage) {
+      setAttachments([]);
+      setSelectedAttachmentType(null);
+      setRefImageUrl(null);
+    }
+  };
 
   // Sync history with userMessages from props
   useEffect(() => {
@@ -217,9 +258,13 @@ export function InputArea({
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
-      let finalMode: 'daily' | 'expert' = mode;
+      let finalMode: 'daily' | 'expert' | 'search' | 'agent' = mode;
       if (isImageMode) {
         finalMode = 'daily';
+      } else if (isAgent) {
+        finalMode = 'agent';
+      } else if (mode === 'daily' && isSearch) {
+        finalMode = 'search';
       }
 
       // Format attachments into message
@@ -791,7 +836,7 @@ export function InputArea({
           <div className="input-bottom-row">
             <motion.div className="tools-left" layout>
               <AnimatePresence initial={false}>
-                {!isTemp && !isImageMode && attachments.length === 0 && (
+                {!isTemp && !isAgent && !isImageMode && (
                   <motion.div
                     key="mode-toggle"
                     layout
@@ -803,7 +848,7 @@ export function InputArea({
                   >
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
-                      onClick={() => setMode(mode === 'daily' ? 'expert' : 'daily')}
+                      onClick={() => handleModeSelect('expert')}
                       title={mode === 'daily' ? '日常模式' : '专家模式'}
                       disabled={disabled || isUploading}
                     >
@@ -811,7 +856,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isTemp && attachments.length === 0 && (
+                {!isTemp && !isAgent && mode !== 'expert' && (
                   <motion.div
                     key="image-mode"
                     layout
@@ -823,15 +868,33 @@ export function InputArea({
                   >
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
-                      onClick={() => {
-                        setIsImageMode(!isImageMode);
-                      }}
+                      onClick={() => handleModeSelect('image')}
                       title="图片生成"
                       disabled={disabled || isUploading}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
+                    </button>
+                  </motion.div>
+                )}
+                {!isTemp && !isImageMode && mode !== 'expert' && (
+                  <motion.div
+                    key="agent-toggle"
+                    layout
+                    variants={leftToolVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ overflow: 'hidden', display: 'flex' }}
+                  >
+                    <button 
+                      className={`tool-btn agent-toggle-btn ${isAgent ? 'active' : ''}`}
+                      onClick={() => handleModeSelect('agent')}
+                      title="Agent 模式"
+                      disabled={disabled || isUploading}
+                    >
+                      Agent
                     </button>
                   </motion.div>
                 )}
@@ -954,7 +1017,7 @@ export function InputArea({
                     </button>
                   </motion.div>
                 )}
-                {!isTemp && !isImageMode && (
+                {!isTemp && !isImageMode && !isAgent && (
                   <motion.div
                     key="attachment"
                     layout

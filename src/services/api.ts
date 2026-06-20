@@ -140,7 +140,7 @@ class APIClient {
     this.baseURL = baseURL;
   }
 
-  private invalidateCache(id?: string) {
+  public invalidateCache(id?: string) {
     if (id) {
       this.conversationCache.delete(id);
     } else {

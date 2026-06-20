@@ -74,7 +74,7 @@ function getToolIconComponent(toolName: string) {
   return iconMap[toolName] || <WebSearchIcon />;
 }
 
-const hiddenTools = ['get_time'];
+const hiddenTools = ['get_time', 'plan_progress', 'plan_item'];
 
 function parseToolInput(toolInput: string): Record<string, any> | null {
   if (!toolInput) return null;

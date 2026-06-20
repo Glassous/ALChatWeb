@@ -142,11 +142,11 @@ func main() {
 	adminHandler.LoadConfigs(context.Background())
 
 	registry := tools.NewRegistry()
-	registry.Register("web_search", tools.WebSearchDescription, tools.NewWebSearchFn(cfg.BochaAPIKey))
-	registry.Register("weather", tools.WeatherDescription, tools.WeatherFn)
-	registry.Register("calculator", tools.CalculatorDescription, tools.CalculatorFn)
-	registry.Register("get_time", tools.GetTimeDescription, tools.GetTimeFn)
-	registry.Register("generate_image", tools.GenerateImageDescription, tools.GenerateImageDummyFn)
+	registry.Register("web_search", tools.WebSearchDescription, nil)
+	registry.Register("weather", tools.WeatherDescription, nil)
+	registry.Register("calculator", tools.CalculatorDescription, nil)
+	registry.Register("get_time", tools.GetTimeDescription, nil)
+	registry.Register("generate_image", tools.GenerateImageDescription, nil)
 
 	agentAPIKey, agentBaseURL, agentModel := aiService.GetAgentConfig()
 	agentRunner := agent.NewRunner(agentAPIKey, agentBaseURL, agentModel, registry, db)

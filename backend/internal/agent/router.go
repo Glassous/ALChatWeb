@@ -1,11 +1,15 @@
 package agent
 
 import (
-	"alchat-backend/internal/agent/tools"
 	"alchat-backend/internal/models"
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"strings"
 )
 
@@ -36,409 +40,204 @@ func (r *Runner) RunDailyRouter(
 	reasoningCb func(string),
 	searchCb func(query string, source string) (string, error),
 ) (*AgentResult, error) {
-	enabledTools := r.registry.GetEnabledTools()
-	var dailyTools []tools.ToolMeta
-	for _, tool := range enabledTools {
-		if tool.Name != "generate_image" {
-			dailyTools = append(dailyTools, tool)
-		}
-	}
+	// 1. Gather enabled tools - Daily mode is restricted ONLY to "web_search" for physical isolation
+	enabledTools := []string{"web_search"}
 
-	var oaiMessages []openAIMessage
-	// Prepend system prompt to guide daily router to answer directly unless web search is strictly required.
-	routingSystemPrompt := "【工具调用规范】\n" +
-		"作为智能助手，你的第一选择是直接回答用户的问题。\n" +
-		"请仅在以下情况下调用工具（如联网搜索 web_search）：\n" +
-		"1. 用户明确要求进行联网搜索、获取最新资讯、天气或实时数据。\n" +
-		"2. 问题涉及你完全无法确定的最新时事、特定事实或需要实时查询的数据（如今日天气、最新新闻、实时股票等）。\n" +
-		"对于任何常识性问题、逻辑推理、编程/代码问题、闲聊、翻译、文学创作或可以通过你的已知知识直接回答的问题，请**绝对不要**调用任何工具，必须直接进行回答。"
-
-	oaiMessages = append(oaiMessages, openAIMessage{
-		Role:    "system",
-		Content: routingSystemPrompt,
-	})
-
-	for _, m := range messages {
-		oaiMessages = append(oaiMessages, openAIMessage{
+	// 2. Build Python Chat Request payload
+	pyMessages := make([]pythonChatMessage, len(messages))
+	for i, m := range messages {
+		pyMessages[i] = pythonChatMessage{
 			Role:    m.Role,
 			Content: m.Content,
-		})
-	}
-
-	var allReasoning strings.Builder
-	tCb := func(token string) {
-		if tokenCb != nil {
-			tokenCb(token)
-		}
-	}
-	rCb := func(reasoning string) {
-		allReasoning.WriteString(reasoning)
-		if reasoningCb != nil {
-			reasoningCb(reasoning)
 		}
 	}
 
-	// Step 1: Run with Daily Model
-	toolCalls, finalContent, err := r.callChatCompletionsStreamWith(
-		ctx,
-		cfg.DailyAPIKey,
-		cfg.DailyBaseURL,
-		cfg.DailyModel,
-		oaiMessages,
-		dailyTools,
-		tCb,
-		rCb,
-	)
+	pyReq := pythonChatRequest{
+		Messages:     pyMessages,
+		SystemPrompt: "", // Optional system prompt
+		Tools:        enabledTools,
+		ModelConfig: pythonModelConfig{
+			Model:        cfg.DailyModel, // Use the Daily Model config
+			Temperature:  0.7,
+			APIKey:       cfg.DailyAPIKey,
+			BaseURL:      cfg.DailyBaseURL,
+			BochaAPIKey:  r.bochaAPIKey,
+			TavilyAPIKey: r.tavilyAPIKey,
+		},
+	}
+
+	jsonData, err := json.Marshal(pyReq)
 	if err != nil {
-		return nil, fmt.Errorf("daily router step 1 completion error: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	if len(toolCalls) == 0 {
-		return &AgentResult{
-			Answer:    finalContent,
-			Reasoning: allReasoning.String(),
-		}, nil
+	// 3. Make HTTP request to FiaLangChain
+	url := fmt.Sprintf("%s/chat", r.fialangchainURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.fialangchainToken)
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request to FiaLangChain failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("FiaLangChain returned error status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Check if generate_image, web_search, or weather is in the tool calls
-	var hasImageGen bool
-	var imageGenCall openAIToolCall
-	var hasWebSearch bool
-	var webSearchCall openAIToolCall
-	var hasWeather bool
-	var weatherCall openAIToolCall
-	var otherCalls []openAIToolCall
+	// 4. Stream SSE response and inject tags dynamically
+	reader := bufio.NewReader(resp.Body)
+	var finalAnswer strings.Builder
+	var finalReasoning strings.Builder
 
-	for _, tc := range toolCalls {
-		if tc.Function.Name == "generate_image" {
-			hasImageGen = true
-			imageGenCall = tc
-			break // Priority to image generation
-		} else if tc.Function.Name == "web_search" {
-			hasWebSearch = true
-			webSearchCall = tc
-		} else if tc.Function.Name == "weather" {
-			hasWeather = true
-			weatherCall = tc
-		} else {
-			otherCalls = append(otherCalls, tc)
-		}
-	}
-
-	// Case 1: Image Generation Tool
-	if hasImageGen {
-		inputMap := parseToolInput(imageGenCall.Function.Arguments)
-		prompt, _ := inputMap["prompt"].(string)
-		resolution, _ := inputMap["resolution"].(string)
-		if resolution == "" {
-			resolution = "2048x2048"
-		}
-
-		if cfg.ImageSvc == nil {
-			return nil, fmt.Errorf("image generation service not configured")
-		}
-
-		if cfg.ImageGenStartCb != nil {
-			cfg.ImageGenStartCb(resolution)
-		}
-
-		ossURL, err := cfg.ImageSvc.GenerateAndUploadImage(ctx, prompt, resolution, "")
+	for {
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate image: %w", err)
-		}
-
-		// Send image markdown/tag token
-		imgToken := fmt.Sprintf("<image src=%q>", ossURL)
-		tCb(imgToken)
-
-		return &AgentResult{
-			Answer:    imgToken,
-			Reasoning: allReasoning.String(),
-		}, nil
-	}
-
-	// Case 2: Web Search Tool (Context Injection Pattern)
-	if hasWebSearch {
-		inputMap := parseToolInput(webSearchCall.Function.Arguments)
-		query, _ := inputMap["query"].(string)
-		source, _ := inputMap["source"].(string)
-		if source == "" {
-			source = "bocha"
-		}
-
-		searchContext, err := searchCb(query, source)
-		if err != nil {
-			return nil, fmt.Errorf("failed to perform search: %w", err)
-		}
-
-		// Inject searchContext into the last User message in oaiMessages
-		lastMsgIdx := -1
-		for i := len(oaiMessages) - 1; i >= 0; i-- {
-			if oaiMessages[i].Role == "user" {
-				lastMsgIdx = i
+			if err == io.EOF {
 				break
 			}
-		}
-		if lastMsgIdx == -1 {
-			// Fallback: if no user message exists (should not happen), use the last message
-			lastMsgIdx = len(oaiMessages) - 1
+			return nil, err
 		}
 
-		originalUserQuery, _ := oaiMessages[lastMsgIdx].Content.(string)
-
-		var injectedBuilder strings.Builder
-		injectedBuilder.WriteString("【联网检索背景参考资料】\n")
-		injectedBuilder.WriteString(searchContext)
-		injectedBuilder.WriteString("\n\n请结合上述最新的联网搜索信息，用通俗易懂的语言详细回答用户的问题。如果搜索结果不相关，请基于您的知识库作答。\n")
-		injectedBuilder.WriteString("用户提问：")
-		injectedBuilder.WriteString(originalUserQuery)
-
-		oaiMessages[lastMsgIdx].Content = injectedBuilder.String()
-
-		// Append standard system prompt instructing the model on citations
-		systemPrompt := "你是一个具备联网搜索能力的助手。请根据提供的搜索结果回答用户的问题。\n\n" +
-			"**引用要求**：\n" +
-			"1. 当你引用搜索结果中的信息时，必须在对应的语句末尾使用 `ref(n)` 格式进行标注，其中 n 是引用来源序号 (从 1 开始).\n" +
-			"2. 例如：根据某项研究表明，地球是圆的 ref(1)。\n" +
-			"3. 如果一条语句引用了多个来源，请使用多个标注，如：ref(1) ref(2)。\n" +
-			"4. 如果搜索结果不相关，请根据你的知识储备回答，并告知用户搜索结果可能不完全匹配。"
-
-		oaiMessages = append(oaiMessages, openAIMessage{
-			Role:    "system",
-			Content: systemPrompt,
-		})
-
-		// Stream the final answer using daily model with enabledTools = nil
-		_, finalContent, err := r.callChatCompletionsStreamWith(
-			ctx,
-			cfg.DailyAPIKey,
-			cfg.DailyBaseURL,
-			cfg.DailyModel,
-			oaiMessages,
-			nil, // Setting enabledTools to nil disables the tools parameter in the API payload
-			tCb,
-			rCb,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("daily router step 2 search response completion error: %w", err)
-		}
-
-		return &AgentResult{
-			Answer:    finalContent,
-			Reasoning: allReasoning.String(),
-		}, nil
-	}
-
-	// Case 2.5: Weather Tool (Context Injection Pattern)
-	if hasWeather {
-		inputMap := parseToolInput(weatherCall.Function.Arguments)
-		toolMeta, exists := r.registry.GetToolMeta("weather")
-		if !exists {
-			return nil, fmt.Errorf("weather tool not found")
-		}
-
-		output, err := toolMeta.Fn(ctx, inputMap)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute weather tool: %w", err)
-		}
-
-		// Trigger step callback to show execution steps in agent container
-		if stepCb != nil {
-			stepCb(AgentStep{
-				Index:      1,
-				ToolName:   "weather",
-				ToolInput:  inputMap,
-				ToolOutput: formatOutput(output),
-			})
-		}
-
-		weatherJSON, _ := output["weather_data"].(string)
-		summary, _ := output["summary"].(string)
-
-		// Send the weather tag immediately before streaming text
-		weatherTag := fmt.Sprintf("<weather>%s</weather>\n", weatherJSON)
-		tCb(weatherTag)
-
-		// Unmarshal the full weatherJSON to inject a highly detailed forecast for the model
-		var data struct {
-			Location string `json:"location"`
-			Current  struct {
-				Temp          float64 `json:"temp"`
-				FeelsLike     float64 `json:"feels_like"`
-				Humidity      int     `json:"humidity"`
-				Condition     string  `json:"condition"`
-				WindSpeed     float64 `json:"wind_speed"`
-				WindDirection int     `json:"wind_direction"`
-				Precipitation float64 `json:"precipitation"`
-				CloudCover    int     `json:"cloud_cover"`
-			} `json:"current"`
-			Forecast []struct {
-				Date          string  `json:"date"`
-				High          float64 `json:"high"`
-				Low           float64 `json:"low"`
-				Condition     string  `json:"condition"`
-				Precipitation float64 `json:"precipitation"`
-				WindSpeedMax  float64 `json:"wind_speed_max"`
-			} `json:"forecast"`
-		}
-
-		var detailedSummary string
-		if err := json.Unmarshal([]byte(weatherJSON), &data); err == nil {
-			var forecastLines []string
-			for _, day := range data.Forecast {
-				forecastLines = append(forecastLines, fmt.Sprintf("- 日期: %s, 最低温度: %.1f°C, 最高温度: %.1f°C, 天气状况: %s, 降雨量/降雪量: %.1f mm, 最大风速: %.1f km/h",
-					day.Date, day.Low, day.High, day.Condition, day.Precipitation, day.WindSpeedMax))
-			}
-			detailedSummary = fmt.Sprintf("【已查询到最新的详细天气背景参考资料】\n"+
-				"- 地区: %s\n"+
-				"- 当前实时天气:\n"+
-				"  - 温度: %.1f°C (体感温度: %.1f°C)\n"+
-				"  - 天气状况: %s\n"+
-				"  - 湿度: %d%%\n"+
-				"  - 风速: %.1f km/h (风向: %d°)\n"+
-				"  - 实时降水量: %.1f mm\n"+
-				"  - 云量: %d%%\n"+
-				"- 未来7天天气预报:\n%s",
-				data.Location,
-				data.Current.Temp, data.Current.FeelsLike,
-				data.Current.Condition,
-				data.Current.Humidity,
-				data.Current.WindSpeed, data.Current.WindDirection,
-				data.Current.Precipitation,
-				data.Current.CloudCover,
-				strings.Join(forecastLines, "\n"))
-		} else {
-			detailedSummary = fmt.Sprintf("【已查询到天气背景参考资料】\n%s", summary)
-		}
-
-		// Inject weather detailedSummary into the last User message in oaiMessages
-		lastMsgIdx := -1
-		for i := len(oaiMessages) - 1; i >= 0; i-- {
-			if oaiMessages[i].Role == "user" {
-				lastMsgIdx = i
-				break
-			}
-		}
-		if lastMsgIdx == -1 {
-			lastMsgIdx = len(oaiMessages) - 1
-		}
-
-		originalUserQuery, _ := oaiMessages[lastMsgIdx].Content.(string)
-
-		var injectedBuilder strings.Builder
-		injectedBuilder.WriteString(detailedSummary)
-		injectedBuilder.WriteString("\n\n请结合上述查询到的天气背景参考资料，用通俗易懂的语言详细回答用户的问题。\n")
-		injectedBuilder.WriteString("用户提问：")
-		injectedBuilder.WriteString(originalUserQuery)
-
-		oaiMessages[lastMsgIdx].Content = injectedBuilder.String()
-
-		// Inject system prompt to guide response structure and forbid tag/JSON outputting
-		systemPrompt := "你是一个具备天气查询能力的自然语言助手。系统已根据后台查询到的天气数据，为用户自动渲染展示了直观的图形化天气预报卡片（包含实时气温、湿度、风力风向以及未来7天预报图表）。\n\n" +
-			"**重要回复要求**：\n" +
-			"1. 用户在聊天界面中已经可以直接看到美观的天气预报卡片，因此请在你的文字回复中**绝对不要提及或输出任何 <weather> 类似的数据标签，绝对不要输出任何 JSON 格式的天气数据或数据字段**。\n" +
-			"2. 请结合后台提供的天气背景参考资料，直接用日常、亲切、通俗易懂的自然语言回答用户的问题（例如：直接告知用户今天和明天的具体天气状况、温差、降水可能性等，并为用户提供切合实际的防晒防雨、穿衣搭配与出行玩乐建议）。\n" +
-			"3. 你的回复只包含纯文本的自然语言，绝对不要使用任何代码块或标签来包裹。"
-
-		oaiMessages = append(oaiMessages, openAIMessage{
-			Role:    "system",
-			Content: systemPrompt,
-		})
-
-		// Stream the final answer using daily model with enabledTools = nil
-		_, finalContent, err := r.callChatCompletionsStreamWith(
-			ctx,
-			cfg.DailyAPIKey,
-			cfg.DailyBaseURL,
-			cfg.DailyModel,
-			oaiMessages,
-			nil, // Disable tool calls
-			tCb,
-			rCb,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("daily router weather response completion error: %w", err)
-		}
-
-		return &AgentResult{
-			Answer:    finalContent,
-			Reasoning: allReasoning.String(),
-		}, nil
-	}
-
-	// Case 3: Other ReAct Tools (weather, calculator, get_time, etc.)
-	// 1. Append assistant message containing the tool calls
-	assistantMsg := openAIMessage{
-		Role:      "assistant",
-		ToolCalls: toolCalls,
-	}
-	oaiMessages = append(oaiMessages, assistantMsg)
-
-	// 2. Execute each tool call
-	for _, tc := range otherCalls {
-		inputMap := parseToolInput(tc.Function.Arguments)
-		toolMeta, exists := r.registry.GetToolMeta(tc.Function.Name)
-		if !exists {
-			errOutput := map[string]any{"error": fmt.Sprintf("tool %s not found", tc.Function.Name)}
-			stepCb(AgentStep{
-				Index:      1,
-				ToolName:   tc.Function.Name,
-				ToolInput:  inputMap,
-				ToolOutput: formatOutput(errOutput),
-				Err:        fmt.Sprintf("tool %s not found", tc.Function.Name),
-			})
-			oaiMessages = append(oaiMessages, openAIMessage{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-				Content:    formatOutput(errOutput),
-			})
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "data: ") {
 			continue
 		}
 
-		output, err := toolMeta.Fn(ctx, inputMap)
-		if err != nil {
-			errOutput := map[string]any{"error": err.Error()}
-			stepCb(AgentStep{
-				Index:      1,
-				ToolName:   tc.Function.Name,
-				ToolInput:  inputMap,
-				ToolOutput: formatOutput(errOutput),
-				Err:        err.Error(),
-			})
-			oaiMessages = append(oaiMessages, openAIMessage{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-				Content:    formatOutput(errOutput),
-			})
-		} else {
-			stepCb(AgentStep{
-				Index:      1,
-				ToolName:   tc.Function.Name,
-				ToolInput:  inputMap,
-				ToolOutput: formatOutput(output),
-			})
-			oaiMessages = append(oaiMessages, openAIMessage{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Name:       tc.Function.Name,
-				Content:    formatOutput(output),
-			})
+		dataStr := strings.TrimPrefix(line, "data: ")
+		var ev pythonSSEEvent
+		if err := json.Unmarshal([]byte(dataStr), &ev); err != nil {
+			log.Printf("[AgentClient] Failed to unmarshal SSE event: %v", err)
+			continue
+		}
+
+		switch ev.Type {
+		case "start":
+			// Handled
+		case "agent_plan":
+			var plan PlanResponse
+			if err := json.Unmarshal(ev.Data, &plan); err == nil {
+				stepCb(AgentStep{Plan: &plan})
+			}
+		case "plan_item":
+			var item struct {
+				Index  int    `json:"index"`
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(ev.Data, &item); err == nil {
+				toolName := "plan_progress"
+				if item.Status == "completed" {
+					toolName = "plan_item"
+				}
+				stepCb(AgentStep{
+					ToolName:  toolName,
+					PlanIndex: &item.Index,
+				})
+			}
+		case "agent_step":
+			var step struct {
+				Index      int            `json:"index"`
+				ToolName   string         `json:"tool_name"`
+				ToolInput  string         `json:"tool_input"`
+				ToolOutput string         `json:"tool_output"`
+				Err        string         `json:"err"`
+				PlanIndex  *int           `json:"plan_index,omitempty"`
+			}
+			if err := json.Unmarshal(ev.Data, &step); err == nil {
+				var inputMap map[string]any
+				_ = json.Unmarshal([]byte(step.ToolInput), &inputMap)
+
+				// Invoke callback so step info is logged
+				stepCb(AgentStep{
+					Index:      step.Index,
+					ToolName:   step.ToolName,
+					ToolInput:  inputMap,
+					ToolOutput: step.ToolOutput,
+					Err:        step.Err,
+					PlanIndex:  step.PlanIndex,
+				})
+
+				if step.Err == "" {
+					// Catch Weather tool to stream <weather> XML tag
+					if step.ToolName == "weather" {
+						var wRes map[string]any
+						if json.Unmarshal([]byte(step.ToolOutput), &wRes) == nil {
+							if weatherJSON, ok := wRes["weather_data"].(string); ok {
+								weatherTag := fmt.Sprintf("<weather>%s</weather>\n", weatherJSON)
+								tokenCb(weatherTag)
+							}
+						}
+					}
+
+					// Catch Web Search tool to stream <search> XML tag
+					if step.ToolName == "web_search" {
+						var sRes map[string]any
+						if json.Unmarshal([]byte(step.ToolOutput), &sRes) == nil {
+							sourceVal, _ := sRes["source"].(string)
+							if sourceVal == "" {
+								sourceVal = "bocha"
+							}
+							searchJSON, _ := json.Marshal(map[string]any{
+								"query":   sRes["query"],
+								"results": sRes["results"],
+								"source":  sourceVal,
+							})
+							searchTag := fmt.Sprintf("\n<search>%s</search>\n", string(searchJSON))
+							tokenCb(searchTag)
+						}
+					}
+
+					// Catch Generate Image tool to generate actual image via Go Volcengine Svc
+					if step.ToolName == "generate_image" && cfg.ImageSvc != nil {
+						prompt, _ := inputMap["prompt"].(string)
+						resolution, _ := inputMap["resolution"].(string)
+						if resolution == "" {
+							resolution = "2048x2048"
+						}
+
+						if cfg.ImageGenStartCb != nil {
+							cfg.ImageGenStartCb(resolution)
+						}
+
+						ossURL, err := cfg.ImageSvc.GenerateAndUploadImage(ctx, prompt, resolution, "")
+						if err == nil {
+							imgToken := fmt.Sprintf("<image src=%q>", ossURL)
+							tokenCb(imgToken)
+							finalAnswer.WriteString(imgToken)
+						} else {
+							log.Printf("[AgentClient] Image generation failed: %v", err)
+						}
+					}
+				}
+			}
+		case "reasoning":
+			finalReasoning.WriteString(ev.Content)
+			if reasoningCb != nil {
+				reasoningCb(ev.Content)
+			}
+		case "token":
+			finalAnswer.WriteString(ev.Content)
+			if tokenCb != nil {
+				tokenCb(ev.Content)
+			}
+		case "error":
+			return nil, fmt.Errorf("Python Daily Router Agent error: %s", ev.Content)
+		case "done":
+			return &AgentResult{
+				Answer:    finalAnswer.String(),
+				Reasoning: finalReasoning.String(),
+			}, nil
 		}
 	}
 
-	// 3. Transition to Agent Model for subsequent ReAct loop turns
-	return r.runLoopInternal(
-		ctx,
-		cfg.AgentAPIKey,
-		cfg.AgentBaseURL,
-		cfg.AgentModel,
-		oaiMessages,
-		dailyTools,
-		stepCb,
-		nil, // No plan for auto-routed steps
-		tokenCb,
-		reasoningCb,
-	)
+	return &AgentResult{
+		Answer:    finalAnswer.String(),
+		Reasoning: finalReasoning.String(),
+	}, nil
 }

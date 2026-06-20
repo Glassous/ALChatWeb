@@ -55,6 +55,8 @@ type Config struct {
 	AllowOrigins       []string
 	GinMode            string
 	MySQLDSN           string
+	FiaLangChainURL    string
+	FiaLangChainToken  string
 }
 
 func Load() *Config {
@@ -113,6 +115,8 @@ func Load() *Config {
 		AllowOrigins:       getEnvSlice("ALLOW_ORIGINS", []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:3001"}),
 		GinMode:            getEnv("GIN_MODE", "debug"),
 		MySQLDSN:           getEnv("MYSQL_DSN", ""),
+		FiaLangChainURL:    getEnv("FIALANGCHAIN_URL", "http://localhost:8000/api/v1/agent"),
+		FiaLangChainToken:  getEnv("FIALANGCHAIN_TOKEN", "your_secure_internal_token"),
 	}
 
 	// Enhanced Debug Logging for OSS

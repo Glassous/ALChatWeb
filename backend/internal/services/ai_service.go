@@ -251,8 +251,12 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []models.AIMess
 		return 0, 0, err
 	}
 
-	if mode == "search" {
-		return s.generateSearchStream(ctx, messages, callback, searchCallback)
+	if strings.HasPrefix(mode, "search") {
+		source := "bocha"
+		if strings.HasSuffix(mode, "tavily") {
+			source = "tavily"
+		}
+		return s.generateSearchStream(ctx, messages, source, callback, searchCallback)
 	}
 
 	// Daily mode: direct HTTP stream with thinking disabled
@@ -512,14 +516,14 @@ func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessa
 	return results, query, nil
 }
 
-func (s *AIService) generateSearchStream(ctx context.Context, messages []models.AIMessage, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
+func (s *AIService) generateSearchStream(ctx context.Context, messages []models.AIMessage, source string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
 	model := s.searchModel
 	s.mu.RUnlock()
 
-	results, query, err := s.PerformSearch(ctx, messages, "bocha", searchCallback)
+	results, query, err := s.PerformSearch(ctx, messages, source, searchCallback)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -530,7 +534,7 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []models.
 	searchData := map[string]any{
 		"query":   query,
 		"results": results,
-		"source":  "bocha",
+		"source":  source,
 	}
 	searchJSON, _ := json.Marshal(searchData)
 	searchTag.Write(searchJSON)
