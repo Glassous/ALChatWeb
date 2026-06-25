@@ -806,8 +806,6 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     const lastMessage = messages[messages.length - 1];
     const lastMessageId = lastMessage?.id || null;
     const prevLastMessageId = prevLastMessageIdRef.current;
-    const isCurrentlyStreaming = lastMessage?.status === 'loading';
-
     // Case 1: First render after mount — scroll to bottom immediately
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
@@ -838,11 +836,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       return;
     }
 
-    // Case 3: Streaming update → auto-scroll only if user hasn't scrolled up
-    if (isCurrentlyStreaming && isAutoScrollEnabledRef.current) {
-      scrollToBottom('auto');
-      return;
-    }
+    // Case 3: Streaming update → do NOTHING (auto-scroll disabled during generation)
 
     // Case 4: Generation ended, content update, ID rename, etc. → do NOTHING
   }, [messages, scrollToBottom]);

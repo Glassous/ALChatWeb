@@ -289,7 +289,12 @@ function ChatApp({
     }
   };
 
-  const loadConversation = async (conversationId: string, targetNodeId?: string, silent = false) => {
+  const loadConversation = async (
+    conversationId: string, 
+    targetNodeId?: string, 
+    silent = false,
+    pendingMessages?: Message[]
+  ) => {
     if (!silent) {
       setIsMessageLoading(true);
     }
@@ -303,7 +308,7 @@ function ChatApp({
       const newMessages = Array.isArray(conv.messages) ? conv.messages : [];
 
       // Map server messages to preserve clientIds from local messages
-      const currentMessages = messagesRef.current;
+      const currentMessages = pendingMessages || messagesRef.current;
       const localMsgMap = new Map(currentMessages.map(m => [m.id, m]));
       const mergedMessages = newMessages.map(msg => {
         const localMsg = localMsgMap.get(msg.id);
@@ -316,9 +321,7 @@ function ChatApp({
       // Determine if there is a real change in messages list before setting state
       // to avoid unnecessary re-renders (flicker-free visual update)
       let needsUpdate = false;
-      if (targetNodeId) {
-        needsUpdate = true;
-      } else if (mergedMessages.length !== currentMessages.length) {
+      if (mergedMessages.length !== currentMessages.length) {
         needsUpdate = true;
       } else {
         for (let i = 0; i < mergedMessages.length; i++) {
@@ -363,7 +366,10 @@ function ChatApp({
         }
       }
       
-      setCurrentNodeId(nextNodeId);
+      // Only update currentNodeId if it actually changed, to avoid
+      // unnecessary activePath recomputation and scroll disturbance.
+      // Use functional updater to get latest value (closure may be stale in async fn).
+      setCurrentNodeId(prev => prev === nextNodeId ? prev : nextNodeId);
       
       if (!silent) {
         setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
@@ -513,7 +519,9 @@ function ChatApp({
                 }
               }
 
-              // Update IDs
+              // Update IDs — use functional updater to get absolute latest state
+              // (messagesRef may lag behind queued React state updates from streaming)
+              let updatedForLoad: Message[] | undefined;
               setMessages((prev) => {
                 const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                   if (msg.id === assistantMsgId) {
@@ -530,6 +538,7 @@ function ChatApp({
                   }
                   return msg;
                 });
+                updatedForLoad = updated;
                 return updated;
               });
 
@@ -539,7 +548,7 @@ function ChatApp({
 
               setIsLoading(false);
               if (conversationId) {
-                loadConversation(conversationId, realAssistantId || undefined, true);
+                loadConversation(conversationId, realAssistantId || undefined, true, updatedForLoad);
               }
             },
             (newTitle) => {
@@ -686,6 +695,8 @@ function ChatApp({
             }
           }
 
+          let updatedForLoad: Message[] | undefined = undefined;
+
           // Swap temporary IDs with real IDs immediately to stabilize the UI
           if (realAssistantId && realUserId) {
             // Sync active workspace message ID
@@ -698,6 +709,8 @@ function ChatApp({
             // Switch workspace mode to preview on completion
             setWorkspaceMode('preview');
 
+            // Use functional updater to get absolute latest state
+            // (messagesRef may lag behind queued React state updates from streaming)
             setMessages((prev) => {
               const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                 if (msg.id === assistantMsgId) {
@@ -718,6 +731,7 @@ function ChatApp({
                 }
                 return msg;
               });
+              updatedForLoad = updated;
               return updated;
             });
             setCurrentNodeId(realAssistantId);
@@ -726,7 +740,7 @@ function ChatApp({
           // Sync with real database IDs to maintain correct tree structure
           if (conversationId) {
             apiClient.invalidateCache(conversationId);
-            loadConversation(conversationId, realAssistantId || undefined, true);
+            loadConversation(conversationId, realAssistantId || undefined, true, updatedForLoad);
           }
         },
         (newTitle) => {

@@ -67,14 +67,14 @@ export function TopBar({
         <div className="topbar-logo-container">
           <h1 className="topbar-title">AL Chat</h1>
           {isTempChat && <span className="temp-badge-logo">临时对话</span>}
-          {conversationTitle && (
+          {conversationTitle && conversationTitle.trim() && (
             <div className="mobile-title-container">
               <span className="mobile-conversation-title">{conversationTitle}</span>
             </div>
           )}
         </div>
       </div>
-      {conversationTitle && (
+      {conversationTitle && conversationTitle.trim() && (
         <div className="topbar-center">
           <span className="current-conversation-title">{conversationTitle}</span>
         </div>
