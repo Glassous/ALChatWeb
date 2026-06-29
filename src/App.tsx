@@ -305,15 +305,29 @@ function ChatApp({
       } else {
         conv = await apiClient.getConversation(conversationId);
       }
-      const newMessages = Array.isArray(conv.messages) ? conv.messages : [];
+      const newMessages = (Array.isArray(conv.messages) ? conv.messages : []) as Message[];
 
       // Map server messages to preserve clientIds from local messages
       const currentMessages = pendingMessages || messagesRef.current;
+      
+      // If targetNodeId is provided (e.g. after sending a message) but it's not in the server response,
+      // it means the server's read replica is lagging. In silent mode, we should just abort and keep local state.
+      if (silent && targetNodeId && !newMessages.some(m => m.id === targetNodeId)) {
+        console.warn('Server response is missing the target node (likely DB lag). Aborting silent update.');
+        return;
+      }
+
       const localMsgMap = new Map(currentMessages.map(m => [m.id, m]));
       const mergedMessages = newMessages.map(msg => {
         const localMsg = localMsgMap.get(msg.id);
-        if (localMsg && localMsg.clientId) {
-          return { ...msg, clientId: localMsg.clientId };
+        if (localMsg) {
+          return { 
+            ...msg, 
+            clientId: localMsg.clientId || msg.clientId,
+            reasoning: msg.reasoning || localMsg.reasoning,
+            search: msg.search || localMsg.search,
+            metadata: msg.metadata || localMsg.metadata
+          };
         }
         return msg;
       });

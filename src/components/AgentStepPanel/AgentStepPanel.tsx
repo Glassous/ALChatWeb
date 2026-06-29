@@ -213,22 +213,10 @@ export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: Agent
     }
   }, [isStreaming]);
 
-  // 流式结束时延迟折叠（给用户短暂看到完成状态的机会）
-  useEffect(() => {
-    if (!isStreaming) {
-      const timer = setTimeout(() => setIsExpanded(false), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [isStreaming]);
-
-  useEffect(() => {
-    if (isStreaming && bottomRef.current) {
-      // Use block: 'nearest' to only scroll within the panel's own overflow container,
-      // NOT the parent chat scroll area. 'smooth' + 'end'/'start' can cause the parent
-      // to forcefully scroll, especially when streaming ends.
-      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [steps, isStreaming]);
+  // 取消流式结束时的自动折叠，避免高度突变导致页面滚动跳跃
+  // 用户可以手动折叠
+  
+  // 移除 scrollIntoView，避免干扰外层 ChatArea 的滚动逻辑
 
 
   if (!hasContent) return null;
