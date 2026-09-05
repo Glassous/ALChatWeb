@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { TopBar } from '../components/TopBar/TopBar';
 import Cropper from 'react-easy-crop';
@@ -11,16 +10,16 @@ import getCroppedImg from '../utils/cropImage';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
-import '@material/web/dialog/dialog.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
-import '@material/web/button/text-button.js';
 import '@material/web/progress/circular-progress.js';
 import './UserSettings.css';
+import { ModalCard, modalButtonStyles, useToast } from '../components/LayerSystem/LayerSystem';
 
 export function UserSettings() {
   const navigate = useNavigate();
+  const showToast = useToast();
   const [userNickname, setUserNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
@@ -45,25 +44,7 @@ export function UserSettings() {
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
 
-  // Global blur logic for settings dialogs
-  useEffect(() => {
-    if (isCropping || showUpgradeSuccess) {
-      document.body.classList.add('dialog-open-blur');
-    } else {
-      document.body.classList.remove('dialog-open-blur');
-    }
-    return () => document.body.classList.remove('dialog-open-blur');
-  }, [isCropping, showUpgradeSuccess]);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    loadUserProfile();
-    loadSystemPrompt();
-    const handleProfileUpdate = () => loadUserProfile();
-    window.addEventListener('user-profile-updated', handleProfileUpdate);
-    return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
-  }, []);
 
   useEffect(() => {
     if (!includeLocation) return;
@@ -86,7 +67,7 @@ export function UserSettings() {
     return () => { cancelled = true; };
   }, [includeLocation]);
 
-  const loadUserProfile = async () => {
+  async function loadUserProfile() {
     try {
       const user = await apiClient.getProfile();
       setUserNickname(user.nickname || user.email || '');
@@ -99,9 +80,9 @@ export function UserSettings() {
     } catch (error) {
       console.error('Failed to load user profile:', error);
     }
-  };
+  }
 
-  const loadSystemPrompt = async () => {
+  async function loadSystemPrompt() {
     setIsLoadingSystemPrompt(true);
     try {
       const data = await apiClient.getSystemPrompt();
@@ -113,7 +94,17 @@ export function UserSettings() {
     } finally {
       setIsLoadingSystemPrompt(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    // Profile requests populate local settings state after their network responses.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadUserProfile();
+    loadSystemPrompt();
+    const handleProfileUpdate = () => loadUserProfile();
+    window.addEventListener('user-profile-updated', handleProfileUpdate);
+    return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
+  }, []);
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 
@@ -145,7 +136,7 @@ export function UserSettings() {
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
       console.error('Failed to upload avatar', error);
-      alert('上传头像失败，请稍后重试');
+      showToast({ tone: 'error', message: '上传头像失败，请稍后重试' });
     } finally {
       setIsUploadingAvatar(false);
       setImageToCrop(null);
@@ -160,7 +151,7 @@ export function UserSettings() {
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
       console.error('Failed to update nickname', error);
-      alert('修改昵称失败，请稍后重试');
+      showToast({ tone: 'error', message: '修改昵称失败，请稍后重试' });
     }
   };
 
@@ -172,10 +163,10 @@ export function UserSettings() {
         include_datetime: includeDateTime,
         include_location: includeLocation
       });
-      alert('系统提示词已保存');
+      showToast({ tone: 'success', message: '系统提示词已保存' });
     } catch (error) {
       console.error('Failed to save system prompt', error);
-      alert('保存失败，请重试');
+      showToast({ tone: 'error', message: '保存失败，请重试' });
     } finally {
       setIsSavingSystemPrompt(false);
     }
@@ -191,8 +182,8 @@ export function UserSettings() {
       setUpgradeInfo({ type: user.member_type || 'free', expiry: user.member_expiry || null });
       setShowUpgradeSuccess(true);
       window.dispatchEvent(new Event('user-profile-updated'));
-    } catch (error: any) {
-      alert(error.message || '升级失败');
+    } catch (error: unknown) {
+      showToast({ tone: 'error', message: error instanceof Error ? error.message : '升级失败' });
     } finally {
       setIsUpgrading(false);
     }
@@ -255,7 +246,7 @@ export function UserSettings() {
                   <md-outlined-text-field
                     label="昵称"
                     value={userNickname}
-                    onInput={(e: React.FormEvent<HTMLInputElement>) => setUserNickname((e.target as HTMLInputElement).value)}
+                    onInput={(e: React.FormEvent<HTMLElement>) => setUserNickname((e.target as HTMLInputElement).value)}
                     style={{ width: '100%' }}
                   >
                     {userNickname !== originalNickname && userNickname.trim() && (
@@ -305,7 +296,7 @@ export function UserSettings() {
                   <md-outlined-text-field
                     label="升级邀请码"
                     value={invitationCode}
-                    onInput={(e: React.FormEvent<HTMLInputElement>) => setInvitationCode((e.target as HTMLInputElement).value)}
+                    onInput={(e: React.FormEvent<HTMLElement>) => setInvitationCode((e.target as HTMLInputElement).value)}
                     placeholder="输入邀请码升级套餐"
                     style={{ flex: 1 }}
                   />
@@ -346,7 +337,7 @@ export function UserSettings() {
                       label="自定义前置提示词"
                       rows={8}
                       value={systemPrompt}
-                      onInput={(e: React.FormEvent<HTMLInputElement>) => setSystemPrompt((e.target as HTMLInputElement).value)}
+                      onInput={(e: React.FormEvent<HTMLElement>) => setSystemPrompt((e.target as HTMLInputElement).value)}
                       style={{ width: '100%' }}
                     />
                     <div className="prompt-options-row">
@@ -409,66 +400,69 @@ export function UserSettings() {
         </div>
       </div>
 
-      {/* Shared Dialogs */}
-      {createPortal(
-        <>
-          {isCropping && imageToCrop && (
-            <md-dialog open={isCropping} onClose={() => setIsCropping(false)} className="crop-dialog">
-              <div slot="headline">裁剪头像</div>
-              <div slot="content" className="crop-container">
-                <Cropper
-                  image={imageToCrop}
-                  crop={crop}
-                  zoom={zoom}
-                  aspect={1}
-                  onCropChange={setCrop}
-                  onCropComplete={onCropComplete}
-                  onZoomChange={setZoom}
-                />
-              </div>
-              <div slot="actions">
-                <md-text-button onClick={() => { setIsCropping(false); setImageToCrop(null); }}>取消</md-text-button>
-                <md-filled-button onClick={handleConfirmCrop}>确定</md-filled-button>
-              </div>
-            </md-dialog>
+      {imageToCrop && (
+        <ModalCard
+          open={isCropping}
+          onClose={() => { setIsCropping(false); setImageToCrop(null); }}
+          title="裁剪头像"
+          size="large"
+          actions={(
+            <>
+              <button type="button" className={modalButtonStyles.secondary} onClick={() => { setIsCropping(false); setImageToCrop(null); }}>取消</button>
+              <button type="button" className={modalButtonStyles.primary} onClick={handleConfirmCrop}>确定</button>
+            </>
           )}
+        >
+          <div className="crop-container">
+            <Cropper
+              image={imageToCrop}
+              crop={crop}
+              zoom={zoom}
+              aspect={1}
+              onCropChange={setCrop}
+              onCropComplete={onCropComplete}
+              onZoomChange={setZoom}
+            />
+          </div>
+        </ModalCard>
+      )}
 
-          {showUpgradeSuccess && upgradeInfo && (
-            <md-dialog open={showUpgradeSuccess} onClose={() => setShowUpgradeSuccess(false)} className="upgrade-success-dialog">
-              <div slot="content" className="upgrade-success-content">
-                <motion.div 
-                  initial={{ scale: 0.5, opacity: 0 }} 
-                  animate={{ scale: 1, opacity: 1 }} 
-                  transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
-                >
-                  <div className="success-icon-wrapper">
-                    <svg viewBox="0 0 52 52" className="success-check-svg">
-                      <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
-                      <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-                    </svg>
-                  </div>
-                  <h2>兑换成功！</h2>
-                  <div className="success-details">
-                    <div className="success-detail-item">
-                      <span className="detail-label">当前等级</span>
-                      <img src={`/badge-${upgradeInfo.type}.svg`} alt={upgradeInfo.type} className="member-badge-icon large" />
-                    </div>
-                    {upgradeInfo.expiry && (
-                      <div className="success-detail-item">
-                        <span className="detail-label">有效期至</span>
-                        <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
+      {upgradeInfo && (
+        <ModalCard
+          open={showUpgradeSuccess}
+          onClose={() => setShowUpgradeSuccess(false)}
+          size="small"
+          ariaLabel="兑换成功"
+          actions={<button type="button" className={modalButtonStyles.primary} onClick={() => setShowUpgradeSuccess(false)}>太棒了</button>}
+        >
+          <div className="upgrade-success-content">
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
+            >
+              <div className="success-icon-wrapper">
+                <svg viewBox="0 0 52 52" className="success-check-svg">
+                  <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
+                  <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                </svg>
               </div>
-              <div slot="actions">
-                <md-filled-button onClick={() => setShowUpgradeSuccess(false)}>太棒了</md-filled-button>
+              <h2>兑换成功！</h2>
+              <div className="success-details">
+                <div className="success-detail-item">
+                  <span className="detail-label">当前等级</span>
+                  <img src={`/badge-${upgradeInfo.type}.svg`} alt={upgradeInfo.type} className="member-badge-icon large" />
+                </div>
+                {upgradeInfo.expiry && (
+                  <div className="success-detail-item">
+                    <span className="detail-label">有效期至</span>
+                    <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
+                  </div>
+                )}
               </div>
-            </md-dialog>
-          )}
-        </>,
-        document.body
+            </motion.div>
+          </div>
+        </ModalCard>
       )}
     </div>
   );

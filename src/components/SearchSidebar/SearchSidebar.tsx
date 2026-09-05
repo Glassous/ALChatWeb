@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
 import '@material/web/divider/divider.js';
 import './SearchSidebar.css';
 import { API_BASE_URL } from '../../services/api';
+import { useBlockingLayer } from '../LayerSystem/LayerSystem';
 
 export interface SearchResult {
   title: string;
@@ -38,14 +40,22 @@ function formatDate(dateStr?: string) {
     }
     // Format to YYYY-MM-DD or user locale format
     return date.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
-  } catch (e) {
+  } catch {
     return dateStr;
   }
 }
 
 export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProps) {
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const isMobile = window.innerWidth <= 768;
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const isBlockingOpen = isMobile && isOpen && Boolean(searchData);
+  useBlockingLayer(isBlockingOpen);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Handle click outside to close on mobile
   useEffect(() => {
@@ -63,9 +73,29 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
     };
   }, [isOpen, isMobile, onClose]);
 
+  useEffect(() => {
+    if (!isBlockingOpen) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sidebarRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [isBlockingOpen, onClose]);
+
   if (!searchData) return null;
 
-  return (
+  const layerRoot = document.getElementById('layer-root');
+  if (!layerRoot) return null;
+
+  return createPortal(
     <>
       {/* Mobile Backdrop */}
       {isMobile && isOpen && (
@@ -75,6 +105,10 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
       <div 
          ref={sidebarRef}
         className={`search-sidebar ${isOpen ? 'open' : ''} ${isMobile ? 'mobile' : 'desktop'}`}
+        role={isMobile ? 'dialog' : undefined}
+        aria-modal={isMobile || undefined}
+        aria-label={isMobile ? '搜索结果' : undefined}
+        tabIndex={isMobile ? -1 : undefined}
       >
         <div className="search-sidebar-header">
           <div className="header-content">
@@ -139,6 +173,7 @@ export function SearchSidebar({ isOpen, searchData, onClose }: SearchSidebarProp
           )}
         </div>
       </div>
-    </>
+    </>,
+    layerRoot,
   );
 }

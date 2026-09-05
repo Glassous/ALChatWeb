@@ -4,15 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
-import '@material/web/dialog/dialog.js';
-import '@material/web/textfield/outlined-text-field.js';
-import '@material/web/button/filled-button.js';
-import '@material/web/button/text-button.js';
-import '@material/web/progress/circular-progress.js';
 import './Sidebar.css';
-import { apiClient, type ThemeConfig } from '../../services/api';
-import { ThemeSettingsDialog } from './ThemeSettingsDialog';
+import { apiClient } from '../../services/api';
 import { AnnouncementFeedbackDialog } from './AnnouncementFeedbackDialog';
+import { ConfirmDialog, ModalCard, modalButtonStyles, useToast } from '../LayerSystem/LayerSystem';
+import dialogStyles from './SidebarDialogs.module.css';
 
 interface Conversation {
   id: string;
@@ -33,8 +29,6 @@ interface SidebarProps {
   isLoading?: boolean;
   isMobileDrawerOpen?: boolean;
   onMobileDrawerClose?: () => void;
-  themeConfig?: ThemeConfig;
-  onThemeConfigUpdated?: (config: ThemeConfig) => void;
 }
 
 const AI_ICON = (
@@ -60,11 +54,10 @@ export function Sidebar({
   onPromoteTempChat,
   isLoading = false,
   isMobileDrawerOpen = false,
-  onMobileDrawerClose,
-  themeConfig,
-  onThemeConfigUpdated
+  onMobileDrawerClose
 }: SidebarProps) {
   const navigate = useNavigate();
+  const showToast = useToast();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
@@ -77,22 +70,11 @@ export function Sidebar({
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [userMemberType, setUserMemberType] = useState('free');
   const [userCredits, setUserCredits] = useState<number | null>(null);
-  const [showThemeSettings, setShowThemeSettings] = useState(false);
   const [showNoticeFeedback, setShowNoticeFeedback] = useState(false);
   const [noticeFeedbackTab, setNoticeFeedbackTab] = useState<'announcement' | 'feedback'>('announcement');
-
-  // Helper to manage global dialog blur
-  useEffect(() => {
-    const isAnyDialogOpen = showDeleteDialog || showEditDialog || showThemeSettings || showNoticeFeedback;
-    if (isAnyDialogOpen) {
-      document.body.classList.add('dialog-open-blur');
-    } else {
-      document.body.classList.remove('dialog-open-blur');
-    }
-    return () => document.body.classList.remove('dialog-open-blur');
-  }, [showDeleteDialog, showEditDialog, showThemeSettings]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -100,9 +82,6 @@ export function Sidebar({
         const user = await apiClient.getProfile();
         setUserMemberType(user.member_type || 'free');
         setUserCredits(user.credits ?? 1000);
-        if (user.theme_config && onThemeConfigUpdated) {
-          onThemeConfigUpdated(user.theme_config);
-        }
         localStorage.setItem('user', JSON.stringify(user));
       } catch (error) {
         console.error('Failed to fetch profile', error);
@@ -120,7 +99,9 @@ export function Sidebar({
           setUserMemberType(user.member_type || 'free');
           setUserCredits(user.credits ?? 1000);
         }
-      } catch { }
+      } catch {
+        // Ignore a malformed user cache and keep the safe defaults.
+      }
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -135,6 +116,7 @@ export function Sidebar({
   const settingsButtonRef = useRef<HTMLDivElement>(null);
   const settingsCardRef = useRef<HTMLDivElement>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const layerRoot = document.getElementById('layer-root') ?? document.body;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -167,8 +149,8 @@ export function Sidebar({
         if (settingsButtonRef.current) {
           const rect = settingsButtonRef.current.getBoundingClientRect();
           setCardPosition({
-            bottom: window.innerHeight - rect.top + 12,
-            left: rect.left
+            bottom: Math.max(12, window.innerHeight - rect.top + 12),
+            left: Math.min(Math.max(12, rect.left), window.innerWidth - 252)
           });
         }
       };
@@ -201,7 +183,7 @@ export function Sidebar({
       conversationId: conversation.id,
       position: {
         top: spaceBelow > menuHeight ? rect.bottom + 4 : rect.top - menuHeight - 4,
-        left: rect.left
+        left: Math.min(Math.max(8, rect.left), window.innerWidth - 176)
       }
     });
   };
@@ -221,6 +203,7 @@ export function Sidebar({
 
   const handleConfirmDelete = async () => {
     if (selectedConversation) {
+      setIsDeleting(true);
       try {
         await apiClient.deleteConversation(selectedConversation.id);
         setShowDeleteDialog(false);
@@ -228,7 +211,9 @@ export function Sidebar({
         onDeleteConversation(selectedConversation.id);
       } catch (error) {
         console.error('Failed to delete conversation:', error);
-        alert('删除对话失败，请重试');
+        showToast({ tone: 'error', message: '删除对话失败，请重试' });
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -243,7 +228,7 @@ export function Sidebar({
         onUpdateConversation(selectedConversation.id, editTitle.trim());
       } catch (error) {
         console.error('Failed to update conversation title:', error);
-        alert('更新标题失败，请重试');
+        showToast({ tone: 'error', message: '更新标题失败，请重试' });
       }
     }
   };
@@ -256,7 +241,7 @@ export function Sidebar({
       setEditTitle(newTitle);
     } catch (error) {
       console.error('Failed to generate AI title:', error);
-      alert('AI 生成标题失败，请重试');
+      showToast({ tone: 'error', message: 'AI 生成标题失败，请重试' });
     } finally {
       setIsGeneratingTitle(false);
     }
@@ -374,26 +359,6 @@ export function Sidebar({
               </div>
               <div className="settings-divider"></div>
               <div 
-                className={`settings-row clickable ${!['pro', 'max', 'ultra'].includes(userMemberType) ? 'disabled' : ''}`}
-                onClick={() => {
-                  if (['pro', 'max', 'ultra'].includes(userMemberType)) {
-                    setShowSettings(false);
-                    setShowThemeSettings(true);
-                  }
-                }}
-              >
-                <div className="settings-row-content">
-                  <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                    <path d="M480-80q-82 0-155-31.5t-127.5-86Q144-252 112-325T80-480q0-83 31.5-156t86-127Q252-817 325-848.5T480-880q83 0 156 31.5t127 86q54 54.5 85.5 127T880-480q0 82-31.5 155t-86 127.5q-54.5 54.5-127 86T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/>
-                  </svg>
-                  <span className="settings-label">个性装扮</span>
-                </div>
-                {!['pro', 'max', 'ultra'].includes(userMemberType) && (
-                  <span className="pro-badge-mini">PRO</span>
-                )}
-              </div>
-              <div className="settings-divider"></div>
-              <div 
                 className="settings-row clickable"
                 onClick={() => {
                   setShowSettings(false);
@@ -441,7 +406,9 @@ export function Sidebar({
                           );
                         }
                       }
-                    } catch { }
+                    } catch {
+                      // Ignore a malformed user cache and render the placeholder.
+                    }
                     return (
                       <div className="user-mini-avatar-placeholder">
                         <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
@@ -459,7 +426,9 @@ export function Sidebar({
                             const user = JSON.parse(userStr);
                             return user.nickname || user.email || '用户';
                           }
-                        } catch { }
+                        } catch {
+                          // Ignore a malformed user cache and render the fallback name.
+                        }
                         return '用户';
                       })()}
                     </span>
@@ -475,7 +444,7 @@ export function Sidebar({
                 </div>
               </div>
             </div>,
-            document.body
+            layerRoot
           )}
 
           {contextMenu && createPortal(
@@ -526,64 +495,62 @@ export function Sidebar({
                 );
               })()}
             </div>,
-            document.body
+            layerRoot
           )}
 
-          {createPortal(
-            <>
-              {showDeleteDialog && selectedConversation && (
-                <md-dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>
-                  <div slot="headline">删除对话</div>
-                  <div slot="content">确定要删除对话 "{selectedConversation.title}" 吗？此操作无法撤销。</div>
-                  <div slot="actions">
-                    <md-text-button onClick={() => setShowDeleteDialog(false)}>取消</md-text-button>
-                    <md-filled-button onClick={handleConfirmDelete} style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}>删除</md-filled-button>
-                  </div>
-                </md-dialog>
-              )}
-
-              {showEditDialog && selectedConversation && (
-                <md-dialog open={showEditDialog} onClose={() => setShowEditDialog(false)}>
-                  <div slot="headline">编辑对话标题</div>
-                  <div slot="content" style={{ paddingTop: '16px' }}>
-                    <md-outlined-text-field
-                      label="对话标题"
-                      value={editTitle}
-                      onInput={(e: React.FormEvent<HTMLInputElement>) => setEditTitle((e.target as HTMLInputElement).value)}
-                      onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter') handleConfirmEdit(); }}
-                      style={{ width: '100%' }}
-                    >
-                      <md-icon-button slot="trailing-icon" onClick={handleAIGenerateTitle} disabled={isGeneratingTitle} title="AI 生成标题">
-                        {isGeneratingTitle ? <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '24px' }} /> : AI_ICON}
-                      </md-icon-button>
-                    </md-outlined-text-field>
-                  </div>
-                  <div slot="actions">
-                    <md-text-button onClick={() => setShowEditDialog(false)}>取消</md-text-button>
-                    <md-filled-button onClick={handleConfirmEdit} disabled={!editTitle.trim()}>保存</md-filled-button>
-                  </div>
-                </md-dialog>
-              )}
-
-              <ThemeSettingsDialog 
-                open={showThemeSettings}
-                onClose={() => setShowThemeSettings(false)}
-                initialConfig={themeConfig}
-                onConfigUpdated={(config) => {
-                  if (onThemeConfigUpdated) {
-                    onThemeConfigUpdated(config);
-                  }
-                }}
-              />
-
-              <AnnouncementFeedbackDialog
-                open={showNoticeFeedback}
-                onClose={() => setShowNoticeFeedback(false)}
-                initialTab={noticeFeedbackTab}
-              />
-            </>,
-            document.body
+          {selectedConversation && (
+            <ConfirmDialog
+              open={showDeleteDialog}
+              title="删除对话"
+              description={<>确定要删除对话“{selectedConversation.title}”吗？此操作无法撤销。</>}
+              confirmLabel="删除"
+              danger
+              busy={isDeleting}
+              onConfirm={handleConfirmDelete}
+              onClose={() => { if (!isDeleting) setShowDeleteDialog(false); }}
+            />
           )}
+
+          {selectedConversation && (
+            <ModalCard
+              open={showEditDialog}
+              title="编辑对话标题"
+              onClose={() => setShowEditDialog(false)}
+              actions={(
+                <>
+                  <button type="button" className={modalButtonStyles.secondary} onClick={() => setShowEditDialog(false)}>取消</button>
+                  <button type="button" className={modalButtonStyles.primary} onClick={handleConfirmEdit} disabled={!editTitle.trim()}>保存</button>
+                </>
+              )}
+            >
+              <div className={dialogStyles.titleFieldRow}>
+                <input
+                  className={dialogStyles.titleInput}
+                  aria-label="对话标题"
+                  value={editTitle}
+                  onChange={(event) => setEditTitle(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') handleConfirmEdit(); }}
+                  data-autofocus
+                />
+                <button
+                  type="button"
+                  className={dialogStyles.generateButton}
+                  onClick={handleAIGenerateTitle}
+                  disabled={isGeneratingTitle}
+                  title="AI 生成标题"
+                  aria-label="AI 生成标题"
+                >
+                  {isGeneratingTitle ? <span className={dialogStyles.spinner} /> : AI_ICON}
+                </button>
+              </div>
+            </ModalCard>
+          )}
+
+          <AnnouncementFeedbackDialog
+            open={showNoticeFeedback}
+            onClose={() => setShowNoticeFeedback(false)}
+            initialTab={noticeFeedbackTab}
+          />
         </div>
       </div>
     </>

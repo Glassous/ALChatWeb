@@ -7,6 +7,7 @@ import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import type { AgentStepData, AgentPlanItemData } from '../../services/api';
 import { getThumbnailUrl } from '../../utils/image';
 import './ChatArea.css';
+import { FullscreenLayer } from '../LayerSystem/LayerSystem';
 
 export interface Message {
   id: string;
@@ -194,11 +195,13 @@ function MessageItem({
     if (isManual) return;
 
     if (msg.reasoning && !msg.content) {
+      // Reasoning/content are streaming lifecycle signals from the server.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsCollapsed(false); // Expand while reasoning
     } else if (msg.reasoning && msg.content) {
       setIsCollapsed(true); // Collapse when main content starts
     }
-  }, [msg.reasoning, !!msg.content, isManual]);
+  }, [msg.reasoning, msg.content, isManual]);
 
   // Check if user message is long enough to collapse
   useEffect(() => {
@@ -301,7 +304,14 @@ function MessageItem({
     }
 
 
-    const markdownComponents: any = {
+    type MarkdownElement = React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+    type PreRendererProps = React.HTMLAttributes<HTMLPreElement> & { children?: React.ReactNode };
+    type CodeRendererProps = React.HTMLAttributes<HTMLElement> & {
+      inline?: boolean;
+      children?: React.ReactNode;
+    };
+
+    const markdownComponents = {
       img: ({ src, alt }: { src?: string, alt?: string }) => {
         const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
           const target = e.target as HTMLImageElement;
@@ -346,28 +356,30 @@ function MessageItem({
         }
         return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
       },
-      pre: ({ children, ...props }: any) => {
-        const isHtmlCodeBlock = React.Children.toArray(children).some((child: any) => {
-          return child && (child as any).props && (child as any).props.className === 'language-html';
+      pre: ({ children, ...props }: PreRendererProps) => {
+        const isHtmlCodeBlock = React.Children.toArray(children).some((child) => {
+          return React.isValidElement(child) && (child as MarkdownElement).props.className === 'language-html';
         });
         if (isHtmlCodeBlock) {
           return <>{children}</>;
         }
 
-        const codeElement = React.Children.toArray(children).find((child: any) => {
-          return child && (child as any).props;
-        }) as any;
+        const codeElement = React.Children.toArray(children).find(
+          (child): child is MarkdownElement => React.isValidElement(child),
+        );
 
         if (codeElement) {
           const className = codeElement.props.className || '';
           const match = /language-(\w+)/.exec(className);
           const lang = match ? match[1] : '';
           
-          const getRawText = (node: any): string => {
+          const getRawText = (node: unknown): string => {
             if (typeof node === 'string') return node;
             if (typeof node === 'number') return String(node);
             if (Array.isArray(node)) return node.map(getRawText).join('');
-            if (node && node.props && node.props.children) return getRawText(node.props.children);
+            if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+              return getRawText(node.props.children);
+            }
             return '';
           };
           
@@ -382,7 +394,7 @@ function MessageItem({
 
         return <pre {...props}>{children}</pre>;
       },
-      code: ({ node, inline, className, children, ...props }: any) => {
+      code: ({ inline, className, children, ...props }: CodeRendererProps) => {
         const match = /language-(\w+)/.exec(className || '');
         const lang = match ? match[1] : '';
         const codeContent = String(children).replace(/\n$/, '');
@@ -945,19 +957,21 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       )}
 
       {previewUrl && (
-        <div className="image-preview-overlay" onClick={() => setPreviewUrl(null)}>
-          <div className="preview-header" onClick={e => e.stopPropagation()}>
-            <button className="preview-action-btn download-btn" onClick={handleDownload} title="下载图片">
-              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
-            </button>
-            <button className="preview-action-btn close-btn" onClick={() => setPreviewUrl(null)} title="关闭预览">
-              <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>
-            </button>
+        <FullscreenLayer open ariaLabel="图片预览" onClose={() => setPreviewUrl(null)}>
+          <div className="image-preview-overlay" onClick={() => setPreviewUrl(null)}>
+            <div className="preview-header" onClick={e => e.stopPropagation()}>
+              <button className="preview-action-btn download-btn" onClick={handleDownload} title="下载图片">
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
+              </button>
+              <button className="preview-action-btn close-btn" onClick={() => setPreviewUrl(null)} title="关闭预览">
+                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>
+              </button>
+            </div>
+            <div className="preview-content" onClick={e => e.stopPropagation()}>
+              <img src={getThumbnailUrl(previewUrl)} alt="预览" className="preview-image" />
+            </div>
           </div>
-          <div className="preview-content" onClick={e => e.stopPropagation()}>
-            <img src={getThumbnailUrl(previewUrl)} alt="Preview" className="preview-image" />
-          </div>
-        </div>
+        </FullscreenLayer>
       )}
     </div>
   );

@@ -26,6 +26,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
 
   // Sync state when external HTML changes (e.g. streaming update)
   useEffect(() => {
+    // The editor mirrors streamed HTML owned by the parent.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalHtml(html);
   }, [html]);
 

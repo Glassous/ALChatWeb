@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import './Auth.css';
+import { getErrorMessage } from '../utils/errors';
 
 export function Register() {
   const navigate = useNavigate();
@@ -45,8 +46,8 @@ export function Register() {
           return prev - 1;
         });
       }, 1000);
-    } catch (err: any) {
-      setError(err.message || '发送验证码失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '发送验证码失败'));
     }
   };
 
@@ -64,8 +65,8 @@ export function Register() {
       localStorage.setItem('token', response.token);
       localStorage.setItem('user', JSON.stringify(response.user));
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || '注册失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '注册失败'));
     } finally {
       setIsLoading(false);
     }

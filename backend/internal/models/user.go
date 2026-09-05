@@ -20,26 +20,8 @@ type User struct {
 	MemberExpiry      *time.Time         `bson:"member_expiry,omitempty" json:"member_expiry,omitempty" gorm:"type:datetime"`
 	Credits           float64            `bson:"credits" json:"credits" gorm:"type:decimal(10,2);default:0"`
 	LastCreditResetAt time.Time          `bson:"last_credit_reset_at" json:"last_credit_reset_at" gorm:"type:datetime"`
-	ThemeConfig       ThemeConfig        `bson:"theme_config" json:"theme_config" gorm:"serializer:json;type:json"`
 	CreatedAt         time.Time          `bson:"created_at" json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time          `bson:"updated_at" json:"updated_at" gorm:"autoUpdateTime"`
-}
-
-type ThemeConfig struct {
-	Enabled       bool          `bson:"enabled" json:"enabled"`
-	CustomPresets []ThemePreset `bson:"custom_presets" json:"custom_presets"`
-	Divider       struct {
-		Type   string `bson:"type" json:"type"`
-		Value  string `bson:"value" json:"value"`
-		Preset string `bson:"preset" json:"preset"`
-	} `bson:"divider" json:"divider"`
-}
-
-type ThemePreset struct {
-	ID    string `bson:"id" json:"id"`
-	Name  string `bson:"name" json:"name"`
-	Value string `bson:"value" json:"value"`
-	Type  string `bson:"type" json:"type"`
 }
 
 type RegisterRequest struct {

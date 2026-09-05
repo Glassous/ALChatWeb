@@ -1,12 +1,12 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import XarrowRaw, { useXarrow as useXarrowRaw, Xwrapper as XwrapperRaw } from 'react-xarrows';
 
-// Fix for potential ESM/CJS interop issues in some environments
-const Xarrow = (XarrowRaw as any).default || XarrowRaw;
-const Xwrapper = (XwrapperRaw as any).default || XwrapperRaw;
-const useXarrow = (useXarrowRaw as any).default || useXarrowRaw;
+const Xarrow = XarrowRaw;
+const Xwrapper = XwrapperRaw;
+const useXarrow = useXarrowRaw;
 import { type Message } from './ChatArea';
 import './TreeView.css';
+import { FullscreenLayer } from '../LayerSystem/LayerSystem';
 
 interface TreeViewProps {
   allMessages: Message[];
@@ -183,7 +183,8 @@ export function TreeView({ allMessages, activePath, currentNodeId, onSelectNode,
   };
 
   return (
-    <div className={`tree-view-overlay ${isClosing ? 'closing' : ''}`} onClick={handleClose}>
+    <FullscreenLayer open ariaLabel="对话总览" onClose={handleClose}>
+      <div className={`tree-view-overlay ${isClosing ? 'closing' : ''}`} onClick={handleClose}>
       <div className="tree-view-content" onClick={e => e.stopPropagation()}>
         <div className="tree-view-header">
           <h3>对话总览</h3>
@@ -223,6 +224,7 @@ export function TreeView({ allMessages, activePath, currentNodeId, onSelectNode,
           )}
         </div>
       )}
-    </div>
+      </div>
+    </FullscreenLayer>
   );
 }

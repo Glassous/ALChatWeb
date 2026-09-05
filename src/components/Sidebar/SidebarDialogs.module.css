@@ -1,0 +1,7 @@
+.titleFieldRow { display: flex; align-items: center; gap: 10px; }
+.titleInput { min-width: 0; flex: 1; padding: 12px 14px; color: var(--text-color); background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 12px; outline: none; font: inherit; }
+.titleInput:focus { border-color: var(--text-color); }
+.generateButton { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; color: var(--text-color); background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 12px; cursor: pointer; }
+.generateButton:disabled { cursor: wait; opacity: 0.6; }
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border-color); border-top-color: var(--text-color); border-radius: 50%; animation: sidebarDialogSpin 700ms linear infinite; }
+@keyframes sidebarDialogSpin { to { transform: rotate(360deg); } }

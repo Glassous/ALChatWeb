@@ -17,6 +17,7 @@ COPY . .
 # 编译 Go 应用，指定入口为 cmd/server/main.go
 # CGO_ENABLED=0 确保编译出静态链接的二进制文件，以便在轻量级 alpine 镜像中运行
 RUN CGO_ENABLED=0 GOOS=linux go build -o alchat-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o cleanup-theme-config ./cmd/cleanup_theme_config
 
 # 2. 运行阶段
 FROM alpine:latest
@@ -28,6 +29,7 @@ RUN apk add --no-cache tzdata ca-certificates
 
 # 从构建阶段复制编译好的二进制文件
 COPY --from=builder /app/alchat-server .
+COPY --from=builder /app/cleanup-theme-config .
 
 # 暴露后端运行的端口（根据 .env.example 默认是 8080）
 EXPOSE 8080

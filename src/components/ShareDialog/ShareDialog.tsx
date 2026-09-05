@@ -1,11 +1,8 @@
 import { useState } from 'react';
-import '@material/web/iconbutton/icon-button.js';
-import '@material/web/button/filled-button.js';
-import '@material/web/button/text-button.js';
-import '@material/web/dialog/dialog.js';
 import '@material/web/progress/circular-progress.js';
-import './ShareDialog.css';
+import styles from './ShareDialog.module.css';
 import { apiClient } from '../../services/api';
+import { ModalCard, modalButtonStyles } from '../LayerSystem/LayerSystem';
 
 interface ShareDialogProps {
   open: boolean;
@@ -68,41 +65,47 @@ export function ShareDialog({ open, onClose, conversationId }: ShareDialogProps)
   };
 
   return (
-    <md-dialog open={open} onClose={handleClose}>
-      <div slot="headline">分享对话</div>
-      <div slot="content" className="share-dialog-content">
+    <ModalCard
+      open={open}
+      onClose={handleClose}
+      title="分享对话"
+      busy={loading}
+      actions={(
+        <>
+          <button type="button" className={modalButtonStyles.secondary} onClick={handleClose} disabled={loading}>关闭</button>
+          {!shareUrl && !loading && !error && (
+            <button type="button" className={modalButtonStyles.primary} onClick={handleCreateShare}>生成链接</button>
+          )}
+        </>
+      )}
+    >
+      <div className={styles.content}>
         {loading ? (
-          <div className="share-loading">
+          <div className={styles.loading}>
             <md-circular-progress indeterminate />
             <span>正在生成分享链接...</span>
           </div>
         ) : error ? (
-          <div className="share-error">{error}</div>
+          <div className={styles.error}>{error}</div>
         ) : shareUrl ? (
-          <div className="share-url-container">
+          <div className={styles.urlContainer}>
             <input
-              className="share-url-input"
+              className={styles.urlInput}
               value={shareUrl}
               readOnly
               onClick={(e) => (e.target as HTMLInputElement).select()}
             />
-            <button className="share-copy-btn" onClick={handleCopy}>
+            <button type="button" className={styles.copyButton} onClick={handleCopy}>
               {copied ? '已复制' : '复制链接'}
             </button>
           </div>
         ) : (
-          <div className="share-info">
+          <div className={styles.info}>
             <p>分享后，任何人都可以通过链接查看此对话内容。</p>
-            <p className="share-hint">提示：如果对话被删除，分享链接将自动失效。</p>
+            <p className={styles.hint}>提示：如果对话被删除，分享链接将自动失效。</p>
           </div>
         )}
       </div>
-      <div slot="actions">
-        <md-text-button onClick={handleClose}>关闭</md-text-button>
-        {!shareUrl && !loading && !error && (
-          <md-filled-button onClick={handleCreateShare}>生成链接</md-filled-button>
-        )}
-      </div>
-    </md-dialog>
+    </ModalCard>
   );
 }

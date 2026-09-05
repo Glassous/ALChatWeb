@@ -380,13 +380,13 @@
   white-space: nowrap;
 }
 
-@keyframes spin {
+@keyframes agentStepSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
 .spinning {
-  animation: spin 1s linear infinite;
+  animation: agentStepSpin 1s linear infinite;
 }
 
 /* Dark Theme Overrides for Plan Card - Using deep off-white as requested */

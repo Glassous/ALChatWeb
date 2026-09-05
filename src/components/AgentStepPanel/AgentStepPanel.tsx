@@ -76,7 +76,7 @@ function getToolIconComponent(toolName: string) {
 
 const hiddenTools = ['get_time', 'plan_progress', 'plan_item'];
 
-function parseToolInput(toolInput: string): Record<string, any> | null {
+function parseToolInput(toolInput: string): Record<string, unknown> | null {
   if (!toolInput) return null;
   try {
     return JSON.parse(toolInput);
@@ -89,13 +89,13 @@ function getStepTitle(step: AgentStep): string {
   const input = parseToolInput(step.tool_input);
   if (!input) return getToolDisplayName(step.tool_name);
   
-  if (step.tool_name === 'web_search' && input.query) {
+  if (step.tool_name === 'web_search' && typeof input.query === 'string') {
     return input.query;
   }
-  if (step.tool_name === 'weather' && input.location) {
+  if (step.tool_name === 'weather' && typeof input.location === 'string') {
     return input.location;
   }
-  if (step.tool_name === 'calculator' && input.expression) {
+  if (step.tool_name === 'calculator' && typeof input.expression === 'string') {
     return input.expression;
   }
   return getToolDisplayName(step.tool_name);
@@ -114,22 +114,45 @@ function parseSearchResults(step: AgentStep): SearchResultData[] | null {
     if (output.results && Array.isArray(output.results)) {
       return output.results;
     }
-  } catch {}
+  } catch {
+    // Streaming tool output may be incomplete until the next chunk arrives.
+  }
   return null;
 }
 
-function parseWeatherData(step: AgentStep): Record<string, any> | null {
+interface WeatherForecastDay {
+  date?: string;
+  condition?: string;
+  low?: number | string;
+  high?: number | string;
+}
+
+interface WeatherInlineData {
+  current?: {
+    condition?: string;
+    temp?: number | string;
+    feels_like?: number | string;
+    humidity?: number | string;
+    wind_speed?: number | string;
+  };
+  location?: string;
+  forecast?: WeatherForecastDay[];
+}
+
+function parseWeatherData(step: AgentStep): WeatherInlineData | null {
   if (step.tool_name !== 'weather' || !step.tool_output) return null;
   try {
     const output = JSON.parse(step.tool_output);
     if (output.weather_data) {
-      return JSON.parse(output.weather_data);
+      return JSON.parse(output.weather_data) as WeatherInlineData;
     }
-  } catch {}
+  } catch {
+    // Streaming tool output may be incomplete until the next chunk arrives.
+  }
   return null;
 }
 
-function WeatherInlineCard({ data }: { data: Record<string, any> }) {
+function WeatherInlineCard({ data }: { data: WeatherInlineData }) {
   const current = data.current || {};
   const location = data.location || '未知';
   const condition = current.condition || '未知';
@@ -167,10 +190,10 @@ function WeatherInlineCard({ data }: { data: Record<string, any> }) {
       </div>
       {forecast.length > 0 && (
         <div className="weather-inline-forecast">
-          {forecast.slice(0, 3).map((day: any, i: number) => (
+          {forecast.slice(0, 3).map((day, i: number) => (
             <div key={i} className="weather-inline-forecast-day">
               <span className="forecast-date">{day.date?.slice(5) || '--'}</span>
-              <span className="forecast-icon">{conditionIcons[day.condition] || '🌤️'}</span>
+              <span className="forecast-icon">{(day.condition && conditionIcons[day.condition]) || '🌤️'}</span>
               <span className="forecast-temp">{day.low}°/{day.high}°</span>
             </div>
           ))}
@@ -209,6 +232,8 @@ export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: Agent
   // 流式开始时自动展开
   useEffect(() => {
     if (isStreaming) {
+      // Streaming is an external lifecycle signal and should reveal live progress.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsExpanded(true);
     }
   }, [isStreaming]);
@@ -230,7 +255,7 @@ export function AgentStepPanel({ steps, plan, isStreaming, onShowSearch }: Agent
     const results = parseSearchResults(step);
     if (input && onShowSearch) {
       const searchData: SearchData = {
-        query: input.query || '',
+        query: typeof input.query === 'string' ? input.query : '',
         status: 'completed',
         results: results || [],
       };

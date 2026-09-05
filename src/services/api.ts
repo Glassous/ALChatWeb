@@ -56,30 +56,48 @@ export interface ConversationWithMessages extends Conversation {
 export interface ChatStreamResponse {
   type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'agent_start' | 'agent_plan' | 'plan_item' | 'agent_step' | 'agent_done' | 'image_gen_start';
   content?: string;
-  data?: any;
+  data?: unknown;
+}
+
+interface AuthCredentials {
+  email: string;
+  password: string;
+}
+
+interface RegistrationData extends AuthCredentials {
+  nickname: string;
+  confirm_password: string;
+  code: string;
+}
+
+interface ResetPasswordData {
+  email: string;
+  code: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+interface AuthResponse {
+  token: string;
+  user: Record<string, unknown>;
+}
+
+export interface StreamSearchData {
+  query: string;
+  status: 'searching' | 'completed';
+  results?: Array<{ title: string; url: string; snippet: string }>;
+}
+
+export interface StreamDoneData {
+  assistant_message_id?: string;
+  user_message_id?: string;
+  credits?: number;
 }
 
 
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
-}
-
-export interface ThemePreset {
-  id: string;
-  name: string;
-  value: string;
-  type: 'color' | 'gradient';
-}
-
-export interface ThemeConfig {
-  enabled: boolean;
-  custom_presets?: ThemePreset[];
-  divider: {
-    type: 'color' | 'gradient';
-    value: string;
-    preset: string;
-  };
 }
 
 export interface ShareConversation {
@@ -192,7 +210,7 @@ class APIClient {
     }
   }
 
-  async register(data: any) {
+  async register(data: RegistrationData): Promise<AuthResponse> {
     const response = await fetch(`${this.baseURL}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -201,7 +219,7 @@ class APIClient {
     return this.handleResponse(response);
   }
 
-  async login(data: any) {
+  async login(data: AuthCredentials): Promise<AuthResponse> {
     const response = await fetch(`${this.baseURL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -219,7 +237,7 @@ class APIClient {
     return this.handleResponse(response);
   }
 
-  async resetPassword(data: any) {
+  async resetPassword(data: ResetPasswordData) {
     const response = await fetch(`${this.baseURL}/api/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -295,15 +313,6 @@ class APIClient {
 
   async updateSystemPrompt(data: { system_prompt: string; include_datetime: boolean; include_location: boolean }) {
     const response = await fetch(`${this.baseURL}/api/auth/system-prompt`, {
-      method: 'PUT',
-      headers: this.getHeaders(),
-      body: JSON.stringify(data),
-    });
-    return this.handleResponse(response);
-  }
-
-  async updateTheme(data: ThemeConfig) {
-    const response = await fetch(`${this.baseURL}/api/auth/theme`, {
       method: 'PUT',
       headers: this.getHeaders(),
       body: JSON.stringify(data),
@@ -457,7 +466,7 @@ class APIClient {
     prompt: string,
     resolution: string,
     onToken: (token: string) => void,
-    onDone: (data: any) => void,
+    onDone: (data: StreamDoneData) => void,
     onTitle: (title: string) => void,
     onError: (error: string) => void,
     refImageUrl?: string,
@@ -526,7 +535,7 @@ class APIClient {
               } else if (parsed.type === 'token') {
                 onToken(parsed.content || '');
               } else if (parsed.type === 'done') {
-                onDone(parsed.data);
+                onDone((parsed.data ?? {}) as StreamDoneData);
               } else if (parsed.type === 'title' && parsed.content) {
                 onTitle(parsed.content);
               } else if (parsed.type === 'error') {
@@ -586,15 +595,15 @@ class APIClient {
     mode: 'daily' | 'expert' | 'search' | 'agent',
     onToken: (token: string) => void,
     onReasoning: (reasoning: string) => void,
-    onSearch: (data: any) => void,
-    onDone: (data: any) => void,
+    onSearch: (data: StreamSearchData) => void,
+    onDone: (data: StreamDoneData) => void,
     onTitle: (title: string) => void,
     onError: (error: string) => void,
     location?: string,
     parentMessageId?: string | null,
-    onAgentPlan?: (items: any[]) => void,
-    onPlanItem?: (index: number) => void,
-    onAgentStep?: (step: any) => void,
+    onAgentPlan?: (items: AgentPlanItemData[]) => void,
+    onPlanItem?: (item: number | { index: number; status?: AgentPlanItemData['status'] }) => void,
+    onAgentStep?: (step: AgentStepData) => void,
     onImageGenStart?: (resolution: string) => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
@@ -665,19 +674,19 @@ class APIClient {
               } else if (parsed.type === 'reasoning' && parsed.content) {
                 onReasoning(parsed.content);
               } else if (parsed.type === 'search' && parsed.data) {
-                onSearch(parsed.data);
+                onSearch(parsed.data as StreamSearchData);
               } else if (parsed.type === 'done') {
-                onDone(parsed.data);
+                onDone((parsed.data ?? {}) as StreamDoneData);
               } else if (parsed.type === 'title' && parsed.content) {
                 onTitle(parsed.content);
               } else if (parsed.type === 'error') {
                 onError(parsed.content || 'Unknown error');
               } else if (parsed.type === 'agent_plan' && parsed.data) {
-                onAgentPlan?.(parsed.data);
+                onAgentPlan?.(parsed.data as AgentPlanItemData[]);
               } else if (parsed.type === 'plan_item' && parsed.data !== undefined) {
-                onPlanItem?.(parsed.data);
+                onPlanItem?.(parsed.data as number | { index: number; status?: AgentPlanItemData['status'] });
               } else if (parsed.type === 'agent_step' && parsed.data) {
-                onAgentStep?.(parsed.data);
+                onAgentStep?.(parsed.data as AgentStepData);
               }
             } catch (e) {
               console.error('Failed to parse SSE data:', e, 'Data:', data);

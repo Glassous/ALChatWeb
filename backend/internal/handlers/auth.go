@@ -597,10 +597,10 @@ func (h *AuthHandler) UpdateSystemPrompt(c *gin.Context) {
 	defer cancel()
 
 	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
-		"system_prompt":    req.SystemPrompt,
+		"system_prompt":     req.SystemPrompt,
 		"include_date_time": req.IncludeDateTime,
-		"include_location": req.IncludeLocation,
-		"updated_at":       time.Now(),
+		"include_location":  req.IncludeLocation,
+		"updated_at":        time.Now(),
 	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update system prompt"})
@@ -608,38 +608,4 @@ func (h *AuthHandler) UpdateSystemPrompt(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "System prompt updated successfully"})
-}
-
-func (h *AuthHandler) UpdateTheme(c *gin.Context) {
-	userIDStr, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	userID, err := primitive.ObjectIDFromHex(userIDStr.(string))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
-		return
-	}
-
-	var req models.ThemeConfig
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	defer cancel()
-
-	err = h.mysqlDB.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID.Hex()).Updates(map[string]interface{}{
-		"theme_config": req,
-		"updated_at":   time.Now(),
-	}).Error
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update theme config"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Theme updated successfully"})
 }

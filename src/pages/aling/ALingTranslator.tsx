@@ -1,12 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createPortal } from 'react-dom';
 import '@material/web/iconbutton/icon-button.js';
-import '@material/web/dialog/dialog.js';
-import '@material/web/button/filled-button.js';
-import '@material/web/button/text-button.js';
 import alingApi, { type ALingTranslationHistory } from '../../services/alingApi';
 import './ALingTranslator.css';
+import { ConfirmDialog } from '../../components/LayerSystem/LayerSystem';
+import { getErrorMessage } from '../../utils/errors';
 
 export function ALingTranslator() {
   const navigate = useNavigate();
@@ -32,27 +30,11 @@ export function ALingTranslator() {
   const [pendingDeleteHistoryId, setPendingDeleteHistoryId] = useState<string>('');
   
   const [showRestoreConfirmDialog, setShowRestoreConfirmDialog] = useState<boolean>(false);
+  const [pendingAction, setPendingAction] = useState<'language' | 'history' | 'restore' | null>(null);
   
   const outputEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch languages and history on mount
-  useEffect(() => {
-    loadLanguages();
-    loadHistory();
-  }, []);
-
-  // Helper to manage global dialog blur
-  useEffect(() => {
-    const isAnyDialogOpen = showDeleteConfirmDialog || showDeleteHistoryConfirmDialog || showRestoreConfirmDialog;
-    if (isAnyDialogOpen) {
-      document.body.classList.add('dialog-open-blur');
-    } else {
-      document.body.classList.remove('dialog-open-blur');
-    }
-    return () => document.body.classList.remove('dialog-open-blur');
-  }, [showDeleteConfirmDialog, showDeleteHistoryConfirmDialog, showRestoreConfirmDialog]);
-
-  const loadLanguages = async () => {
+  async function loadLanguages() {
     try {
       const res = await alingApi.getTranslatorLanguages();
       setLanguages(res.languages);
@@ -62,16 +44,25 @@ export function ALingTranslator() {
     } catch (e) {
       console.error('Failed to load languages', e);
     }
-  };
+  }
 
-  const loadHistory = async () => {
+  async function loadHistory() {
     try {
       const res = await alingApi.getTranslationHistory();
       setHistory(res.history);
     } catch (e) {
       console.error('Failed to load history', e);
     }
-  };
+  }
+
+  useEffect(() => {
+    // Initial remote data hydration updates component state asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadLanguages();
+    void loadHistory();
+    // Loading is intentionally mount-only; later refreshes are action-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAddLanguage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,8 +86,8 @@ export function ALingTranslator() {
       const res = await alingApi.getTranslatorLanguages();
       setLanguages(res.languages);
       setActiveLang(cleanLang);
-    } catch (err: any) {
-      setErrorMessage(err.message || '添加失败');
+    } catch (err: unknown) {
+      setErrorMessage(getErrorMessage(err, '添加失败'));
     }
   };
 
@@ -109,6 +100,7 @@ export function ALingTranslator() {
 
   const confirmDeleteLanguage = async () => {
     if (!pendingDeleteLanguage) return;
+    setPendingAction('language');
     try {
       await alingApi.deleteTranslatorLanguage(pendingDeleteLanguage);
       const updatedLangs = languages.filter(l => l !== pendingDeleteLanguage);
@@ -120,10 +112,13 @@ export function ALingTranslator() {
       setPendingDeleteLanguage('');
     } catch (e) {
       console.error('Failed to delete language', e);
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const confirmRestoreLanguages = async () => {
+    setPendingAction('restore');
     try {
       const res = await alingApi.resetTranslatorLanguages();
       setLanguages(res.languages);
@@ -133,6 +128,8 @@ export function ALingTranslator() {
       setShowRestoreConfirmDialog(false);
     } catch (e) {
       console.error('Failed to restore languages', e);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -177,15 +174,15 @@ export function ALingTranslator() {
                 } else if (data.type === 'error') {
                   setTargetText(prev => prev + `\n[错误: ${data.content}]`);
                 }
-              } catch (e) {
+              } catch {
                 // Ignore json parse error for partial lines
               }
             }
           }
         }
       }
-    } catch (err: any) {
-      setTargetText(`翻译失败: ${err.message || '网络错误'}`);
+    } catch (err: unknown) {
+      setTargetText(`翻译失败: ${getErrorMessage(err, '网络错误')}`);
     } finally {
       setIsTranslating(false);
     }
@@ -200,6 +197,7 @@ export function ALingTranslator() {
 
   const confirmDeleteHistory = async () => {
     if (!pendingDeleteHistoryId) return;
+    setPendingAction('history');
     try {
       await alingApi.deleteTranslationHistory(pendingDeleteHistoryId);
       setHistory(prev => prev.filter(item => item.id !== pendingDeleteHistoryId));
@@ -207,6 +205,8 @@ export function ALingTranslator() {
       setPendingDeleteHistoryId('');
     } catch (e) {
       console.error('Failed to delete history item', e);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -244,7 +244,7 @@ export function ALingTranslator() {
 
   return (
     <div className="aling-translator-page">
-      <header className="aling-translator-topbar">
+      <header className="aling-translator-topbar app-topbar-surface">
         <div className="aling-translator-topbar-left">
           <md-icon-button onClick={() => navigate('/aling')}>
             <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
@@ -543,54 +543,37 @@ export function ALingTranslator() {
         </aside>
       </div>
 
-      {/* Confirmation Dialogs Portal */}
-      {createPortal(
-        <>
-          {showDeleteConfirmDialog && (
-            <md-dialog open={showDeleteConfirmDialog} onClose={() => { setShowDeleteConfirmDialog(false); setPendingDeleteLanguage(''); }}>
-              <div slot="headline">删除语言</div>
-              <div slot="content">确定要从列表中删除语言“{pendingDeleteLanguage}”吗？</div>
-              <div slot="actions">
-                <md-text-button onClick={() => { setShowDeleteConfirmDialog(false); setPendingDeleteLanguage(''); }}>取消</md-text-button>
-                <md-filled-button 
-                  onClick={confirmDeleteLanguage}
-                  style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}
-                >
-                  删除
-                </md-filled-button>
-              </div>
-            </md-dialog>
-          )}
+      <ConfirmDialog
+        open={showDeleteConfirmDialog}
+        title="删除语言"
+        description={<>确定要从列表中删除语言“{pendingDeleteLanguage}”吗？</>}
+        confirmLabel="删除"
+        danger
+        busy={pendingAction === 'language'}
+        onConfirm={confirmDeleteLanguage}
+        onClose={() => { if (!pendingAction) { setShowDeleteConfirmDialog(false); setPendingDeleteLanguage(''); } }}
+      />
 
-          {showDeleteHistoryConfirmDialog && (
-            <md-dialog open={showDeleteHistoryConfirmDialog} onClose={() => { setShowDeleteHistoryConfirmDialog(false); setPendingDeleteHistoryId(''); }}>
-              <div slot="headline">删除历史记录</div>
-              <div slot="content">确定要永久删除此条翻译历史记录吗？</div>
-              <div slot="actions">
-                <md-text-button onClick={() => { setShowDeleteHistoryConfirmDialog(false); setPendingDeleteHistoryId(''); }}>取消</md-text-button>
-                <md-filled-button 
-                  onClick={confirmDeleteHistory}
-                  style={{ '--md-filled-button-container-color': '#ba1a1a', '--md-filled-button-label-text-color': '#ffffff' }}
-                >
-                  删除
-                </md-filled-button>
-              </div>
-            </md-dialog>
-          )}
+      <ConfirmDialog
+        open={showDeleteHistoryConfirmDialog}
+        title="删除历史记录"
+        description="确定要永久删除此条翻译历史记录吗？"
+        confirmLabel="删除"
+        danger
+        busy={pendingAction === 'history'}
+        onConfirm={confirmDeleteHistory}
+        onClose={() => { if (!pendingAction) { setShowDeleteHistoryConfirmDialog(false); setPendingDeleteHistoryId(''); } }}
+      />
 
-          {showRestoreConfirmDialog && (
-            <md-dialog open={showRestoreConfirmDialog} onClose={() => setShowRestoreConfirmDialog(false)}>
-              <div slot="headline">恢复预设语言</div>
-              <div slot="content">确定要将目标语言列表恢复为默认预设吗？这将重置您所有的自定义语言。</div>
-              <div slot="actions">
-                <md-text-button onClick={() => setShowRestoreConfirmDialog(false)}>取消</md-text-button>
-                <md-filled-button onClick={confirmRestoreLanguages}>恢复</md-filled-button>
-              </div>
-            </md-dialog>
-          )}
-        </>,
-        document.body
-      )}
+      <ConfirmDialog
+        open={showRestoreConfirmDialog}
+        title="恢复预设语言"
+        description="确定要将目标语言列表恢复为默认预设吗？这将重置您所有的自定义语言。"
+        confirmLabel="恢复"
+        busy={pendingAction === 'restore'}
+        onConfirm={confirmRestoreLanguages}
+        onClose={() => { if (!pendingAction) setShowRestoreConfirmDialog(false); }}
+      />
     </div>
   );
 }

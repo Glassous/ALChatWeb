@@ -23,38 +23,6 @@
   position: relative;
 }
 
-/* Use a uniform pseudo-element to draw the "U-shaped" frame */
-.main-content::before {
-  content: '';
-  position: absolute;
-  top: 64px; /* Default desktop TopBar height */
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border: var(--custom-divider-width, 2px) solid transparent;
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
-  border-bottom: none;
-  background: var(--custom-divider-bg, transparent) border-box;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 10;
-}
-
-/* Responsive adjustment for TopBar height and border-radius */
-@media (max-width: 768px) {
-  .main-content::before {
-    top: 56px; /* Mobile TopBar height */
-    border-top-left-radius: 20px;
-    border-top-right-radius: 20px;
-    border-left: none;
-    border-right: none;
-  }
-}
-
 .loading-bar {
   height: 2px;
   width: 100%;
@@ -116,16 +84,16 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  animation: fadeIn 0.6s ease-out;
+  animation: appFadeIn 0.6s ease-out;
   position: relative;
 }
 
 .empty-state-container.fade-out {
-  animation: fadeOut 0.4s ease-in forwards;
+  animation: appFadeOut 0.4s ease-in forwards;
   pointer-events: none;
 }
 
-@keyframes fadeIn {
+@keyframes appFadeIn {
   from {
     opacity: 0;
   }
@@ -134,7 +102,7 @@
   }
 }
 
-@keyframes fadeOut {
+@keyframes appFadeOut {
   from {
     opacity: 1;
   }
@@ -152,7 +120,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: fadeIn 0.6s ease-out;
+  animation: appFadeIn 0.6s ease-out;
 }
 
 /* Chat Layout Split Body */
@@ -232,7 +200,7 @@ body.is-resizing iframe {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 2000;
+    z-index: var(--z-overlay);
     display: flex;
     flex-direction: column;
     justify-content: flex-end;

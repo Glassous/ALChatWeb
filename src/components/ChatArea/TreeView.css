@@ -8,20 +8,20 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease-out forwards;
+  z-index: var(--z-overlay);
+  animation: treeViewFadeIn 0.2s ease-out forwards;
 }
 
 .tree-view-overlay.closing {
-  animation: fadeOut 0.2s ease-in forwards;
+  animation: treeViewFadeOut 0.2s ease-in forwards;
 }
 
-@keyframes fadeIn {
+@keyframes treeViewFadeIn {
   from { opacity: 0; transform: scale(1.02); }
   to { opacity: 1; transform: scale(1); }
 }
 
-@keyframes fadeOut {
+@keyframes treeViewFadeOut {
   from { opacity: 1; transform: scale(1); }
   to { opacity: 0; transform: scale(1.02); }
 }
@@ -47,7 +47,7 @@
   max-height: 400px;
   overflow-y: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  z-index: 2000;
+  z-index: var(--z-popover);
   pointer-events: auto; /* Allow interaction */
   animation: tooltipAppear 0.2s ease-out;
   scrollbar-width: none; /* Firefox */

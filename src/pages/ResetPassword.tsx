@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import './Auth.css';
+import { getErrorMessage } from '../utils/errors';
 
 export function ResetPassword() {
   const navigate = useNavigate();
@@ -43,8 +44,8 @@ export function ResetPassword() {
           return prev - 1;
         });
       }, 1000);
-    } catch (err: any) {
-      setError(err.message || '获取验证码失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '获取验证码失败'));
     } finally {
       setIsLoading(false);
     }
@@ -64,8 +65,8 @@ export function ResetPassword() {
       await apiClient.resetPassword(formData);
       setSuccessMsg('密码重置成功，请重新登录');
       setTimeout(() => navigate('/login'), 2000);
-    } catch (err: any) {
-      setError(err.message || '重置密码失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '重置密码失败'));
     } finally {
       setIsLoading(false);
     }

@@ -3,16 +3,20 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient, type SharedConversationResponse, type Message } from '../../services/api';
 import { ChatArea } from '../../components/ChatArea/ChatArea';
 import './SharedPage.css';
+import { useToast } from '../../components/LayerSystem/LayerSystem';
 
 export function SharedPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
+  const showToast = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<SharedConversationResponse | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!token) return;
+    // A token change starts a distinct share request.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     apiClient.getSharedConversation(token)
       .then(setData)
@@ -28,7 +32,7 @@ export function SharedPage() {
       navigate('/', { state: { openConversationId: result.conversation_id } });
     } catch (err) {
       console.error('Failed to save shared conversation:', err);
-      alert('保存失败，请重试');
+      showToast({ tone: 'error', message: '保存失败，请重试' });
     } finally {
       setSaving(false);
     }

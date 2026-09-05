@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../services/api';
 import './Auth.css';
+import { getErrorMessage } from '../utils/errors';
 
 export function Login() {
   const navigate = useNavigate();
@@ -27,8 +28,8 @@ export function Login() {
       localStorage.setItem('token', response.token);
       localStorage.setItem('user', JSON.stringify(response.user));
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || '登录失败');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, '登录失败'));
     } finally {
       setIsLoading(false);
     }

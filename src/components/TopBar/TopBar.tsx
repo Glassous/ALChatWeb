@@ -49,7 +49,7 @@ export function TopBar({
   const showTempChatBtn = !(hasMessages && hasConversation) && !isImageMode && mode !== 'expert';
 
   return (
-    <header className={`topbar ${hasConversation ? 'has-conversation' : ''}`}>
+    <header className={`topbar app-topbar-surface ${hasConversation ? 'has-conversation' : ''}`}>
       <div className="topbar-left">
         {showBackButton ? (
           <md-icon-button onClick={onBack}>

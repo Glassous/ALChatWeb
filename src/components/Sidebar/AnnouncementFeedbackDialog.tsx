@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react';
-import '@material/web/dialog/dialog.js';
-import '@material/web/button/text-button.js';
-import '@material/web/button/filled-button.js';
-import '@material/web/tabs/tabs.js';
-import '@material/web/tabs/primary-tab.js';
-import '@material/web/textfield/outlined-text-field.js';
-import '@material/web/select/outlined-select.js';
-import '@material/web/select/select-option.js';
-import './AnnouncementFeedbackDialog.css';
+import styles from './AnnouncementFeedbackDialog.module.css';
 import { apiClient, type Announcement } from '../../services/api';
+import { ModalCard, modalButtonStyles, useToast } from '../LayerSystem/LayerSystem';
 
 interface AnnouncementFeedbackDialogProps {
   open: boolean;
@@ -17,6 +10,7 @@ interface AnnouncementFeedbackDialogProps {
 }
 
 export function AnnouncementFeedbackDialog({ open, onClose, initialTab = 'announcement' }: AnnouncementFeedbackDialogProps) {
+  const showToast = useToast();
   const [activeTab, setActiveTab] = useState(0);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loadingAnn, setLoadingAnn] = useState(false);
@@ -26,32 +20,32 @@ export function AnnouncementFeedbackDialog({ open, onClose, initialTab = 'announ
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    let cancelled = false;
+    const load = async () => {
       setActiveTab(initialTab === 'announcement' ? 0 : 1);
-      loadAnnouncements();
       const userStr = localStorage.getItem('user');
       if (userStr) {
         const user = JSON.parse(userStr);
         setUserEmail(user.email || '');
       }
-    }
+      setLoadingAnn(true);
+      try {
+        const data = await apiClient.getPublicAnnouncements();
+        if (!cancelled) setAnnouncements(data);
+      } catch (err) {
+        console.error('Failed to load announcements:', err);
+      } finally {
+        if (!cancelled) setLoadingAnn(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
   }, [open, initialTab]);
-
-  const loadAnnouncements = async () => {
-    setLoadingAnn(true);
-    try {
-      const data = await apiClient.getPublicAnnouncements();
-      setAnnouncements(data);
-    } catch (err) {
-      console.error('Failed to load announcements:', err);
-    } finally {
-      setLoadingAnn(false);
-    }
-  };
 
   const handleSubmitFeedback = async () => {
     if (!feedbackContent || !userEmail) {
-      alert('请填写反馈内容和联系邮箱');
+      showToast({ tone: 'warning', message: '请填写反馈内容和联系邮箱' });
       return;
     }
 
@@ -66,108 +60,107 @@ export function AnnouncementFeedbackDialog({ open, onClose, initialTab = 'announ
           platform: 'Web'
         }
       });
-      alert('提交成功，感谢您的反馈！');
+      showToast({ tone: 'success', message: '提交成功，感谢您的反馈！' });
       setFeedbackContent('');
       onClose();
     } catch (err) {
-      alert('提交失败: ' + (err as Error).message);
+      showToast({ tone: 'error', message: `提交失败：${(err as Error).message}` });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <md-dialog 
-      open={open} 
+    <ModalCard
+      open={open}
       onClose={onClose}
-      className="announcement-feedback-dialog"
+      title="系统公告与反馈"
+      size="large"
+      busy={isSubmitting}
+      actions={(
+        <>
+          <button type="button" className={modalButtonStyles.secondary} onClick={onClose} disabled={isSubmitting}>取消</button>
+          {activeTab === 1 && (
+            <button
+              type="button"
+              className={modalButtonStyles.primary}
+              onClick={handleSubmitFeedback}
+              disabled={isSubmitting || !feedbackContent || !userEmail}
+            >
+              {isSubmitting ? '提交中…' : '提交反馈'}
+            </button>
+          )}
+        </>
+      )}
     >
-      <div slot="headline">系统公告与反馈</div>
-      
-      <div slot="content" className="dialog-content">
-        <md-tabs 
-          active-tab-index={activeTab} 
-          onchange={(e: any) => setActiveTab(e.target.activeTabIndex)}
-        >
-          <md-primary-tab>系统公告</md-primary-tab>
-          <md-primary-tab>意见反馈</md-primary-tab>
-        </md-tabs>
+      <div className={styles.content}>
+        <div className={styles.tabs} role="tablist" aria-label="公告与反馈">
+          <button type="button" role="tab" aria-selected={activeTab === 0} className={activeTab === 0 ? styles.activeTab : styles.tab} onClick={() => setActiveTab(0)}>系统公告</button>
+          <button type="button" role="tab" aria-selected={activeTab === 1} className={activeTab === 1 ? styles.activeTab : styles.tab} onClick={() => setActiveTab(1)}>意见反馈</button>
+        </div>
 
-        <div className="tab-panels">
+        <div className={styles.panels}>
           {activeTab === 0 && (
-            <div className="announcement-panel">
+            <div role="tabpanel">
               {loadingAnn ? (
-                <div className="loading-state">加载中...</div>
+                <div className={styles.state}>加载中...</div>
               ) : announcements.length > 0 ? (
-                <div className="announcement-list">
+                <div className={styles.announcementList}>
                   {announcements.map(ann => (
-                    <div key={ann.id} className={`announcement-item ${ann.type}`}>
-                      <div className="ann-header">
-                        <span className="ann-title">{ann.title}</span>
-                        <span className="ann-date">{new Date(ann.published_at || ann.created_at).toLocaleDateString()}</span>
+                    <article key={ann.id} className={`${styles.announcementItem} ${styles[ann.type] ?? ''}`}>
+                      <div className={styles.announcementHeader}>
+                        <span className={styles.announcementTitle}>{ann.title}</span>
+                        <span className={styles.announcementDate}>{new Date(ann.published_at || ann.created_at).toLocaleDateString()}</span>
                       </div>
-                      <div className="ann-body">{ann.content}</div>
-                    </div>
+                      <div className={styles.announcementBody}>{ann.content}</div>
+                    </article>
                   ))}
                 </div>
               ) : (
-                <div className="empty-state">暂无公告</div>
+                <div className={styles.state}>暂无公告</div>
               )}
             </div>
           )}
 
           {activeTab === 1 && (
-            <div className="feedback-panel">
-              <p className="feedback-intro">欢迎向我们反馈产品问题或建议，我们会通过邮箱回复您。</p>
+            <div className={styles.feedbackPanel} role="tabpanel">
+              <p className={styles.feedbackIntro}>欢迎向我们反馈产品问题或建议，我们会通过邮箱回复您。</p>
               
-              <div className="form-group">
-                <md-outlined-select 
-                  label="反馈类型" 
+              <label className={styles.field}>
+                <span>反馈类型</span>
+                <select
                   value={feedbackType}
-                  onInput={(e: any) => setFeedbackType(e.target.value)}
+                  onChange={(event) => setFeedbackType(event.target.value)}
                 >
-                  <md-select-option value="bug">问题反馈 / Bug</md-select-option>
-                  <md-select-option value="feature">功能建议</md-select-option>
-                  <md-select-option value="other">其他</md-select-option>
-                </md-outlined-select>
-              </div>
+                  <option value="bug">问题反馈 / Bug</option>
+                  <option value="feature">功能建议</option>
+                  <option value="other">其他</option>
+                </select>
+              </label>
 
-              <div className="form-group">
-                <md-outlined-text-field
-                  label="反馈内容"
-                  type="textarea"
+              <label className={styles.field}>
+                <span>反馈内容</span>
+                <textarea
                   rows={5}
                   value={feedbackContent}
-                  onInput={(e: any) => setFeedbackContent(e.target.value)}
+                  onChange={(event) => setFeedbackContent(event.target.value)}
                   placeholder="请详细描述您遇到的问题或建议..."
                 />
-              </div>
+              </label>
 
-              <div className="form-group">
-                <md-outlined-text-field
-                  label="联系邮箱"
+              <label className={styles.field}>
+                <span>联系邮箱</span>
+                <input
                   type="email"
                   value={userEmail}
-                  onInput={(e: any) => setUserEmail(e.target.value)}
+                  onChange={(event) => setUserEmail(event.target.value)}
                   placeholder="用于接收管理员回复"
                 />
-              </div>
+              </label>
             </div>
           )}
         </div>
       </div>
-
-      <div slot="actions">
-        <md-text-button onClick={onClose}>取消</md-text-button>
-        {activeTab === 1 && (
-          <md-filled-button 
-            onClick={handleSubmitFeedback} 
-            disabled={isSubmitting || !feedbackContent || !userEmail}
-          >
-            {isSubmitting ? '提交中...' : '提交反馈'}
-          </md-filled-button>
-        )}
-      </div>
-    </md-dialog>
+    </ModalCard>
   );
 }

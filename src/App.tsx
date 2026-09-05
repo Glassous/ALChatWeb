@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createPortal } from 'react-dom';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
@@ -10,7 +9,7 @@ import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
-import { apiClient, type Conversation, type AgentPlanItemData, type ThemeConfig } from './services/api';
+import { apiClient, type Conversation, type AgentPlanItemData } from './services/api';
 import { Welcome } from './pages/Welcome';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -98,7 +97,6 @@ function ChatApp({
   const [systemPromptSettings, setSystemPromptSettings] = useState<{ include_location: boolean } | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
-  const [themeConfig, setThemeConfig] = useState<ThemeConfig | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'agent'>('daily');
   const [webIsImageMode, setWebIsImageMode] = useState(false);
@@ -173,34 +171,6 @@ function ChatApp({
 
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
-  // Global blur logic for Edit Dialog
-  useEffect(() => {
-    if (isEditOpen) {
-      document.body.classList.add('dialog-open-blur');
-    } else {
-      document.body.classList.remove('dialog-open-blur');
-    }
-    return () => document.body.classList.remove('dialog-open-blur');
-  }, [isEditOpen]);
-
-  const applyThemeConfig = (config: ThemeConfig | null) => {
-    const root = document.documentElement;
-    if (config?.enabled && config.divider) {
-      root.style.setProperty('--custom-divider-bg', config.divider.value);
-      root.style.setProperty('--custom-divider-width', '2px');
-      root.setAttribute('data-custom-theme', 'enabled');
-    } else {
-      // When disabled, keep dividers transparent and bold as requested
-      root.style.setProperty('--custom-divider-bg', 'transparent');
-      root.style.setProperty('--custom-divider-width', '2px');
-      root.removeAttribute('data-custom-theme');
-    }
-  };
-
-  useEffect(() => {
-    applyThemeConfig(themeConfig);
-  }, [themeConfig]);
-
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
@@ -212,9 +182,6 @@ function ChatApp({
       apiClient.getProfile().then(user => {
         setUserCredits(user.credits ?? 1000);
         setUserMemberType(user.member_type || 'free');
-        const serverTheme = user.theme_config || null;
-        const finalTheme = checkAndDisableExpiredTheme(serverTheme, user.member_type, user.member_expiry);
-        setThemeConfig(finalTheme);
         localStorage.setItem('user', JSON.stringify(user));
       }).catch(() => {});
     };
@@ -223,34 +190,11 @@ function ChatApp({
     return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
   }, []);
 
-  const checkAndDisableExpiredTheme = (themeCfg: ThemeConfig | null, memberType?: string, memberExpiry?: string | null) => {
-    if (!themeCfg?.enabled) return themeCfg;
-    if (!memberType || memberType === 'free') {
-      const disabledTheme: ThemeConfig = { ...themeCfg, enabled: false };
-      setThemeConfig(disabledTheme);
-      apiClient.updateTheme(disabledTheme).catch(() => {});
-      return disabledTheme;
-    }
-    if (memberExpiry) {
-      const expiryDate = new Date(memberExpiry);
-      if (expiryDate.getTime() < Date.now()) {
-        const disabledTheme: ThemeConfig = { ...themeCfg, enabled: false };
-        setThemeConfig(disabledTheme);
-        apiClient.updateTheme(disabledTheme).catch(() => {});
-        return disabledTheme;
-      }
-    }
-    return themeCfg;
-  };
-
   const loadUserProfile = async () => {
     try {
       const user = await apiClient.getProfile();
       setUserCredits(user.credits ?? 1000);
       setUserMemberType(user.member_type || 'free');
-      const serverTheme = user.theme_config || null;
-      const finalTheme = checkAndDisableExpiredTheme(serverTheme, user.member_type, user.member_expiry);
-      setThemeConfig(finalTheme);
       localStorage.setItem('user', JSON.stringify(user));
       window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
@@ -407,7 +351,7 @@ function ChatApp({
       loadConversation(state.openConversationId);
       navigate('/', { replace: true, state: {} });
     }
-  }, [location.state, isLoadingConversations]);
+  }, [location.state, isLoadingConversations, navigate]);
 
   const handleSend = async (text: string, options?: { 
     isImageMode: boolean; 
@@ -420,7 +364,7 @@ function ChatApp({
 
     let conversationId = currentConversationId;
     const currentMode = options?.mode || 'daily';
-    const effectiveParentId = options?.hasOwnProperty('overrideParentId') 
+    const effectiveParentId = options && Object.prototype.hasOwnProperty.call(options, 'overrideParentId')
       ? options.overrideParentId 
       : currentNodeId;
 
@@ -791,9 +735,9 @@ function ChatApp({
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg): Message => {
               if (msg.id !== assistantMsgId || !msg.agent_plan) return msg;
-              const isObject = typeof planItemData === 'object' && planItemData !== null;
-              const planIndex = isObject ? (planItemData as any).index : planItemData;
-              const status = isObject ? (planItemData as any).status : 'completed';
+              const isObject = typeof planItemData === 'object';
+              const planIndex = isObject ? planItemData.index : planItemData;
+              const status = isObject ? (planItemData.status ?? 'completed') : 'completed';
               const updatedPlan = msg.agent_plan.map((item, i) =>
                 i === planIndex ? { ...item, status: status as AgentPlanItemData['status'] } : item
               );
@@ -1058,10 +1002,6 @@ function ChatApp({
         isLoading={isLoadingConversations}
         isMobileDrawerOpen={isMobileDrawerOpen}
         onMobileDrawerClose={() => setIsMobileDrawerOpen(false)}
-        themeConfig={themeConfig || undefined}
-        onThemeConfigUpdated={(config) => {
-          setThemeConfig(config);
-        }}
       />
       <div className={`main-content ${isSearchSidebarOpen ? 'sidebar-open' : ''}`}>
         <TopBar 
@@ -1195,15 +1135,12 @@ function ChatApp({
         searchData={searchData} 
         onClose={() => setIsSearchSidebarOpen(false)} 
       />
-      {createPortal(
-        <EditMessageDialog 
-          open={isEditOpen}
-          initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
-          onClose={() => setIsEditOpen(false)}
-          onConfirm={handleConfirmEdit}
-        />,
-        document.body
-      )}
+      <EditMessageDialog
+        open={isEditOpen}
+        initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
+        onClose={() => setIsEditOpen(false)}
+        onConfirm={handleConfirmEdit}
+      />
       {currentConversationId && !isTempID(currentConversationId) && (
         <ShareDialog
           open={isShareOpen}

@@ -1,66 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import type { Variants } from 'framer-motion';
+import { motion } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
-
-const leftToolVariants: Variants = {
-  initial: { opacity: 0, width: 0, scale: 0.8, marginRight: 0 },
-  animate: { 
-    opacity: 1, 
-    width: 'auto', 
-    scale: 1,
-    marginRight: 4,
-    transition: {
-      width: { type: 'spring', stiffness: 300, damping: 30 },
-      marginRight: { type: 'spring', stiffness: 300, damping: 30 },
-      opacity: { duration: 0.2 },
-      scale: { duration: 0.2 },
-      layout: { type: 'spring', stiffness: 300, damping: 30 }
-    }
-  },
-  exit: { 
-    opacity: 0, 
-    width: 0, 
-    scale: 0.8,
-    marginRight: 0,
-    transition: {
-      width: { type: 'spring', stiffness: 300, damping: 30 },
-      marginRight: { type: 'spring', stiffness: 300, damping: 30 },
-      opacity: { duration: 0.15 },
-      scale: { duration: 0.15 }
-    }
-  }
-};
-
-const rightToolVariants: Variants = {
-  initial: { opacity: 0, width: 0, scale: 0.8, marginLeft: 0 },
-  animate: { 
-    opacity: 1, 
-    width: 'auto', 
-    scale: 1,
-    marginLeft: 4,
-    transition: {
-      width: { type: 'spring', stiffness: 300, damping: 30 },
-      marginLeft: { type: 'spring', stiffness: 300, damping: 30 },
-      opacity: { duration: 0.2 },
-      scale: { duration: 0.2 },
-      layout: { type: 'spring', stiffness: 300, damping: 30 }
-    }
-  },
-  exit: { 
-    opacity: 0, 
-    width: 0, 
-    scale: 0.8,
-    marginLeft: 0,
-    transition: {
-      width: { type: 'spring', stiffness: 300, damping: 30 },
-      marginLeft: { type: 'spring', stiffness: 300, damping: 30 },
-      opacity: { duration: 0.15 },
-      scale: { duration: 0.15 }
-    }
-  }
-};
+import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 
 interface InputAreaProps {
   onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'agent' }) => void;
@@ -101,6 +43,7 @@ export function InputArea({
   onModeChange,
   onImageModeChange
 }: InputAreaProps) {
+  const showToast = useToast();
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
@@ -130,9 +73,11 @@ export function InputArea({
 
   useEffect(() => {
     if (isImageMode || mode !== 'daily' || attachments.length > 0) {
+      // These modes are mutually exclusive; changes can also arrive from parent props.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsAgent(false);
     }
-  }, [isImageMode, mode, attachments?.length]);
+  }, [isImageMode, mode, attachments.length]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [dragStatus, setDragStatus] = useState<'none' | 'supported' | 'unsupported'>('none');
   const [dragMessage, setDragMessage] = useState<string>('');
@@ -177,6 +122,8 @@ export function InputArea({
   useEffect(() => {
     // When userMessages changes (switching conversation or new message),
     // we should reset the current input and suggestion state if it was from history
+    // Reset draft navigation when the active conversation changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSuggestion('');
     setHistoryIndex(-1);
     setText('');
@@ -240,21 +187,6 @@ export function InputArea({
       suggestionRef.current.scrollTop = e.currentTarget.scrollTop;
     }
   };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        setShowResolutions(false);
-      }
-      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
-        setShowAttachmentMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
@@ -390,11 +322,11 @@ export function InputArea({
 
   const handleAttachmentTypeSelect = (type: 'image' | 'video') => {
     if (isImageMode && type === 'video') {
-      alert('图片生成模式下只能上传图片');
+      showToast({ tone: 'warning', message: '图片生成模式下只能上传图片' });
       return;
     }
     if (isImageMode && attachments.length >= 1) {
-      alert('图片生成模式下只能上传一张图片');
+      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
       return;
     }
     setSelectedAttachmentType(type);
@@ -409,7 +341,7 @@ export function InputArea({
     if (!file) return;
 
     if (isImageMode && refImageUrl) {
-      alert('图片生成模式下只能上传一张图片');
+      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -420,7 +352,7 @@ export function InputArea({
       setRefImageUrl(url);
     } catch (error) {
       console.error('Failed to upload image:', error);
-      alert('上传图片失败，请重试');
+      showToast({ tone: 'error', message: '上传图片失败，请重试' });
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -432,7 +364,7 @@ export function InputArea({
     if (!files || files.length === 0) return;
 
     if (isImageMode && (attachments.length + files.length > 1)) {
-      alert('图片生成模式下只能上传一张图片');
+      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
       if (attachmentInputRef.current) attachmentInputRef.current.value = '';
       return;
     }
@@ -448,7 +380,7 @@ export function InputArea({
       setAttachments(newAttachments);
     } catch (error) {
       console.error('Failed to upload file:', error);
-      alert('上传文件失败，请重试');
+      showToast({ tone: 'error', message: '上传文件失败，请重试' });
     } finally {
       setIsUploading(false);
       if (attachmentInputRef.current) attachmentInputRef.current.value = '';
@@ -593,7 +525,7 @@ export function InputArea({
       setAttachments(newAttachments);
     } catch (error) {
       console.error('Failed to upload dropped files:', error);
-      alert('上传文件失败，请重试');
+      showToast({ tone: 'error', message: '上传文件失败，请重试' });
     } finally {
       setIsUploading(false);
     }
@@ -622,11 +554,11 @@ export function InputArea({
     if (isImageMode) {
       const hasNonImage = filesToUpload.some(file => !file.type.startsWith('image/'));
       if (hasNonImage) {
-        alert('图片生成模式下只能上传图片');
+        showToast({ tone: 'warning', message: '图片生成模式下只能上传图片' });
         return;
       }
       if (refImageUrl || attachments.length >= 1 || filesToUpload.length > 1) {
-        alert('图片生成模式下只能上传一张图片');
+        showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
         return;
       }
 
@@ -636,7 +568,7 @@ export function InputArea({
         setRefImageUrl(url);
       } catch (error) {
         console.error('Failed to upload pasted image:', error);
-        alert('上传图片失败，请重试');
+        showToast({ tone: 'error', message: '上传图片失败，请重试' });
       } finally {
         setIsUploading(false);
       }
@@ -652,7 +584,7 @@ export function InputArea({
       const isVid = file.type.startsWith('video/');
 
       if (!isImg && !isVid) {
-        alert('仅支持粘贴图片或视频文件');
+        showToast({ tone: 'warning', message: '仅支持粘贴图片或视频文件' });
         return;
       }
 
@@ -662,7 +594,7 @@ export function InputArea({
         currentType = fileType;
       } else if (currentType !== fileType) {
         const errorMsg = currentType === 'image' ? '已有图片，请先移除才能粘贴视频' : '已有视频，请先移除才能粘贴图片';
-        alert(errorMsg);
+        showToast({ tone: 'error', message: errorMsg });
         return;
       }
       newFiles.push(file);
@@ -671,7 +603,7 @@ export function InputArea({
     const hasImages = newFiles.some(f => f.type.startsWith('image/'));
     const hasVideos = newFiles.some(f => f.type.startsWith('video/'));
     if (hasImages && hasVideos) {
-      alert('不能同时上传图片和视频');
+      showToast({ tone: 'warning', message: '不能同时上传图片和视频' });
       return;
     }
 
@@ -686,7 +618,7 @@ export function InputArea({
       setAttachments(newAttachments);
     } catch (error) {
       console.error('Failed to upload pasted files:', error);
-      alert('上传文件失败，请重试');
+      showToast({ tone: 'error', message: '上传文件失败，请重试' });
     } finally {
       setIsUploading(false);
     }
@@ -834,18 +766,9 @@ export function InputArea({
             )}
           </div>
           <div className="input-bottom-row">
-            <motion.div className="tools-left" layout>
-              <AnimatePresence initial={false}>
+            <div className="tools-left">
                 {!isTemp && !isAgent && !isImageMode && (
-                  <motion.div
-                    key="mode-toggle"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
+                  <div className="tool-slot">
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
                       onClick={() => handleModeSelect('expert')}
@@ -854,18 +777,10 @@ export function InputArea({
                     >
                       {mode === 'daily' ? '日常' : '专家'}
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {!isTemp && !isAgent && mode !== 'expert' && (
-                  <motion.div
-                    key="image-mode"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
+                  <div className="tool-slot">
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
                       onClick={() => handleModeSelect('image')}
@@ -876,18 +791,10 @@ export function InputArea({
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {!isTemp && !isImageMode && mode !== 'expert' && (
-                  <motion.div
-                    key="agent-toggle"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
+                  <div className="tool-slot">
                     <button 
                       className={`tool-btn agent-toggle-btn ${isAgent ? 'active' : ''}`}
                       onClick={() => handleModeSelect('agent')}
@@ -896,18 +803,10 @@ export function InputArea({
                     >
                       Agent
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {isImageMode && (
-                  <motion.div
-                    key="image-tools"
-                    layout
-                    variants={leftToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ display: 'flex', alignItems: 'center' }}
-                  >
+                  <div className="tool-slot image-tools-slot">
                     <div className="resolution-selector" ref={popupRef}>
                       <button 
                         className="resolution-btn"
@@ -919,8 +818,7 @@ export function InputArea({
                           <path d="M7 10l5 5 5-5z" />
                         </svg>
                       </button>
-                      <AnimatePresence>
-                        {showResolutions && (
+                      <AnchoredPopover open={showResolutions} anchorRef={popupRef} onClose={() => setShowResolutions(false)}>
                           <motion.div 
                             className="resolution-popup"
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -966,8 +864,7 @@ export function InputArea({
                               })}
                             </div>
                           </motion.div>
-                        )}
-                      </AnimatePresence>
+                      </AnchoredPopover>
                     </div>
                     {!refImageUrl && !isUploading && (
                       <button 
@@ -989,22 +886,12 @@ export function InputArea({
                       accept="image/*"
                       style={{ display: 'none' }}
                     />
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
-            </motion.div>
-            <motion.div className="tools-right" layout>
-              <AnimatePresence initial={false}>
+            </div>
+            <div className="tools-right">
                 {!isEmpty && !isAtBottom && (
-                  <motion.div
-                    key="scroll-bottom"
-                    layout
-                    variants={rightToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ overflow: 'hidden', display: 'flex' }}
-                  >
+                  <div className="tool-slot">
                     <button 
                       type="button"
                       className="tool-btn scroll-bottom-btn"
@@ -1015,18 +902,10 @@ export function InputArea({
                         <path d="M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z"/>
                       </svg>
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {!isTemp && !isImageMode && !isAgent && (
-                  <motion.div
-                    key="attachment"
-                    layout
-                    variants={rightToolVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    style={{ display: 'flex' }}
-                  >
+                  <div className="tool-slot">
                     <div className="attachment-selector" ref={attachmentMenuRef}>
                       <button 
                         className="tool-btn attachment-btn"
@@ -1038,8 +917,7 @@ export function InputArea({
                           <path d="M720-330q0 104-73 177T470-80q-104 0-177-73t-73-177v-370q0-75 52.5-127.5T400-880q75 0 127.5 52.5T580-700v350q0 46-32 78t-78 32q-46 0-78-32t-32-78v-350h80v350q0 13 8.5 21.5T470-350q13 0 21.5-8.5T500-380v-320q0-42-29-71t-71-29q-42 0-71 29t-29 71v370q0 71 49.5 120.5T470-160q71 0 120.5-49.5T640-330v-370h80v370Z"/>
                         </svg>
                       </button>
-                      <AnimatePresence>
-                        {showAttachmentMenu && (
+                      <AnchoredPopover open={showAttachmentMenu} anchorRef={attachmentMenuRef} align="end" onClose={() => setShowAttachmentMenu(false)}>
                           <motion.div 
                             className="attachment-menu"
                             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -1060,8 +938,7 @@ export function InputArea({
                               <span>视频</span>
                             </div>
                           </motion.div>
-                        )}
-                      </AnimatePresence>
+                      </AnchoredPopover>
                       <input 
                         type="file"
                         ref={attachmentInputRef}
@@ -1071,17 +948,9 @@ export function InputArea({
                         style={{ display: 'none' }}
                       />
                     </div>
-                  </motion.div>
+                  </div>
                 )}
-                <motion.div
-                  key="expand"
-                  layout
-                  variants={rightToolVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ overflow: 'hidden', display: 'flex' }}
-                >
+                <div className="tool-slot">
                   <button 
                     type="button"
                     className={`tool-btn expand-btn ${isExpanded ? 'active' : ''}`}
@@ -1095,9 +964,8 @@ export function InputArea({
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M120-120v-200h80v120h120v80H120Zm520 0v-80h120v-120h80v200H640ZM120-640v-200h200v80H200v120h-80Zm640 0v-120H640v-80h200v200h-80Z"/></svg>
                     )}
                   </button>
-                </motion.div>
-              </AnimatePresence>
-            </motion.div>
+                </div>
+            </div>
           </div>
         </div>
       )}
