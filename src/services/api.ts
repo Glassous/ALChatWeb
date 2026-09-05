@@ -36,7 +36,7 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start' | 'fallback';
+  type: 'generation_mode' | 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start' | 'fallback';
   content?: string;
   data?: unknown;
 }
@@ -617,6 +617,7 @@ class APIClient {
     parentMessageId?: string | null,
     onImageGenStart?: (resolution: string) => void,
 		onFallback?: (message: string) => void,
+		onGenerationMode?: (mode: 'stream' | 'non_stream') => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -661,6 +662,7 @@ class APIClient {
     }
 
     let buffer = '';
+		let receivedTerminalEvent = false;
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -681,6 +683,8 @@ class APIClient {
               
               if (parsed.type === 'image_gen_start' && parsed.content) {
                 onImageGenStart?.(parsed.content);
+							} else if (parsed.type === 'generation_mode' && (parsed.content === 'stream' || parsed.content === 'non_stream')) {
+								onGenerationMode?.(parsed.content);
               } else if (parsed.type === 'token' && parsed.content) {
                 onToken(parsed.content);
               } else if (parsed.type === 'reasoning' && parsed.content) {
@@ -688,10 +692,12 @@ class APIClient {
               } else if (parsed.type === 'search' && parsed.data) {
                 onSearch(parsed.data as StreamSearchData);
               } else if (parsed.type === 'done') {
+								receivedTerminalEvent = true;
                 onDone((parsed.data ?? {}) as StreamDoneData);
               } else if (parsed.type === 'title' && parsed.content) {
                 onTitle(parsed.content);
               } else if (parsed.type === 'error') {
+								receivedTerminalEvent = true;
                 onError(parsed.content || 'Unknown error');
 							} else if (parsed.type === 'fallback') {
 								onFallback?.(parsed.content || '已回退到项目模型');
@@ -702,6 +708,9 @@ class APIClient {
           }
         }
       }
+			if (!receivedTerminalEvent) {
+				throw new Error('Stream ended before completion');
+			}
     } finally {
       reader.releaseLock();
     }

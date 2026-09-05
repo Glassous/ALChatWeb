@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"alchat-backend/internal/models"
 )
@@ -55,5 +56,11 @@ func TestGenerateCustomNonStream(t *testing.T) {
 	}
 	if got != "hello" {
 		t.Fatalf("unexpected content: %q", got)
+	}
+}
+
+func TestCustomNonStreamGenerationTimeout(t *testing.T) {
+	if customNonStreamGenerationTimeout != 240*time.Second {
+		t.Fatalf("unexpected custom non-stream timeout: %s", customNonStreamGenerationTimeout)
 	}
 }

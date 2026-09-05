@@ -3,66 +3,113 @@ package services
 import (
 	"alchat-backend/internal/models"
 	"sync"
+	"time"
 )
 
-// StreamManager handles Pub/Sub for chat streams
+const streamReplayRetention = 30 * time.Second
+
+type conversationStream struct {
+	events      []models.ChatStreamResponse
+	subscribers map[chan models.ChatStreamResponse]struct{}
+	closed      bool
+}
+
+// StreamManager handles live chat events and retains a short replay buffer.
 type StreamManager struct {
-	// Map of conversation_id -> list of channels
-	subscribers sync.Map
+	mu            sync.Mutex
+	conversations map[string]*conversationStream
 }
 
 func NewStreamManager() *StreamManager {
-	return &StreamManager{}
+	return &StreamManager{conversations: make(map[string]*conversationStream)}
 }
 
-// Subscribe adds a new subscriber for a conversation
+// StartConversation resets transient state before generation begins.
+func (sm *StreamManager) StartConversation(conversationID string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if previous := sm.conversations[conversationID]; previous != nil {
+		for ch := range previous.subscribers {
+			close(ch)
+		}
+	}
+	sm.conversations[conversationID] = &conversationStream{subscribers: make(map[chan models.ChatStreamResponse]struct{})}
+}
+
 func (sm *StreamManager) Subscribe(conversationID string) chan models.ChatStreamResponse {
-	ch := make(chan models.ChatStreamResponse, 100)
-	
-	actual, _ := sm.subscribers.LoadOrStore(conversationID, &sync.Map{})
-	channels := actual.(*sync.Map)
-	channels.Store(ch, struct{}{})
-	
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	state := sm.conversations[conversationID]
+	if state == nil {
+		state = &conversationStream{subscribers: make(map[chan models.ChatStreamResponse]struct{})}
+		sm.conversations[conversationID] = state
+	}
+	ch := make(chan models.ChatStreamResponse, len(state.events)+100)
+	for _, event := range state.events {
+		ch <- event
+	}
+	if state.closed {
+		close(ch)
+	} else {
+		state.subscribers[ch] = struct{}{}
+	}
 	return ch
 }
 
 // Unsubscribe removes a subscriber for a conversation
 func (sm *StreamManager) Unsubscribe(conversationID string, ch chan models.ChatStreamResponse) {
-	if actual, ok := sm.subscribers.Load(conversationID); ok {
-		channels := actual.(*sync.Map)
-		channels.Delete(ch)
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	state := sm.conversations[conversationID]
+	if state == nil {
+		return
+	}
+	if _, ok := state.subscribers[ch]; ok {
+		delete(state.subscribers, ch)
 		close(ch)
-		
-		// Check if no more subscribers, but we might want to keep the conversation entry 
-		// until the generation is complete. The Publish method or a cleanup method will handle that.
 	}
 }
 
 // Publish sends a message to all subscribers of a conversation
 func (sm *StreamManager) Publish(conversationID string, resp models.ChatStreamResponse) {
-	if actual, ok := sm.subscribers.Load(conversationID); ok {
-		channels := actual.(*sync.Map)
-		channels.Range(func(key, value interface{}) bool {
-			ch := key.(chan models.ChatStreamResponse)
-			// Non-blocking send
-			select {
-			case ch <- resp:
-			default:
-				// Buffer full, skip or handle as needed
-			}
-			return true
-		})
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	state := sm.conversations[conversationID]
+	if state == nil {
+		state = &conversationStream{subscribers: make(map[chan models.ChatStreamResponse]struct{})}
+		sm.conversations[conversationID] = state
+	}
+	if state.closed {
+		return
+	}
+	state.events = append(state.events, resp)
+	for ch := range state.subscribers {
+		select {
+		case ch <- resp:
+		default:
+		}
 	}
 }
 
-// CloseConversation cleans up all resources for a conversation
+// CloseConversation closes live subscribers but briefly keeps replayable events.
 func (sm *StreamManager) CloseConversation(conversationID string) {
-	if actual, ok := sm.subscribers.LoadAndDelete(conversationID); ok {
-		channels := actual.(*sync.Map)
-		channels.Range(func(key, value interface{}) bool {
-			ch := key.(chan models.ChatStreamResponse)
-			close(ch)
-			return true
-		})
+	sm.mu.Lock()
+	state := sm.conversations[conversationID]
+	if state == nil || state.closed {
+		sm.mu.Unlock()
+		return
 	}
+	state.closed = true
+	for ch := range state.subscribers {
+		delete(state.subscribers, ch)
+		close(ch)
+	}
+	sm.mu.Unlock()
+	time.AfterFunc(streamReplayRetention, func() {
+		sm.mu.Lock()
+		defer sm.mu.Unlock()
+		if sm.conversations[conversationID] == state {
+			delete(sm.conversations, conversationID)
+		}
+	})
 }

@@ -726,11 +726,25 @@ function ChatApp({
             )
           );
 		},
-		(message) => showToast({ tone: 'info', message })
+		(message) => showToast({ tone: 'info', message }),
+		(generationMode) => {
+			setMessages((prev) =>
+				(Array.isArray(prev) ? prev : []).map((msg): Message =>
+					msg.id === assistantMsgId
+						? { ...msg, metadata: { ...msg.metadata, generationMode } }
+						: msg
+				)
+			);
+		}
       );
     } catch (error) {
       console.error('Failed to send message:', error);
       setIsLoading(false);
+			if (error instanceof Error && error.message === 'Stream ended before completion') {
+				apiClient.invalidateCache(conversationId);
+				await loadConversation(conversationId);
+				return;
+			}
       setMessages((prev) =>
         (Array.isArray(prev) ? prev : []).map((msg): Message =>
           msg.id === assistantMsgId

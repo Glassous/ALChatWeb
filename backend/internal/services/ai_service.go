@@ -43,6 +43,8 @@ type AIService struct {
 	alingModel        string
 }
 
+const customNonStreamGenerationTimeout = 240 * time.Second
+
 func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, tavilyAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
 	s := &AIService{
 		apiKey:            apiKey,
@@ -620,7 +622,7 @@ func (s *AIService) generateCustomNonStream(ctx context.Context, messages []mode
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: customNonStreamGenerationTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

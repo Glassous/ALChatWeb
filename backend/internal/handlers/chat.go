@@ -107,12 +107,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create assistant message placeholder"})
 		return
 	}
+	h.streamManager.StartConversation(req.ConversationID)
 
 	// Detached context for background processing
 	bgCtx := context.WithoutCancel(c.Request.Context())
 
 	// Start background generation
 	go func() {
+		defer h.streamManager.CloseConversation(req.ConversationID)
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("[Chat] Panic in background generation: %v", r)
@@ -224,6 +226,11 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Insufficient credits"})
 			return
 		}
+		generationMode := "stream"
+		if runtime != nil {
+			generationMode = runtime.ResponseMode
+		}
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "generation_mode", Content: generationMode})
 		emitted := false
 
 		extraInput, extraOutput, err := h.aiService.GenerateStreamWithRuntime(
@@ -269,6 +276,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			var latest models.User
 			if dbErr := h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&latest).Error; dbErr == nil && latest.Credits > 0 {
 				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "fallback", Content: "自定义模型不可用，已回退到项目模型并将正常扣费"})
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "generation_mode", Content: "stream"})
 				extraInput, extraOutput, err = h.aiService.GenerateStream(bgCtx, aiMessages, effectiveMode, systemPromptBuilder.String(), func(token, reasoning string) error {
 					if reasoning != "" {
 						fullReasoning.WriteString(reasoning)
@@ -335,11 +343,6 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			},
 		})
 
-		// Optional: delay cleanup to allow last message to reach subscribers
-		time.AfterFunc(10*time.Second, func() {
-
-			h.streamManager.CloseConversation(req.ConversationID)
-		})
 	}()
 
 	// Respond immediately
@@ -372,6 +375,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temporary assistant message placeholder"})
 		return
 	}
+	h.streamManager.StartConversation(req.ConversationID)
 
 	// Respond immediately
 	c.JSON(http.StatusOK, gin.H{
@@ -383,6 +387,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 	bgCtx := context.WithoutCancel(c.Request.Context())
 
 	go func() {
+		defer h.streamManager.CloseConversation(req.ConversationID)
 		defer func() {
 			if r := recover(); r != nil {
 				log.Printf("[TempChat] Panic in background generation: %v", r)
@@ -491,6 +496,11 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Insufficient credits"})
 			return
 		}
+		generationMode := "stream"
+		if runtime != nil {
+			generationMode = runtime.ResponseMode
+		}
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "generation_mode", Content: generationMode})
 		emitted := false
 
 		extraInput, extraOutput, err := h.aiService.GenerateStreamWithRuntime(
@@ -534,6 +544,7 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			var latest models.User
 			if dbErr := h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&latest).Error; dbErr == nil && latest.Credits > 0 {
 				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "fallback", Content: "自定义模型不可用，已回退到项目模型并将正常扣费"})
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "generation_mode", Content: "stream"})
 				extraInput, extraOutput, err = h.aiService.GenerateStream(bgCtx, aiMessages, effectiveMode, systemPromptBuilder.String(), func(token, reasoning string) error {
 					if reasoning != "" {
 						fullReasoning.WriteString(reasoning)
@@ -589,9 +600,6 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			},
 		})
 
-		time.AfterFunc(10*time.Second, func() {
-			h.streamManager.CloseConversation(req.ConversationID)
-		})
 	}()
 }
 

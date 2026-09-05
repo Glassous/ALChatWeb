@@ -42,7 +42,7 @@ type SearchData struct {
 }
 
 type ChatStreamResponse struct {
-	Type    string      `json:"type"` // "token", "reasoning", "error", "done", or "search"
+	Type    string      `json:"type"` // "generation_mode", "token", "reasoning", "error", "done", or "search"
 	Content string      `json:"content,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 }
