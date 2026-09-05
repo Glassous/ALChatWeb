@@ -5,6 +5,7 @@ import (
 	"alchat-backend/internal/utils"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 type AIService struct {
@@ -142,6 +144,10 @@ type SearchCallback func(data models.SearchData) error
 
 // GenerateKeywords generates search keywords based on conversation history
 func (s *AIService) GenerateKeywords(ctx context.Context, messages []models.AIMessage) (string, int, int, error) {
+	return s.generateKeywordsWithRuntime(ctx, messages, nil)
+}
+
+func (s *AIService) generateKeywordsWithRuntime(ctx context.Context, messages []models.AIMessage, runtime *CustomModelRuntime) (string, int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
@@ -167,10 +173,15 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []models.AIMe
 
 	// 2. Call AI (non-streaming)
 	var keywords strings.Builder
-	err := s.generateCustomStream(ctx, keywordMessages, apiKey, baseURL, model, false, func(token string, reasoning string) error {
-		keywords.WriteString(token)
-		return nil
-	})
+	var err error
+	if runtime != nil {
+		err = s.generateCustom(ctx, keywordMessages, runtime, false, func(token string, reasoning string) error { keywords.WriteString(token); return nil })
+	} else {
+		err = s.generateCustomStream(ctx, keywordMessages, apiKey, baseURL, model, false, func(token string, reasoning string) error {
+			keywords.WriteString(token)
+			return nil
+		})
+	}
 
 	if err != nil {
 		return "", 0, 0, err
@@ -199,6 +210,12 @@ func (s *AIService) GenerateKeywords(ctx context.Context, messages []models.AIMe
 
 // GenerateStream generates AI response with streaming
 func (s *AIService) GenerateStream(ctx context.Context, messages []models.AIMessage, mode string, userSystemPrompt string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
+	return s.GenerateStreamWithRuntime(ctx, messages, mode, userSystemPrompt, nil, callback, searchCallback)
+}
+
+// GenerateStreamWithRuntime uses a request-scoped user model without mutating
+// the process-wide project model configuration.
+func (s *AIService) GenerateStreamWithRuntime(ctx context.Context, messages []models.AIMessage, mode string, userSystemPrompt string, runtime *CustomModelRuntime, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	// Prepend user system prompt if provided
 	if userSystemPrompt != "" {
 		messages = append([]models.AIMessage{
@@ -231,6 +248,9 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []models.AIMess
 	}
 
 	if mode == "expert" {
+		if runtime != nil {
+			return 0, 0, s.generateCustom(ctx, messages, runtime, true, callback)
+		}
 		err := s.generateExpertStream(ctx, messages, callback)
 		return 0, 0, err
 	}
@@ -240,10 +260,13 @@ func (s *AIService) GenerateStream(ctx context.Context, messages []models.AIMess
 		if strings.HasSuffix(mode, "tavily") {
 			source = "tavily"
 		}
-		return s.generateSearchStream(ctx, messages, source, callback, searchCallback)
+		return s.generateSearchStream(ctx, messages, source, runtime, callback, searchCallback)
 	}
 
 	// Daily mode: direct HTTP stream with thinking disabled
+	if runtime != nil {
+		return 0, 0, s.generateCustom(ctx, messages, runtime, false, callback)
+	}
 	err := s.generateCustomStream(ctx, messages, dailyAPIKey, dailyBaseURL, dailyModel, false, callback)
 	return 0, 0, err
 }
@@ -450,9 +473,9 @@ func (s *AIService) generateMultimodalStream(ctx context.Context, messages []mod
 }
 
 // PerformSearch handles the full search flow: keyword generation and web search
-func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessage, source string, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
+func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessage, source string, runtime *CustomModelRuntime, searchCallback SearchCallback) ([]models.SearchResult, string, error) {
 	// 1. Generate search keywords
-	query, _, _, err := s.GenerateKeywords(ctx, messages)
+	query, _, _, err := s.generateKeywordsWithRuntime(ctx, messages, runtime)
 	if err != nil {
 		log.Printf("[AIService] Keyword generation error: %v", err)
 		if len(messages) > 0 {
@@ -500,14 +523,14 @@ func (s *AIService) PerformSearch(ctx context.Context, messages []models.AIMessa
 	return results, query, nil
 }
 
-func (s *AIService) generateSearchStream(ctx context.Context, messages []models.AIMessage, source string, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
+func (s *AIService) generateSearchStream(ctx context.Context, messages []models.AIMessage, source string, runtime *CustomModelRuntime, callback func(token string, reasoning string) error, searchCallback SearchCallback) (int, int, error) {
 	s.mu.RLock()
 	apiKey := s.searchAPIKey
 	baseURL := s.searchBaseURL
 	model := s.searchModel
 	s.mu.RUnlock()
 
-	results, query, err := s.PerformSearch(ctx, messages, source, searchCallback)
+	results, query, err := s.PerformSearch(ctx, messages, source, runtime, searchCallback)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -559,8 +582,104 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []models.
 	})
 	augmentedMessages = append(augmentedMessages, messages...)
 
-	err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, false, callback)
+	if runtime != nil {
+		err = s.generateCustom(ctx, augmentedMessages, runtime, false, callback)
+	} else {
+		err = s.generateCustomStream(ctx, augmentedMessages, apiKey, baseURL, model, false, callback)
+	}
 	return 0, 0, err
+}
+
+func (s *AIService) generateCustom(ctx context.Context, messages []models.AIMessage, runtime *CustomModelRuntime, enableThinking bool, callback func(token string, reasoning string) error) error {
+	if runtime.ResponseMode == "non_stream" {
+		return s.generateCustomNonStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback)
+	}
+	return s.generateCustomStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback)
+}
+
+func (s *AIService) generateCustomNonStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
+	type message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	converted := make([]message, 0, len(messages))
+	for _, m := range messages {
+		converted = append(converted, message{Role: m.Role, Content: m.Content})
+	}
+	body := map[string]any{"model": model, "messages": converted, "stream": false}
+	if !enableThinking {
+		body["thinking"] = map[string]any{"type": "disabled"}
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(baseURL, "/")+"/chat/completions", strings.NewReader(string(raw)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("AI API error (status %d)", resp.StatusCode)
+	}
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning_content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &parsed); err != nil || len(parsed.Choices) == 0 {
+		return errors.New("AI API returned an invalid response")
+	}
+	content, reasoning := parsed.Choices[0].Message.Content, parsed.Choices[0].Message.Reasoning
+	if content == "" && reasoning == "" {
+		return errors.New("AI API returned an empty response")
+	}
+	return callback(content, reasoning)
+}
+
+// TestCustomModel verifies credentials and records whether streaming is usable.
+func (s *AIService) TestCustomModel(ctx context.Context, runtime *CustomModelRuntime) (string, error) {
+	testMessages := []models.AIMessage{{Role: "user", Content: "Reply with OK"}}
+	streamCtx, cancelStream := context.WithTimeout(ctx, 8*time.Second)
+	got := false
+	err := s.generateCustomStream(streamCtx, testMessages, runtime.APIKey, runtime.BaseURL, runtime.Model, false, func(token, reasoning string) error {
+		if token != "" || reasoning != "" {
+			got = true
+		}
+		return nil
+	})
+	cancelStream()
+	if err == nil && got {
+		return "stream", nil
+	}
+	got = false
+	nonStreamCtx, cancelNonStream := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelNonStream()
+	err = s.generateCustomNonStream(nonStreamCtx, testMessages, runtime.APIKey, runtime.BaseURL, runtime.Model, false, func(token, reasoning string) error {
+		got = token != "" || reasoning != ""
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if !got {
+		return "", errors.New("model connected but returned no content")
+	}
+	return "non_stream", nil
 }
 
 func (s *AIService) generateCustomStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {

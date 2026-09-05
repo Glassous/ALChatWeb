@@ -58,7 +58,7 @@ func main() {
 	defer mysqlDB.Close()
 
 	// Auto migrate MySQL schemas
-	if err := mysqlDB.DB.AutoMigrate(&models.User{}, &models.ModelConfig{}, &models.Announcement{}, &models.Feedback{}); err != nil {
+	if err := mysqlDB.DB.AutoMigrate(&models.User{}, &models.ModelConfig{}, &models.CustomModelConfig{}, &models.Announcement{}, &models.Feedback{}); err != nil {
 		slog.Error("Failed to auto migrate MySQL schemas", "error", err)
 		os.Exit(1)
 	}
@@ -119,10 +119,12 @@ func main() {
 	}
 
 	// Initialize handlers
+	customModelService := services.NewCustomModelService(mysqlDB, cfg.CustomModelEncryptionKey)
 	authHandler := handlers.NewAuthHandler(db, mysqlDB, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
+	customModelHandler := handlers.NewCustomModelHandler(customModelService, aiService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, db, mysqlDB, streamManager, imageService)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, customModelService, db, mysqlDB, streamManager, imageService)
 	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db, mysqlDB)
 	adminHandler := handlers.NewAdminHandler(db, mysqlDB, rdb, aiService, memberService, tokenService, emailService)
@@ -177,6 +179,9 @@ func main() {
 			protected.POST("/auth/avatar", authHandler.UpdateAvatar)
 			protected.GET("/auth/system-prompt", authHandler.GetSystemPrompt)
 			protected.PUT("/auth/system-prompt", authHandler.UpdateSystemPrompt)
+			protected.GET("/auth/custom-model", customModelHandler.Get)
+			protected.PUT("/auth/custom-model", customModelHandler.Update)
+			protected.POST("/auth/custom-model/test", customModelHandler.Test)
 			protected.POST("/auth/upgrade", authHandler.Upgrade)
 
 			// Conversation routes

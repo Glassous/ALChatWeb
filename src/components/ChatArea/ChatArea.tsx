@@ -108,6 +108,12 @@ const NextIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="currentColor"><path d="M383-240l-56-56 184-184-184-184 56-56 240 240-240 240Z"/></svg>
 );
 
+const WaitingForModel = () => {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => { const timer = window.setInterval(() => setSeconds(v => v + 1), 1000); return () => window.clearInterval(timer); }, []);
+  return <div className="thinking-container"><div className="thinking-spinner"></div><span className="thinking-text">正在等待模型响应{seconds >= 5 ? ` · ${seconds}s` : '...'}</span></div>;
+};
+
 function MessageItem({ 
   msg, 
   allMessages,
@@ -222,12 +228,7 @@ function MessageItem({
 
   const renderContent = () => {
     if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
-      return (
-        <div className="thinking-container">
-          <div className="thinking-spinner"></div>
-          <span className="thinking-text">正在思考...</span>
-        </div>
-      );
+      return <WaitingForModel />;
     }
 
     // Determine if we should show image loading placeholder

@@ -348,6 +348,20 @@
   padding: 40px;
 }
 
+.custom-model-card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 20px; }
+.custom-master-switch { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.custom-master-switch span { display: flex; flex-direction: column; gap: 4px; }
+.custom-master-switch small, .custom-model-status { color: var(--text-muted); font-size: 13px; }
+.custom-master-switch input, .custom-scopes input { accent-color: var(--button-bg); width: 18px; height: 18px; }
+.custom-model-fields { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.custom-model-fields label { display: flex; flex-direction: column; gap: 7px; color: var(--text-color); font-size: 13px; font-weight: 600; }
+.custom-model-fields input { box-sizing: border-box; width: 100%; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-color); color: var(--text-color); padding: 13px 14px; font: inherit; font-weight: 400; outline: none; }
+.custom-model-fields input:focus { border-color: var(--button-bg); box-shadow: 0 0 0 3px rgba(0,122,255,.1); }
+.custom-scopes { display: flex; flex-wrap: wrap; gap: 12px 22px; }
+.custom-scopes label { display: flex; align-items: center; gap: 8px; color: var(--text-color); font-size: 14px; }
+.custom-model-actions { display: flex; gap: 12px; justify-content: flex-end; }
+.custom-model-actions md-filled-button, .custom-model-actions md-outlined-button { --md-filled-button-container-shape: 12px; --md-outlined-button-container-shape: 12px; }
+
 /* Logout Section */
 .logout-section-page {
   margin-top: 20px;
@@ -377,9 +391,12 @@
     text-align: center;
   }
   
-  .subscription-card, .prompt-config-card {
+  .subscription-card, .prompt-config-card, .custom-model-card {
     padding: 24px;
   }
+
+  .custom-model-actions { flex-direction: column; }
+  .custom-model-actions md-filled-button, .custom-model-actions md-outlined-button { width: 100%; }
   
   .subscription-benefits-grid {
     grid-template-columns: 1fr;

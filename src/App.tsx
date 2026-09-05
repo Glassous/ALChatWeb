@@ -19,6 +19,7 @@ import { SharedPage } from './pages/SharedPage/SharedPage';
 import { ShareDialog } from './components/ShareDialog/ShareDialog';
 import { ALingHome } from './pages/aling/ALingHome';
 import { ALingTranslator } from './pages/aling/ALingTranslator';
+import { useToast } from './components/LayerSystem/LayerSystem';
 import './App.css';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
@@ -73,6 +74,7 @@ function ChatApp({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+	const showToast = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef<Message[]>([]);
   useEffect(() => {
@@ -723,7 +725,8 @@ function ChatApp({
                 : msg
             )
           );
-        }
+		},
+		(message) => showToast({ tone: 'info', message })
       );
     } catch (error) {
       console.error('Failed to send message:', error);

@@ -23,6 +23,7 @@ type ChatHandler struct {
 	aiService           *services.AIService
 	conversationService *services.ConversationService
 	memberService       *services.MemberService
+	customModelService  *services.CustomModelService
 	db                  *database.MongoDB
 	mysqlDB             *database.MySQL
 	streamManager       *services.StreamManager
@@ -30,11 +31,12 @@ type ChatHandler struct {
 	imageService        *services.ImageService
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, customModelService *services.CustomModelService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
 		memberService:       memberService,
+		customModelService:  customModelService,
 		db:                  db,
 		mysqlDB:             mysqlDB,
 		streamManager:       streamManager,
@@ -79,9 +81,9 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
 		log.Printf("Failed to reset credits: %v", err)
 	}
-
-	// If credits already <= 0, deny request
-	if user.Credits <= 0 {
+	requestHasMultimodal := strings.Contains(req.Message, "<file") || strings.Contains(req.Message, "<image")
+	customCandidate, _ := h.customModelService.RuntimeForMode(c.Request.Context(), userID, req.Mode, requestHasMultimodal)
+	if customCandidate == nil && user.Credits <= 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
 		return
 	}
@@ -214,13 +216,26 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		var fullResponse strings.Builder
 		var fullReasoning strings.Builder
 		var lastSearchData *models.SearchData
+		runtime, runtimeErr := h.customModelService.RuntimeForMode(bgCtx, userID, effectiveMode, hasMultimodal)
+		if runtimeErr != nil {
+			log.Printf("[Chat] Failed to load custom model configuration: %v", runtimeErr)
+		}
+		if runtime == nil && user.Credits <= 0 {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Insufficient credits"})
+			return
+		}
+		emitted := false
 
-		extraInput, extraOutput, err := h.aiService.GenerateStream(
+		extraInput, extraOutput, err := h.aiService.GenerateStreamWithRuntime(
 			bgCtx,
 			aiMessages,
 			effectiveMode,
 			systemPromptBuilder.String(),
+			runtime,
 			func(token string, reasoning string) error {
+				if reasoning != "" || (token != "" && !strings.Contains(token, "<search>")) {
+					emitted = true
+				}
 				if reasoning != "" {
 					fullReasoning.WriteString(reasoning)
 					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
@@ -248,6 +263,32 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 				return nil
 			},
 		)
+		usedCustom := runtime != nil
+		if err != nil && runtime != nil && !emitted {
+			fullResponse.Reset()
+			var latest models.User
+			if dbErr := h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&latest).Error; dbErr == nil && latest.Credits > 0 {
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "fallback", Content: "自定义模型不可用，已回退到项目模型并将正常扣费"})
+				extraInput, extraOutput, err = h.aiService.GenerateStream(bgCtx, aiMessages, effectiveMode, systemPromptBuilder.String(), func(token, reasoning string) error {
+					if reasoning != "" {
+						fullReasoning.WriteString(reasoning)
+						h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "reasoning", Content: reasoning})
+					}
+					if token != "" {
+						fullResponse.WriteString(token)
+						h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "token", Content: token})
+					}
+					return nil
+				}, func(searchData models.SearchData) error {
+					lastSearchData = &searchData
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "search", Data: searchData})
+					return nil
+				})
+				usedCustom = false
+			} else {
+				err = fmt.Errorf("自定义模型调用失败且项目额度不足: %w", err)
+			}
+		}
 
 		if err != nil {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
@@ -267,7 +308,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		}
 
 		// Send done signal
-		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+		newCredits := user.Credits
+		if !usedCustom {
+			newCredits, err = h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+			if err != nil {
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Failed to deduct credits"})
+				return
+			}
+		}
 
 		// Generate title BEFORE done so it's already saved in DB when frontend reloads
 		title, titleErr := h.conversationService.AutoGenerateTitle(bgCtx, req.ConversationID, userID, h.aiService)
@@ -435,13 +483,26 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 		var fullResponse strings.Builder
 		var fullReasoning strings.Builder
 		var lastSearchData *models.SearchData
+		runtime, runtimeErr := h.customModelService.RuntimeForMode(bgCtx, userIDObj.Hex(), effectiveMode, hasMultimodal)
+		if runtimeErr != nil {
+			log.Printf("[TempChat] Failed to load custom model configuration: %v", runtimeErr)
+		}
+		if runtime == nil && user.Credits <= 0 {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Insufficient credits"})
+			return
+		}
+		emitted := false
 
-		extraInput, extraOutput, err := h.aiService.GenerateStream(
+		extraInput, extraOutput, err := h.aiService.GenerateStreamWithRuntime(
 			bgCtx,
 			aiMessages,
 			effectiveMode,
 			systemPromptBuilder.String(),
+			runtime,
 			func(token string, reasoning string) error {
+				if reasoning != "" || (token != "" && !strings.Contains(token, "<search>")) {
+					emitted = true
+				}
 				if reasoning != "" {
 					fullReasoning.WriteString(reasoning)
 					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
@@ -467,6 +528,32 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 				return nil
 			},
 		)
+		usedCustom := runtime != nil
+		if err != nil && runtime != nil && !emitted {
+			fullResponse.Reset()
+			var latest models.User
+			if dbErr := h.mysqlDB.DB.WithContext(bgCtx).Where("id = ?", userIDObj.Hex()).First(&latest).Error; dbErr == nil && latest.Credits > 0 {
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "fallback", Content: "自定义模型不可用，已回退到项目模型并将正常扣费"})
+				extraInput, extraOutput, err = h.aiService.GenerateStream(bgCtx, aiMessages, effectiveMode, systemPromptBuilder.String(), func(token, reasoning string) error {
+					if reasoning != "" {
+						fullReasoning.WriteString(reasoning)
+						h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "reasoning", Content: reasoning})
+					}
+					if token != "" {
+						fullResponse.WriteString(token)
+						h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "token", Content: token})
+					}
+					return nil
+				}, func(searchData models.SearchData) error {
+					lastSearchData = &searchData
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "search", Data: searchData})
+					return nil
+				})
+				usedCustom = false
+			} else {
+				err = fmt.Errorf("自定义模型调用失败且项目额度不足: %w", err)
+			}
+		}
 
 		if err != nil {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
@@ -483,7 +570,14 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 		h.tempConvService.UpdateMessage(bgCtx, assistantMsg)
 
 		// Deduct credits
-		newCredits, _ := h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+		newCredits := user.Credits
+		if !usedCustom {
+			newCredits, err = h.memberService.DeductCredits(bgCtx, userIDObj, utils.CountTokens(userMsg.Content)+extraInput, utils.CountTokens(fullResponse.String())+extraOutput)
+			if err != nil {
+				h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Failed to deduct credits"})
+				return
+			}
+		}
 
 		// Send done signal
 		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{

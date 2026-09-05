@@ -36,9 +36,22 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start';
+  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start' | 'fallback';
   content?: string;
   data?: unknown;
+}
+
+export interface CustomModelSettings {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  daily_enabled: boolean;
+  expert_enabled: boolean;
+  search_enabled: boolean;
+  has_api_key: boolean;
+  api_key_masked?: string;
+  response_mode?: 'stream' | 'non_stream' | '';
+  last_tested_at?: string;
 }
 
 interface AuthCredentials {
@@ -300,6 +313,25 @@ class APIClient {
       body: JSON.stringify(data),
     });
     return this.handleResponse(response);
+  }
+
+  async getCustomModel(): Promise<CustomModelSettings> {
+    const response = await fetch(`${this.baseURL}/api/auth/custom-model`, { headers: this.getHeaders() });
+    return this.handleResponse(response);
+  }
+
+  async updateCustomModel(data: Partial<CustomModelSettings> & { api_key?: string; clear_api_key?: boolean }) {
+    const response = await fetch(`${this.baseURL}/api/auth/custom-model`, {
+      method: 'PUT', headers: this.getHeaders(), body: JSON.stringify(data),
+    });
+    return this.handleResponse(response) as Promise<CustomModelSettings>;
+  }
+
+  async testCustomModel(data: { base_url: string; api_key?: string; model: string }) {
+    const response = await fetch(`${this.baseURL}/api/auth/custom-model/test`, {
+      method: 'POST', headers: this.getHeaders(), body: JSON.stringify(data),
+    });
+    return this.handleResponse(response) as Promise<{ connected: boolean; response_mode: 'stream' | 'non_stream'; last_tested_at: string }>;
   }
 
   async resolveLocation(lat: number, lng: number): Promise<string | null> {
@@ -584,6 +616,7 @@ class APIClient {
     location?: string,
     parentMessageId?: string | null,
     onImageGenStart?: (resolution: string) => void,
+		onFallback?: (message: string) => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -660,6 +693,8 @@ class APIClient {
                 onTitle(parsed.content);
               } else if (parsed.type === 'error') {
                 onError(parsed.content || 'Unknown error');
+							} else if (parsed.type === 'fallback') {
+								onFallback?.(parsed.content || '已回退到项目模型');
               }
             } catch (e) {
               console.error('Failed to parse SSE data:', e, 'Data:', data);

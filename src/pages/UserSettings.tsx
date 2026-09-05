@@ -5,6 +5,7 @@ import Cropper from 'react-easy-crop';
 import type { Point, Area } from 'react-easy-crop';
 import { motion } from 'framer-motion';
 import { apiClient } from '../services/api';
+import type { CustomModelSettings } from '../services/api';
 import { getCurrentPosition, formatCoordsAsString } from '../utils/location';
 import getCroppedImg from '../utils/cropImage';
 import '@material/web/iconbutton/icon-button.js';
@@ -42,6 +43,10 @@ export function UserSettings() {
   const [invitationCode, setInvitationCode] = useState('');
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
+	const [customModel, setCustomModel] = useState<CustomModelSettings>({ enabled: false, base_url: '', model: '', daily_enabled: false, expert_enabled: false, search_enabled: false, has_api_key: false });
+	const [customApiKey, setCustomApiKey] = useState('');
+	const [isTestingCustom, setIsTestingCustom] = useState(false);
+	const [isSavingCustom, setIsSavingCustom] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,11 +101,17 @@ export function UserSettings() {
     }
   }
 
+	async function loadCustomModel() {
+		try { setCustomModel(await apiClient.getCustomModel()); }
+		catch (error) { console.error('Failed to load custom model settings:', error); }
+	}
+
   useEffect(() => {
     // Profile requests populate local settings state after their network responses.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUserProfile();
     loadSystemPrompt();
+		loadCustomModel();
     const handleProfileUpdate = () => loadUserProfile();
     window.addEventListener('user-profile-updated', handleProfileUpdate);
     return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
@@ -188,6 +199,27 @@ export function UserSettings() {
       setIsUpgrading(false);
     }
   };
+
+	const handleTestCustomModel = async () => {
+		setIsTestingCustom(true);
+		try {
+			const result = await apiClient.testCustomModel({ base_url: customModel.base_url, api_key: customApiKey || undefined, model: customModel.model });
+			setCustomModel(prev => ({ ...prev, has_api_key: prev.has_api_key || !!customApiKey, response_mode: result.response_mode, last_tested_at: result.last_tested_at }));
+			setCustomApiKey('');
+			showToast({ tone: 'success', message: result.response_mode === 'stream' ? '连接成功，支持流式输出' : '连接成功，将使用非流式输出' });
+		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '连通性检测失败' }); }
+		finally { setIsTestingCustom(false); }
+	};
+
+	const handleSaveCustomModel = async () => {
+		setIsSavingCustom(true);
+		try {
+			const saved = await apiClient.updateCustomModel({ ...customModel, api_key: customApiKey || undefined });
+			setCustomModel(saved); setCustomApiKey('');
+			showToast({ tone: 'success', message: '自定义模型设置已保存' });
+		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '保存失败' }); }
+		finally { setIsSavingCustom(false); }
+	};
 
   return (
     <div className="app-container">
@@ -323,6 +355,23 @@ export function UserSettings() {
             </section>
 
             {/* System Prompt Section */}
+			<section className="settings-section">
+				<h3 className="section-title">自定义模型</h3>
+				<div className="custom-model-card">
+					<label className="custom-master-switch"><span><strong>启用自定义模型</strong><small>成功调用时不消耗 Credits</small></span><input type="checkbox" checked={customModel.enabled} onChange={e => setCustomModel({ ...customModel, enabled: e.target.checked })} /></label>
+					<div className="custom-model-fields">
+						<label>Base URL<input type="url" placeholder="https://api.example.com/v1" value={customModel.base_url} onChange={e => setCustomModel({ ...customModel, base_url: e.target.value, response_mode: '' })} /></label>
+						<label>API Key<input type="password" placeholder={customModel.has_api_key ? '已保存，留空则不修改' : '请输入 API Key'} value={customApiKey} onChange={e => { setCustomApiKey(e.target.value); setCustomModel({ ...customModel, response_mode: '' }); }} /></label>
+						<label>Model<input type="text" placeholder="模型名称" value={customModel.model} onChange={e => setCustomModel({ ...customModel, model: e.target.value, response_mode: '' })} /></label>
+					</div>
+					<div className="custom-scopes">
+						{([['daily_enabled','日常模式'],['expert_enabled','专家模式'],['search_enabled','联网搜索']] as const).map(([key,label]) => <label key={key}><input type="checkbox" disabled={!customModel.enabled} checked={customModel[key]} onChange={e => setCustomModel({ ...customModel, [key]: e.target.checked })} />{label}</label>)}
+					</div>
+					<div className="custom-model-status">{customModel.response_mode ? `已通过检测 · ${customModel.response_mode === 'stream' ? '流式输出' : '非流式输出'}` : '修改连接信息后需要重新检测'}。图片理解与图片生成仍使用项目模型并扣费。</div>
+					<div className="custom-model-actions"><md-outlined-button onClick={handleTestCustomModel} disabled={isTestingCustom}>{isTestingCustom ? '检测中...' : '测试连接'}</md-outlined-button><md-filled-button onClick={handleSaveCustomModel} disabled={isSavingCustom || (customModel.enabled && !customModel.response_mode)}>{isSavingCustom ? '保存中...' : '保存配置'}</md-filled-button></div>
+				</div>
+			</section>
+
             <section className="settings-section">
               <h3 className="section-title">前置提示词</h3>
               <div className="prompt-config-card">
