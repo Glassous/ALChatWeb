@@ -79,8 +79,7 @@ alchatweb/
 │   │   ├── middleware/      # 安全与频控中间件 (CORS, JWT, RateLimit)
 │   │   ├── models/          # 统一数据模型定义 (GORM Schema & BSON Tags)
 │   │   └── services/        # 腾讯云 COS、SMTP 邮箱、各 LLM API 服务的统一封装
-│   ├── Dockerfile.dev       # 容器化热重载开发配置
-│   └── .air.toml            # Go 语言 Air 热重载配置文件
+│   ├── Dockerfile.dev       # 容器化开发构建配置
 │
 ├── src/                      # React 前端源文件
 │   ├── components/          # 核心交互组件

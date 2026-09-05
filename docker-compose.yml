@@ -2,7 +2,7 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.dev # 使用开发环境的 Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: alchat-backend
     dns:
       - 8.8.8.8
@@ -10,7 +10,7 @@ services:
     ports:
       - "${HOST_PORT:-8080}:${PORT:-8080}"
     volumes:
-      - ./backend:/app           # 挂载代码目录，实现热重载
+      - ./backend:/app
     env_file:
       - ./backend/.env
     depends_on:
@@ -63,4 +63,4 @@ volumes:
 networks:
   default: {}  # alchatweb 内部网络（backend/mongo/mysql/redis）
   alchat-shared:
-    external: true  # 必须提前创建: docker network create alchat-shared
+    external: true  # 必须提前创建: docker network create alchat-shared
