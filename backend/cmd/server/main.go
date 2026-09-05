@@ -1,8 +1,6 @@
 package main
 
 import (
-	"alchat-backend/internal/agent"
-	"alchat-backend/internal/agent/tools"
 	"alchat-backend/internal/config"
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/handlers"
@@ -92,9 +90,6 @@ func main() {
 		cfg.MultimodalAPIKey,
 		cfg.MultimodalBaseURL,
 		cfg.MultimodalModel,
-		cfg.AgentAPIKey,
-		cfg.AgentBaseURL,
-		cfg.AgentModel,
 		cfg.ALingAPIKey,
 		cfg.ALingBaseURL,
 		cfg.ALingModel,
@@ -140,19 +135,6 @@ func main() {
 
 	adminHandler.SetupAdmin(context.Background())
 	adminHandler.LoadConfigs(context.Background())
-
-	registry := tools.NewRegistry()
-	registry.Register("web_search", tools.WebSearchDescription, nil)
-	registry.Register("weather", tools.WeatherDescription, nil)
-	registry.Register("calculator", tools.CalculatorDescription, nil)
-	registry.Register("get_time", tools.GetTimeDescription, nil)
-	registry.Register("generate_image", tools.GenerateImageDescription, nil)
-
-	agentAPIKey, agentBaseURL, agentModel := aiService.GetAgentConfig()
-	agentRunner := agent.NewRunner(agentAPIKey, agentBaseURL, agentModel, registry, db)
-	agentRunner.LoadToolStates(context.Background())
-	adminHandler.SetAgentRunner(agentRunner)
-	chatHandler.SetAgentRunner(agentRunner)
 
 	// Setup Gin router
 	router := gin.Default()
@@ -266,8 +248,6 @@ func main() {
 				admin.POST("/invitation-codes", adminHandler.GenerateInvitationCodes)
 				admin.GET("/settings", adminHandler.GetSystemSettings)
 				admin.PUT("/settings", adminHandler.UpdateSystemSettings)
-				admin.GET("/agent/tools", adminHandler.GetAgentTools)
-				admin.PUT("/agent/tools/:name", adminHandler.ToggleAgentTool)
 				admin.GET("/shared", shareHandler.GetAllShares)
 				admin.DELETE("/shared/:id", shareHandler.AdminDeleteShare)
 

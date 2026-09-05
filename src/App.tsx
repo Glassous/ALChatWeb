@@ -9,7 +9,7 @@ import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
 import { InputArea } from './components/InputArea/InputArea';
-import { apiClient, type Conversation, type AgentPlanItemData } from './services/api';
+import { apiClient, type Conversation } from './services/api';
 import { Welcome } from './pages/Welcome';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
@@ -98,7 +98,7 @@ function ChatApp({
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'agent'>('daily');
+  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search'>('daily');
   const [webIsImageMode, setWebIsImageMode] = useState(false);
 
   // Workspace states
@@ -289,9 +289,7 @@ function ChatApp({
             a.id !== b.id ||
             a.role !== b.role ||
             a.content !== b.content ||
-            a.parent_id !== b.parent_id ||
-            JSON.stringify(a.agent_steps) !== JSON.stringify(b.agent_steps) ||
-            JSON.stringify(a.agent_plan) !== JSON.stringify(b.agent_plan)
+            a.parent_id !== b.parent_id
           ) {
             needsUpdate = true;
             break;
@@ -357,7 +355,7 @@ function ChatApp({
     isImageMode: boolean; 
     resolution: string; 
     refImageUrl?: string; 
-    mode?: 'daily' | 'expert' | 'search' | 'agent';
+    mode?: 'daily' | 'expert' | 'search';
     overrideParentId?: string | null;
   }) => {
     if (isLoading) return;
@@ -672,10 +670,7 @@ function ChatApp({
             setMessages((prev) => {
               const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
                 if (msg.id === assistantMsgId) {
-                  const finalizedPlan = msg.agent_plan?.map((item) =>
-                    item.status !== 'completed' ? { ...item, status: 'completed' as const } : item
-                  );
-                  return { ...msg, id: realAssistantId, status: 'completed', ...(finalizedPlan ? { agent_plan: finalizedPlan } : {}) };
+                  return { ...msg, id: realAssistantId, status: 'completed' };
                 }
                 if (msg.id === userMsgId) {
                   return { ...msg, id: realUserId };
@@ -713,47 +708,12 @@ function ChatApp({
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg): Message => {
               if (msg.id !== assistantMsgId) return msg;
-              const finalizedPlan = msg.agent_plan?.map((item) =>
-                item.status !== 'completed' ? { ...item, status: 'completed' as const } : item
-              );
-              return { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error', ...(finalizedPlan ? { agent_plan: finalizedPlan } : {}) };
+              return { ...msg, content: msg.content + `\n\n[Error: ${error}]`, status: 'error' };
             })
           );
         },
         location,
         effectiveParentId,
-        (planItems) => {
-          setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg): Message =>
-              msg.id === assistantMsgId
-                ? { ...msg, agent_plan: planItems }
-                : msg
-            )
-          );
-        },
-        (planItemData) => {
-          setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg): Message => {
-              if (msg.id !== assistantMsgId || !msg.agent_plan) return msg;
-              const isObject = typeof planItemData === 'object';
-              const planIndex = isObject ? planItemData.index : planItemData;
-              const status = isObject ? (planItemData.status ?? 'completed') : 'completed';
-              const updatedPlan = msg.agent_plan.map((item, i) =>
-                i === planIndex ? { ...item, status: status as AgentPlanItemData['status'] } : item
-              );
-              return { ...msg, agent_plan: updatedPlan };
-            })
-          );
-        },
-        (step) => {
-          setMessages((prev) =>
-            (Array.isArray(prev) ? prev : []).map((msg): Message => {
-              if (msg.id !== assistantMsgId) return msg;
-              const steps = [...(msg.agent_steps || []), step];
-              return { ...msg, agent_steps: steps };
-            })
-          );
-        },
         (resolution) => {
           // image_gen_start: set resolution metadata on the assistant message for loading placeholder
           setMessages((prev) =>

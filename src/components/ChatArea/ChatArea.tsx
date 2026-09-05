@@ -2,9 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, f
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
-import { AgentStepPanel } from '../AgentStepPanel/AgentStepPanel';
 import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
-import type { AgentStepData, AgentPlanItemData } from '../../services/api';
 import { getThumbnailUrl } from '../../utils/image';
 import './ChatArea.css';
 import { FullscreenLayer } from '../LayerSystem/LayerSystem';
@@ -25,8 +23,6 @@ export interface Message {
       snippet: string;
     }>;
   };
-  agent_steps?: AgentStepData[];
-  agent_plan?: AgentPlanItemData[];
   created_at: string;
   status?: 'pending' | 'loading' | 'completed' | 'error';
   metadata?: {
@@ -260,22 +256,18 @@ function MessageItem({
       .replace(/\n?<weather>[\s\S]*?<\/weather>\n?/g, '') // Remove weather tag
       .replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`);
 
-    const isAgent = (msg.agent_plan && msg.agent_plan.length > 0) || (msg.agent_steps && msg.agent_steps.length > 0);
-
     let displayWeather: WeatherData | null = null;
-    if (!isAgent) {
-      const weatherMatch = msg.content.match(/<weather>([\s\S]*?)<\/weather>/);
-      if (weatherMatch && weatherMatch[1]) {
-        try {
-          displayWeather = JSON.parse(weatherMatch[1].trim());
-        } catch (e) {
-          console.error('Failed to parse weather data:', e);
-        }
+    const weatherMatch = msg.content.match(/<weather>([\s\S]*?)<\/weather>/);
+    if (weatherMatch && weatherMatch[1]) {
+      try {
+        displayWeather = JSON.parse(weatherMatch[1].trim());
+      } catch (e) {
+        console.error('Failed to parse weather data:', e);
       }
     }
     // Fallback search data if msg.search is missing but exists in content
-    let displaySearch = isAgent ? undefined : msg.search;
-    if (!isAgent && !displaySearch && msg.content.includes('<search>')) {
+    let displaySearch = msg.search;
+    if (!displaySearch && msg.content.includes('<search>')) {
       const match = msg.content.match(/<search>([\s\S]*?)<\/search>/);
       if (match && match[1]) {
         try {
@@ -617,14 +609,6 @@ function MessageItem({
           </>
         ) : (
           <div className="assistant-message-content">
-            {((msg.agent_plan && msg.agent_plan.length > 0) || (msg.agent_steps && msg.agent_steps.length > 0)) && (
-              <AgentStepPanel 
-                steps={msg.agent_steps || []} 
-                plan={msg.agent_plan}
-                isStreaming={msg.status === 'loading'}
-                onShowSearch={onShowSearch}
-              />
-            )}
             <div className="message-text assistant-text">
               {renderContent()}
             </div>
@@ -748,7 +732,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     // We consider it near bottom if within 10px
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 10;
     // CRITICAL: Only update auto-scroll tracking on user-initiated scrolls.
-    // Content height changes (e.g., reasoning collapse, agent plan finalization)
+    // Content height changes (e.g., reasoning collapse)
     // can shift scroll position near bottom, which should NOT re-enable auto-scroll.
     if (isUserScrollingRef.current) {
       isAutoScrollEnabledRef.current = isNearBottom;

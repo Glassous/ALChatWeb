@@ -2,7 +2,7 @@
 
 AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、高性能、功能丰富的 AI 智能对话平台，专为 Web 端进行了深度优化与交互设计。
 
-本项目采用 **MySQL + MongoDB + Redis 混合数据架构**，并无缝集成独立的 Python AI Agent 微服务 **[FiaLangChain](https://github.com/Glassous/FiaLangChain)**，支持多分支对话历史管理、实时代码运行沙箱 (Workspace) 等前沿特性，为用户提供极致的美学与实用的 AI 交互体验。
+本项目采用 **MySQL + MongoDB + Redis 混合数据架构**，支持多分支对话历史管理、实时代码运行沙箱 (Workspace) 等特性，为用户提供兼具美学与实用性的 AI 交互体验。
 
 
 ---
@@ -16,11 +16,6 @@ AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、�
 - 🖥️ **代码运行沙箱工作区 (Workspace)**：
   - 智能识别 AI 生成的代码块（支持 HTML, CSS, SVG 等）。
   - 右侧提供独立的预览沙箱，支持实时渲染运行、源码编辑与动态交互，为开发者提供类似 Claude Artifacts 的沉浸式调试环境。
-- 🤖 **智能 Agent 协作 (由 FiaLangChain 驱动)**：
-  - 深度集成 **[FiaLangChain](https://github.com/Glassous/FiaLangChain)**（基于 LangChain & LangGraph 构建的 Python Agent 独立微服务）。
-  - 支持复杂的多步骤任务规划（Agent Plan）。
-  - 内置丰富工具链：**实时天气查询 (weather)**、**数学计算器 (calculator)**、以及基于 Bocha AI / Tavily 的**智能联网搜索 (web_search)**。
-  - 前端界面配合 `AgentStepPanel` 组件，实时可视化展示 Agent 的每一步调用参数、执行状态及返回结果。
 - 🖼️ **多模态与图像生成**：
   - **画图任务**：集成火山引擎 (Volcengine) 图像生成大模型接口，支持后台异步画图并在会话中渲染呈现。
   - **多模态对话**：支持直接上传并解析图片，实现与多模态模型的看图对话。
@@ -56,11 +51,6 @@ AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、�
   - 腾讯云 COS (用户头像、历史参考图片等静态资源存储)
   - SMTP 邮件服务 (QQ 邮箱/Outlook 自动发信)
 
-### Python Agent 端 (FiaLangChain)
-- **核心仓库**: [Glassous/FiaLangChain](https://github.com/Glassous/FiaLangChain)
-- **核心框架**: LangChain, LangGraph (基于图的 Agent 多步骤规划与循环执行)
-- **API 服务**: FastAPI + Server-Sent Events (SSE) 流式接口
-
 ---
 
 ## 🏗️ 项目结构
@@ -72,7 +62,6 @@ alchatweb/
 │   │   ├── server/          # 业务主服务启动入口 (main.go)
 │   │   └── migrate/         # 一键数据迁移与 Schema 自动初始化工具
 │   ├── internal/
-│   │   ├── agent/           # FiaLangChain Agent 服务调用适配与中转
 │   │   ├── config/          # 基于 GoDotEnv 的环境变量加载
 │   │   ├── database/        # 数据库连接初始化 (MongoDB, MySQL, Redis)
 │   │   ├── handlers/        # 业务 API 控制器 (Auth, Chat, Admin, ALing 等)
@@ -85,7 +74,6 @@ alchatweb/
 │   ├── components/          # 核心交互组件
 │   │   ├── ChatArea/        # 聊天消息列表渲染、思维链与流式渲染控制
 │   │   ├── Workspace/       # 代码实时沙箱渲染与可视化预览工作区
-│   │   ├── AgentStepPanel/  # Agent 规划进度与工具调用详情面板
 │   │   ├── Sidebar/         # 侧边栏及分支对话历史树交互
 │   │   └── ...
 │   ├── pages/               # 独立页面 (Login, Register, ALing 翻译, UserSettings)
@@ -103,23 +91,9 @@ alchatweb/
 
 ## 🚀 快速启动与部署
 
-为了将 Web 前端、Go 后端及 FiaLangChain Python Agent 顺利打通，推荐使用容器网络模式进行联合部署。
+推荐使用容器方式启动数据库与 Go 后端，并使用 Vite 启动 Web 前端。
 
-### 1. 预先创建 Docker 共享网络
-首先在宿主机运行以下命令，创建容器间通信的共享网络 `alchat-shared`：
-```bash
-docker network create alchat-shared
-```
-
-### 2. 部署 FiaLangChain Python 服务
-1. 克隆 Python Agent 服务仓库：
-   ```bash
-   git clone https://github.com/Glassous/FiaLangChain.git
-   ```
-2. 进入 `FiaLangChain` 目录，并参考其 [FiaLangChain README](https://github.com/Glassous/FiaLangChain/blob/main/README.md) 进行 Docker 部署。
-3. 启动后，该微服务容器（`fia-langchain-service`）将加入 `alchat-shared` 网络，监听 `8086` 端口。
-
-### 3. 配置本地环境变量
+### 1. 配置本地环境变量
 在 `alchatweb/` 根目录和 `alchatweb/backend/` 目录下分别复制配置文件：
 
 - **根目录环境变量** (用于本地 Docker 数据库端口映射)：
@@ -133,13 +107,8 @@ docker network create alchat-shared
   编辑 `backend/.env`，重点配置：
   - 大模型 API Key 及自定义 Base URL
   - Redis、MySQL 和 MongoDB 连接信息
-  - FiaLangChain 的通信地址与认证 Token：
-    ```env
-    FIALANGCHAIN_URL=http://fia-langchain-service:8086/api/v1/agent
-    FIALANGCHAIN_TOKEN=your_secure_internal_token_here
-    ```
 
-### 4. 运行一键热启动开发脚本
+### 2. 运行一键热启动开发脚本
 在 `alchatweb/` 根目录下运行以下脚本，将会一键拉起 MySQL、MongoDB、Redis 容器，并自动以热重载模式构建并启动 Go 后端及前端 Vite 开发服务器：
 
 - **Windows 用户**:
@@ -153,7 +122,7 @@ docker network create alchat-shared
   bash start-dev.sh
   ```
 
-### 5. 初始化数据库（MySQL 自动建表与迁移）
+### 3. 初始化数据库（MySQL 自动建表与迁移）
 在后端服务运行前，运行数据迁移脚本。该脚本会自动在 MySQL 中建立最新的表结构（如 `users`, `configs`, `announcements`, `feedbacks` 等），并自动将 MongoDB 历史存量用户数据无损导入到 MySQL 中：
 ```bash
 # 进入后端目录

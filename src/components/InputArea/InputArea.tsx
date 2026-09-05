@@ -5,7 +5,7 @@ import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'agent' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -16,7 +16,7 @@ interface InputAreaProps {
   onShowUpgrade?: () => void;
   style?: React.CSSProperties;
   isTemp?: boolean;
-  onModeChange?: (mode: 'daily' | 'expert' | 'search' | 'agent') => void;
+  onModeChange?: (mode: 'daily' | 'expert' | 'search') => void;
   onImageModeChange?: (isImageMode: boolean) => void;
 }
 
@@ -47,18 +47,15 @@ export function InputArea({
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
-  const [isAgent, setIsAgent] = useState(false);
   const [isSearch, setIsSearch] = useState(false);
 
   useEffect(() => {
-    let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'agent' = mode;
-    if (isAgent) {
-      currentEffectiveMode = 'agent';
-    } else if (mode === 'daily' && isSearch) {
+    let currentEffectiveMode: 'daily' | 'expert' | 'search' = mode;
+    if (mode === 'daily' && isSearch) {
       currentEffectiveMode = 'search';
     }
     onModeChange?.(currentEffectiveMode);
-  }, [mode, isAgent, isSearch, onModeChange]);
+  }, [mode, isSearch, onModeChange]);
 
   useEffect(() => {
     onImageModeChange?.(isImageMode);
@@ -71,13 +68,6 @@ export function InputArea({
   const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
 
-  useEffect(() => {
-    if (isImageMode || mode !== 'daily' || attachments.length > 0) {
-      // These modes are mutually exclusive; changes can also arrive from parent props.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsAgent(false);
-    }
-  }, [isImageMode, mode, attachments.length]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [dragStatus, setDragStatus] = useState<'none' | 'supported' | 'unsupported'>('none');
   const [dragMessage, setDragMessage] = useState<string>('');
@@ -91,27 +81,23 @@ export function InputArea({
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleModeSelect = (selected: 'expert' | 'agent' | 'image') => {
+  const handleModeSelect = (selected: 'expert' | 'image') => {
     if (disabled || isUploading) return;
 
     let targetExpert = false;
-    let targetAgent = false;
     let targetImage = false;
 
     if (selected === 'expert') {
       targetExpert = mode !== 'expert';
-    } else if (selected === 'agent') {
-      targetAgent = !isAgent;
     } else if (selected === 'image') {
       targetImage = !isImageMode;
     }
 
     setMode(targetExpert ? 'expert' : 'daily');
-    setIsAgent(targetAgent);
     setIsImageMode(targetImage);
     setIsSearch(false);
 
-    if (targetAgent || targetImage) {
+    if (targetImage) {
       setAttachments([]);
       setSelectedAttachmentType(null);
       setRefImageUrl(null);
@@ -190,11 +176,9 @@ export function InputArea({
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
-      let finalMode: 'daily' | 'expert' | 'search' | 'agent' = mode;
+      let finalMode: 'daily' | 'expert' | 'search' = mode;
       if (isImageMode) {
         finalMode = 'daily';
-      } else if (isAgent) {
-        finalMode = 'agent';
       } else if (mode === 'daily' && isSearch) {
         finalMode = 'search';
       }
@@ -767,7 +751,7 @@ export function InputArea({
           </div>
           <div className="input-bottom-row">
             <div className="tools-left">
-                {!isTemp && !isAgent && !isImageMode && (
+                {!isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
@@ -779,7 +763,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isTemp && !isAgent && mode !== 'expert' && (
+                {!isTemp && mode !== 'expert' && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
@@ -790,18 +774,6 @@ export function InputArea({
                       <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
-                    </button>
-                  </div>
-                )}
-                {!isTemp && !isImageMode && mode !== 'expert' && (
-                  <div className="tool-slot">
-                    <button 
-                      className={`tool-btn agent-toggle-btn ${isAgent ? 'active' : ''}`}
-                      onClick={() => handleModeSelect('agent')}
-                      title="Agent 模式"
-                      disabled={disabled || isUploading}
-                    >
-                      Agent
                     </button>
                   </div>
                 )}
@@ -904,7 +876,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isTemp && !isImageMode && !isAgent && (
+                {!isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <div className="attachment-selector" ref={attachmentMenuRef}>
                       <button 

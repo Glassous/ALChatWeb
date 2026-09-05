@@ -36,15 +36,12 @@ type AIService struct {
 	searchService     *SearchService
 	tavilyAPIKey      string
 	tavilyService     *TavilyService
-	agentAPIKey       string
-	agentBaseURL      string
-	agentModel        string
 	alingAPIKey       string
 	alingBaseURL      string
 	alingModel        string
 }
 
-func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, tavilyAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, agentAPIKey, agentBaseURL, agentModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
+func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertModel, titleAPIKey, titleBaseURL, titleModel, searchAPIKey, searchBaseURL, searchModel, bochaAPIKey, tavilyAPIKey, multimodalAPIKey, multimodalBaseURL, multimodalModel, alingAPIKey, alingBaseURL, alingModel string) (*AIService, error) {
 	s := &AIService{
 		apiKey:            apiKey,
 		baseURL:           baseURL,
@@ -65,9 +62,6 @@ func NewAIService(apiKey, baseURL, model, expertAPIKey, expertBaseURL, expertMod
 		searchService:     NewSearchService(bochaAPIKey),
 		tavilyAPIKey:      tavilyAPIKey,
 		tavilyService:     NewTavilyService(tavilyAPIKey),
-		agentAPIKey:       agentAPIKey,
-		agentBaseURL:      agentBaseURL,
-		agentModel:        agentModel,
 		alingAPIKey:       alingAPIKey,
 		alingBaseURL:      alingBaseURL,
 		alingModel:        alingModel,
@@ -129,16 +123,6 @@ func (s *AIService) UpdateConfig(mode, apiKey, baseURL, model string) error {
 		}
 		if model != "" {
 			s.multimodalModel = model
-		}
-	case "agent":
-		if baseURL != "" {
-			s.agentBaseURL = baseURL
-		}
-		if apiKey != "" {
-			s.agentAPIKey = apiKey
-		}
-		if model != "" {
-			s.agentModel = model
 		}
 	case "aling":
 		if baseURL != "" {
@@ -718,12 +702,6 @@ func (s *AIService) GenerateTitle(ctx context.Context, messages []models.AIMessa
 	}
 
 	return strings.TrimSpace(title.String()), nil
-}
-
-func (s *AIService) GetAgentConfig() (apiKey, baseURL, model string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.agentAPIKey, s.agentBaseURL, s.agentModel
 }
 
 func (s *AIService) GetDailyConfig() (apiKey, baseURL, model string) {

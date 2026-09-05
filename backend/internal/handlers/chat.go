@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"alchat-backend/internal/agent"
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
 	"alchat-backend/internal/services"
@@ -29,11 +28,6 @@ type ChatHandler struct {
 	streamManager       *services.StreamManager
 	tempConvService     *services.TempConversationService
 	imageService        *services.ImageService
-	agentRunner         interface {
-		Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
-		RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
-		RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string, source string) (string, error)) (*agent.AgentResult, error)
-	}
 }
 
 func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
@@ -46,14 +40,6 @@ func NewChatHandler(aiService *services.AIService, conversationService *services
 		streamManager:       streamManager,
 		imageService:        imageService,
 	}
-}
-
-func (h *ChatHandler) SetAgentRunner(runner interface {
-	Run(ctx context.Context, messages []models.AIMessage, callback agent.StepCallback) (*agent.AgentResult, error)
-	RunWithStreaming(ctx context.Context, messages []models.AIMessage, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string)) (*agent.AgentResult, error)
-	RunDailyRouter(ctx context.Context, messages []models.AIMessage, cfg agent.DailyRouterConfig, stepCb agent.StepCallback, tokenCb func(string), reasoningCb func(string), searchCb func(query string, source string) (string, error)) (*agent.AgentResult, error)
-}) {
-	h.agentRunner = runner
 }
 
 func (h *ChatHandler) SetTempConversationService(service *services.TempConversationService) {
@@ -70,6 +56,13 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 
 	if req.ConversationID == "" || req.Message == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "conversation_id and message are required"})
+		return
+	}
+
+	switch req.Mode {
+	case "daily", "expert", "search":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported chat mode"})
 		return
 	}
 
@@ -186,11 +179,6 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 			if needSearch {
 				effectiveMode = "search_" + source
 			}
-		}
-
-		if effectiveMode == "agent" {
-			h.handleAgentMode(bgCtx, req, aiMessages, assistantMsg, userIDObj, userMsg)
-			return
 		}
 
 		// Get user settings for system prompt
@@ -313,404 +301,6 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	})
 }
 
-func (h *ChatHandler) handleAgentMode(ctx context.Context, req models.ChatRequest, aiMessages []models.AIMessage, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
-	if h.agentRunner == nil {
-		log.Printf("[Agent] Agent runner not configured")
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "error",
-			Content: "Agent not configured. Please set agent model in admin settings.",
-		})
-		return
-	}
-
-	log.Printf("[Agent] Starting agent mode for conversation %s", req.ConversationID)
-	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-		Type: "agent_start",
-	})
-
-	var allSteps []models.AgentStepData
-	var allPlan []models.AgentPlanItemData
-	var accumulatedReasoning string
-	var accumulatedAnswer string
-	startSent := false
-	textSent := false
-
-	agentResult, err := h.agentRunner.RunWithStreaming(ctx, aiMessages, agent.StepCallback(func(step agent.AgentStep) {
-
-		if step.Plan != nil && len(step.Plan.Items) > 0 {
-			allPlan = make([]models.AgentPlanItemData, len(step.Plan.Items))
-			for i, item := range step.Plan.Items {
-				allPlan[i] = models.AgentPlanItemData{
-					ID:          item.ID,
-					Description: item.Description,
-					ToolName:    item.ToolName,
-					Status:      string(item.Status),
-				}
-			}
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "agent_plan",
-				Data: step.Plan.Items,
-			})
-			return
-		}
-
-		if step.ToolName == "plan_progress" {
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "plan_item",
-				Data: map[string]interface{}{"index": step.PlanIndex, "status": "in_progress"},
-			})
-			return
-		}
-
-		if step.ToolName == "plan_item" {
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "plan_item",
-				Data: map[string]interface{}{"index": step.PlanIndex, "status": "completed"},
-			})
-			return
-		}
-
-		if step.ToolName != "" {
-			inputJSON, _ := json.Marshal(step.ToolInput)
-			stepData := models.AgentStepData{
-				Index:      step.Index,
-				ToolName:   step.ToolName,
-				ToolInput:  string(inputJSON),
-				ToolOutput: step.ToolOutput,
-				Err:        step.Err,
-				PlanIndex:  step.PlanIndex,
-			}
-			allSteps = append(allSteps, stepData)
-
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "agent_step",
-				Data: stepData,
-			})
-
-			if textSent {
-				accumulatedAnswer = ""
-				textSent = false
-			}
-		}
-	}), func(token string) {
-		if !startSent {
-			startSent = true
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "start",
-			})
-		}
-		textSent = true
-		accumulatedAnswer += token
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "token",
-			Content: token,
-		})
-	}, func(reasoningChunk string) {
-		if !startSent {
-			startSent = true
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "start",
-			})
-		}
-		accumulatedReasoning += reasoningChunk
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "reasoning",
-			Content: reasoningChunk,
-		})
-	})
-
-	if err != nil {
-		log.Printf("[Agent] Run failed: %v", err)
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "error",
-			Content: err.Error(),
-		})
-		return
-	}
-
-	if agentResult == nil {
-		agentResult = &agent.AgentResult{}
-	}
-
-	if accumulatedAnswer == "" {
-		accumulatedAnswer = agentResult.Answer
-	}
-	if accumulatedReasoning == "" {
-		accumulatedReasoning = agentResult.Reasoning
-	}
-
-	log.Printf("[Agent] Run completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
-
-	for i, item := range allPlan {
-		if item.Status != string(agent.PlanStatusCompleted) {
-			allPlan[i].Status = string(agent.PlanStatusCompleted)
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "plan_item",
-				Data: map[string]interface{}{"index": i, "status": "completed"},
-			})
-		}
-	}
-
-	assistantMsg.Content = accumulatedAnswer
-	assistantMsg.Reasoning = accumulatedReasoning
-	assistantMsg.AgentSteps = allSteps
-	assistantMsg.AgentPlan = allPlan
-	h.conversationService.UpdateMessage(ctx, assistantMsg)
-
-	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(agentResult.Answer))
-
-	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
-	if titleErr == nil && title != "" {
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "title",
-			Content: title,
-		})
-	}
-
-	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-		Type: "done",
-		Data: gin.H{
-			"user_message_id":      userMsg.ID.Hex(),
-			"assistant_message_id": assistantMsg.ID.Hex(),
-			"credits":              newCredits,
-		},
-	})
-
-	time.AfterFunc(10*time.Second, func() {
-		h.streamManager.CloseConversation(req.ConversationID)
-	})
-}
-
-func (h *ChatHandler) handleDailyAutoRoute(ctx context.Context, req models.ChatRequest, aiMessages []models.AIMessage, assistantMsg *models.Message, userIDObj primitive.ObjectID, userMsg *models.Message) {
-	log.Printf("[Router] Starting daily auto-route for conversation %s", req.ConversationID)
-
-	dailyAPIKey, dailyBaseURL, dailyModel := h.aiService.GetDailyConfig()
-	agentAPIKey, agentBaseURL, agentModel := h.aiService.GetAgentConfig()
-
-	cfg := agent.DailyRouterConfig{
-		DailyAPIKey:  dailyAPIKey,
-		DailyBaseURL: dailyBaseURL,
-		DailyModel:   dailyModel,
-		AgentAPIKey:  agentAPIKey,
-		AgentBaseURL: agentBaseURL,
-		AgentModel:   agentModel,
-		ImageSvc:     h.imageService,
-		ImageGenStartCb: func(resolution string) {
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type:    "image_gen_start",
-				Content: resolution,
-			})
-		},
-	}
-
-	var allSteps []models.AgentStepData
-	var accumulatedReasoning string
-	var accumulatedAnswer string
-	startSent := false
-	agentStartSent := false
-	textSent := false
-	var lastSearchData *models.SearchData
-
-	// Get user settings for system prompt
-	var user models.User
-	h.mysqlDB.DB.WithContext(ctx).Where("id = ?", userIDObj.Hex()).First(&user)
-
-	// Construct system prompt and inject it to the beginning of the context
-	var systemPromptBuilder strings.Builder
-	if user.SystemPrompt != "" {
-		systemPromptBuilder.WriteString(user.SystemPrompt)
-	}
-	if user.IncludeDateTime {
-		currentTime := time.Now().Format("2006-01-02 15:04:05")
-		if systemPromptBuilder.Len() > 0 {
-			systemPromptBuilder.WriteString("\n\n")
-		}
-		fmt.Fprintf(&systemPromptBuilder, "当前时间: %s", currentTime)
-	}
-	if user.IncludeLocation && req.Location != "" {
-		locationStr := req.Location
-		if IsCoordinateFormat(locationStr) {
-			locationStr = ReverseGeocodeFromCoords(locationStr)
-		}
-		if systemPromptBuilder.Len() > 0 {
-			systemPromptBuilder.WriteString("\n\n")
-		}
-		fmt.Fprintf(&systemPromptBuilder, "当前位置: %s", locationStr)
-	}
-
-	if systemPromptBuilder.Len() > 0 {
-		aiMessages = append([]models.AIMessage{
-			{
-				Role:    "system",
-				Content: systemPromptBuilder.String(),
-			},
-		}, aiMessages...)
-	}
-
-	tCb := func(token string) {
-		if !startSent {
-			startSent = true
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "start",
-			})
-		}
-		textSent = true
-		accumulatedAnswer += token
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "token",
-			Content: token,
-		})
-	}
-
-	rCb := func(reasoningChunk string) {
-		if !startSent {
-			startSent = true
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "start",
-			})
-		}
-		accumulatedReasoning += reasoningChunk
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "reasoning",
-			Content: reasoningChunk,
-		})
-	}
-
-	stepCb := func(step agent.AgentStep) {
-		if !agentStartSent {
-			agentStartSent = true
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "agent_start",
-			})
-		}
-
-		if step.ToolName != "" {
-			inputJSON, _ := json.Marshal(step.ToolInput)
-			stepData := models.AgentStepData{
-				Index:      step.Index,
-				ToolName:   step.ToolName,
-				ToolInput:  string(inputJSON),
-				ToolOutput: step.ToolOutput,
-				Err:        step.Err,
-				PlanIndex:  step.PlanIndex,
-			}
-			allSteps = append(allSteps, stepData)
-
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "agent_step",
-				Data: stepData,
-			})
-
-			if textSent {
-				accumulatedAnswer = ""
-				textSent = false
-			}
-		}
-	}
-
-	searchCb := func(query string, source string) (string, error) {
-		results, augmentedQuery, err := h.aiService.PerformSearch(ctx, aiMessages, source, func(searchData models.SearchData) error {
-			lastSearchData = &searchData
-			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-				Type: "search",
-				Data: searchData,
-			})
-			return nil
-		})
-		if err != nil {
-			return "", err
-		}
-
-		// Format search results into <search> tag for the stream
-		var searchTag strings.Builder
-		searchTag.WriteString("\n<search>\n")
-		searchData := map[string]any{
-			"query":   augmentedQuery,
-			"results": results,
-			"source":  source,
-		}
-		searchJSON, _ := json.Marshal(searchData)
-		searchTag.Write(searchJSON)
-		searchTag.WriteString("\n</search>\n")
-
-		// Send search tag as token to client
-		tCb(searchTag.String())
-
-		// Format search results into the searchContext format
-		var searchContextBuilder strings.Builder
-		searchContextBuilder.WriteString("以下是联网搜索到的相关信息：\n")
-		if len(results) > 0 {
-			for i, r := range results {
-				fmt.Fprintf(&searchContextBuilder, "[%d] 标题: %s\n    链接: %s\n    内容: %s\n\n", i+1, r.Title, r.URL, r.Snippet)
-			}
-		} else {
-			searchContextBuilder.WriteString("未找到相关搜索结果。\n")
-		}
-		return searchContextBuilder.String(), nil
-	}
-
-	agentResult, err := h.agentRunner.RunDailyRouter(
-		ctx,
-		aiMessages,
-		cfg,
-		stepCb,
-		tCb,
-		rCb,
-		searchCb,
-	)
-
-	if err != nil {
-		log.Printf("[Router] RunDailyRouter failed: %v", err)
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "error",
-			Content: err.Error(),
-		})
-		return
-	}
-
-	if agentResult == nil {
-		agentResult = &agent.AgentResult{}
-	}
-
-	if accumulatedAnswer == "" {
-		accumulatedAnswer = agentResult.Answer
-	}
-	if accumulatedReasoning == "" {
-		accumulatedReasoning = agentResult.Reasoning
-	}
-
-	log.Printf("[Router] Daily routing completed, answer length: %d, reasoning length: %d", len(accumulatedAnswer), len(accumulatedReasoning))
-
-	assistantMsg.Content = cleanTransitionalText(accumulatedAnswer)
-	assistantMsg.Reasoning = accumulatedReasoning
-	assistantMsg.AgentSteps = allSteps
-	assistantMsg.Search = lastSearchData
-	h.conversationService.UpdateMessage(ctx, assistantMsg)
-
-	newCredits, _ := h.memberService.DeductCredits(ctx, userIDObj, utils.CountTokens(userMsg.Content), utils.CountTokens(assistantMsg.Content))
-
-	title, titleErr := h.conversationService.AutoGenerateTitle(ctx, req.ConversationID, userIDObj.Hex(), h.aiService)
-	if titleErr == nil && title != "" {
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-			Type:    "title",
-			Content: title,
-		})
-	}
-
-	h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{
-		Type: "done",
-		Data: gin.H{
-			"user_message_id":      userMsg.ID.Hex(),
-			"assistant_message_id": assistantMsg.ID.Hex(),
-			"credits":              newCredits,
-		},
-	})
-
-	time.AfterFunc(10*time.Second, func() {
-		h.streamManager.CloseConversation(req.ConversationID)
-	})
-}
-
 func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userIDObj primitive.ObjectID) {
 	// 1. Ensure temp conversation exists in Redis (metadata)
 	_, err := h.tempConvService.GetConversation(c.Request.Context(), req.ConversationID)
@@ -817,23 +407,6 @@ func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, use
 			if needSearch {
 				effectiveMode = "search_" + source
 			}
-		}
-
-		// Agent mode not supported for temp chat in this version to keep it simple,
-		// but we could easily add it if needed.
-		if !hasMultimodal && effectiveMode == "agent" {
-			// Converting models.Message for agent mode
-			modelAssistantMsg := assistantMsg.ToModel()
-			modelUserMsg := userMsg.ToModel()
-			h.handleAgentMode(bgCtx, req, aiMessages, &modelAssistantMsg, userIDObj, &modelUserMsg)
-
-			// Update back to TempMessage in Redis
-			assistantMsg.Content = modelAssistantMsg.Content
-			assistantMsg.Reasoning = modelAssistantMsg.Reasoning
-			assistantMsg.AgentSteps = modelAssistantMsg.AgentSteps
-			assistantMsg.AgentPlan = modelAssistantMsg.AgentPlan
-			h.tempConvService.UpdateMessage(bgCtx, assistantMsg)
-			return
 		}
 
 		var systemPromptBuilder strings.Builder

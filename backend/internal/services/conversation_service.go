@@ -232,12 +232,6 @@ func (s *ConversationService) UpdateMessage(ctx context.Context, message *models
 		"reasoning": message.Reasoning,
 		"search":    message.Search,
 	}
-	if message.AgentSteps != nil {
-		updateFields["agent_steps"] = message.AgentSteps
-	}
-	if message.AgentPlan != nil {
-		updateFields["agent_plan"] = message.AgentPlan
-	}
 	_, err := s.db.Messages().UpdateOne(
 		ctx,
 		bson.M{"_id": message.ID},
@@ -362,4 +356,3 @@ func (s *ConversationService) AutoGenerateTitle(ctx context.Context, conversatio
 	err = s.UpdateConversationTitle(ctx, conversationID, title, userID)
 	return title, err
 }
-

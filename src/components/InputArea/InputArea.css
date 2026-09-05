@@ -487,29 +487,6 @@
   transition: color 160ms ease, fill 160ms ease, opacity 160ms ease;
 }
 
-.agent-toggle-btn {
-  font-size: 13px;
-  font-weight: 500;
-  padding: 0 12px;
-  background-color: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, text-shadow 160ms ease;
-}
-
-.agent-toggle-btn.active {
-  border-color: transparent;
-  color: #8b5cf6 !important;
-  font-weight: 600;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.25);
-}
-
 .tool-btn:hover {
   color: var(--text-color);
   background-color: transparent;

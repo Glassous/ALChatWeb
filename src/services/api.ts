@@ -7,22 +7,6 @@ export interface Conversation {
   updated_at: string;
 }
 
-export interface AgentStepData {
-  index: number;
-  tool_name: string;
-  tool_input: string;
-  tool_output: string;
-  err?: string;
-  plan_index?: number;
-}
-
-export interface AgentPlanItemData {
-  id: number;
-  description: string;
-  tool_name: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'error';
-}
-
 export interface Message {
   id: string;
   conversation_id: string;
@@ -43,8 +27,6 @@ export interface Message {
       date_published?: string;
     }>;
   };
-  agent_steps?: AgentStepData[];
-  agent_plan?: AgentPlanItemData[];
   created_at: string;
   clientId?: string;
 }
@@ -54,7 +36,7 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'agent_start' | 'agent_plan' | 'plan_item' | 'agent_step' | 'agent_done' | 'image_gen_start';
+  type: 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start';
   content?: string;
   data?: unknown;
 }
@@ -592,7 +574,7 @@ class APIClient {
   async sendMessage(
     conversationId: string,
     message: string,
-    mode: 'daily' | 'expert' | 'search' | 'agent',
+    mode: 'daily' | 'expert' | 'search',
     onToken: (token: string) => void,
     onReasoning: (reasoning: string) => void,
     onSearch: (data: StreamSearchData) => void,
@@ -601,9 +583,6 @@ class APIClient {
     onError: (error: string) => void,
     location?: string,
     parentMessageId?: string | null,
-    onAgentPlan?: (items: AgentPlanItemData[]) => void,
-    onPlanItem?: (item: number | { index: number; status?: AgentPlanItemData['status'] }) => void,
-    onAgentStep?: (step: AgentStepData) => void,
     onImageGenStart?: (resolution: string) => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
@@ -681,12 +660,6 @@ class APIClient {
                 onTitle(parsed.content);
               } else if (parsed.type === 'error') {
                 onError(parsed.content || 'Unknown error');
-              } else if (parsed.type === 'agent_plan' && parsed.data) {
-                onAgentPlan?.(parsed.data as AgentPlanItemData[]);
-              } else if (parsed.type === 'plan_item' && parsed.data !== undefined) {
-                onPlanItem?.(parsed.data as number | { index: number; status?: AgentPlanItemData['status'] });
-              } else if (parsed.type === 'agent_step' && parsed.data) {
-                onAgentStep?.(parsed.data as AgentStepData);
               }
             } catch (e) {
               console.error('Failed to parse SSE data:', e, 'Data:', data);

@@ -31,13 +31,8 @@ type CampaignConfig struct {
 	CampaignCredits map[string]float64 `bson:"campaign_credits" json:"campaign_credits"` // member_type -> credits
 }
 
-type AgentToolConfig struct {
-	Tools map[string]bool `bson:"tools" json:"tools"` // tool_name -> enabled
-}
-
 type SystemSettings struct {
-	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	CampaignConfig  CampaignConfig     `bson:"campaign_config" json:"campaign_config"`
-	AgentToolConfig AgentToolConfig    `bson:"agent_tool_config" json:"agent_tool_config"`
-	UpdatedAt       time.Time          `bson:"updated_at" json:"updated_at"`
+	ID             primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	CampaignConfig CampaignConfig     `bson:"campaign_config" json:"campaign_config"`
+	UpdatedAt      time.Time          `bson:"updated_at" json:"updated_at"`
 }

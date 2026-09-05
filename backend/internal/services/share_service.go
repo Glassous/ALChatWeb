@@ -339,8 +339,6 @@ func (s *ShareService) SaveSharedConversation(ctx context.Context, userID primit
 			Content:        m.Content,
 			Search:         m.Search,
 			Reasoning:      m.Reasoning,
-			AgentSteps:     m.AgentSteps,
-			AgentPlan:      m.AgentPlan,
 			CreatedAt:      m.CreatedAt,
 		}
 		if m.ParentID != nil {

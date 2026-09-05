@@ -22,16 +22,14 @@ func NewTempConversationService(redis *database.Redis) *TempConversationService 
 
 // TempMessage internal struct for Redis storage with string IDs
 type TempMessage struct {
-	ID             string                     `json:"id"`
-	ConversationID string                     `json:"conversation_id"`
-	ParentID       string                     `json:"parent_id,omitempty"`
-	Role           string                     `json:"role"`
-	Content        string                     `json:"content"`
-	Reasoning      string                     `json:"reasoning,omitempty"`
-	Search         *models.SearchData         `json:"search,omitempty"`
-	AgentSteps     []models.AgentStepData     `json:"agent_steps,omitempty"`
-	AgentPlan      []models.AgentPlanItemData `json:"agent_plan,omitempty"`
-	CreatedAt      time.Time                  `json:"created_at"`
+	ID             string             `json:"id"`
+	ConversationID string             `json:"conversation_id"`
+	ParentID       string             `json:"parent_id,omitempty"`
+	Role           string             `json:"role"`
+	Content        string             `json:"content"`
+	Reasoning      string             `json:"reasoning,omitempty"`
+	Search         *models.SearchData `json:"search,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
 }
 
 type TempConversation struct {
@@ -216,8 +214,6 @@ func (tm *TempMessage) ToModel() models.Message {
 		Content:        tm.Content,
 		Reasoning:      tm.Reasoning,
 		Search:         tm.Search,
-		AgentSteps:     tm.AgentSteps,
-		AgentPlan:      tm.AgentPlan,
 		CreatedAt:      tm.CreatedAt,
 	}
 }
@@ -264,11 +260,9 @@ func (s *TempConversationService) PromoteConversation(ctx context.Context, convI
 		}
 
 		// Update additional fields like reasoning, search, etc.
-		if tm.Reasoning != "" || tm.Search != nil || tm.AgentSteps != nil || tm.AgentPlan != nil {
+		if tm.Reasoning != "" || tm.Search != nil {
 			newMsg.Reasoning = tm.Reasoning
 			newMsg.Search = tm.Search
-			newMsg.AgentSteps = tm.AgentSteps
-			newMsg.AgentPlan = tm.AgentPlan
 			convService.UpdateMessage(ctx, newMsg)
 		}
 
