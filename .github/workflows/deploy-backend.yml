@@ -1,0 +1,53 @@
+name: Deploy Backend to 1Panel Server
+
+on:
+  push:
+    branches: [ "main" ]
+    # 仅后端相关文件变更时触发（含 docker-compose 编排文件）
+    paths:
+      - 'backend/**'
+      - 'docker-compose.yml'
+  # 支持手动触发后端部署
+  workflow_dispatch:
+
+# 与前端部署共用同一并发组：同一分支上串行执行，
+# 避免前端/后端两个部署同时 SSH 操作服务器上的同一仓库目录
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 构建并重启后端服务
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # ================= 配置区 =================
+            TARGET_DIR="/opt/alchat/alchatweb"
+            REPO_URL="https://github.com/Glassous/ALChatWeb.git"
+            # ==========================================
+
+            # 1. 智能拉取代码
+            if [ ! -d "$TARGET_DIR/.git" ]; then
+              echo "📦 首次部署：正在拉取全新仓库..."
+              mkdir -p /opt/alchat
+              cd /opt/alchat
+              git clone $REPO_URL alchatweb
+              cd alchatweb
+            else
+              echo "🔄 后续部署：正在同步最新代码..."
+              cd $TARGET_DIR
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
+            # 2. 重新构建并重启后端 Docker 容器
+            echo "🐳 正在构建并重启后端服务..."
+            sudo docker-compose up -d --build backend
+
+            echo "✅ 后端部署完成！"

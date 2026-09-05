@@ -1,0 +1,67 @@
+name: Deploy Frontend to 1Panel Server
+
+on:
+  push:
+    branches: [ "main" ]
+    # 仅前端相关文件变更时触发
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'eslint.config.js'
+  # 支持手动触发前端部署
+  workflow_dispatch:
+
+# 与后端部署共用同一并发组：同一分支上串行执行，
+# 避免前端/后端两个部署同时 SSH 操作服务器上的同一仓库目录
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚀 打包并发布前端
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            # ================= 配置区 =================
+            TARGET_DIR="/opt/alchat/alchatweb"
+            REPO_URL="https://github.com/Glassous/ALChatWeb.git"
+            SITE_DIR="/opt/1panel/www/sites/alchatweb/index/"
+            # ==========================================
+
+            # 1. 智能拉取代码
+            if [ ! -d "$TARGET_DIR/.git" ]; then
+              echo "📦 首次部署：正在拉取全新仓库..."
+              mkdir -p /opt/alchat
+              cd /opt/alchat
+              git clone $REPO_URL alchatweb
+              cd alchatweb
+            else
+              echo "🔄 后续部署：正在同步最新代码..."
+              cd $TARGET_DIR
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
+            # 2. 安装依赖并构建静态文件
+            echo "⚛️ 正在打包前端静态文件..."
+            cd $TARGET_DIR
+            npm install
+            npm run build
+
+            # 3. 发布到 1Panel 网站目录
+            echo "📂 正在覆盖前端页面..."
+            sudo mkdir -p $SITE_DIR
+            sudo cp -r dist/* $SITE_DIR
+
+            echo "✅ 前端部署完成！"

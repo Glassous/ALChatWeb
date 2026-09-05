@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -85,9 +86,18 @@ func (h *CustomModelHandler) Update(c *gin.Context) {
 		}
 	}
 	credentialsChanged := old.BaseURL != req.BaseURL || old.Model != req.Model || req.APIKey != "" || req.ClearAPIKey
-	cfg := models.CustomModelConfig{UserID: c.GetString("user_id"), Enabled: req.Enabled, BaseURL: strings.TrimRight(req.BaseURL, "/"), APIKeyCiphertext: keyCipher, Model: req.Model,
-		DailyEnabled: req.DailyEnabled, ExpertEnabled: req.ExpertEnabled, SearchEnabled: req.SearchEnabled,
-		ResponseMode: old.ResponseMode, LastTestedAt: old.LastTestedAt}
+	// Preserve GORM-managed timestamps from the existing row. Reconstructing the
+	// model here would write a zero created_at during Save, which MySQL strict
+	// mode rejects after the connectivity test has inserted the row.
+	cfg := *old
+	cfg.UserID = c.GetString("user_id")
+	cfg.Enabled = req.Enabled
+	cfg.BaseURL = strings.TrimRight(req.BaseURL, "/")
+	cfg.APIKeyCiphertext = keyCipher
+	cfg.Model = req.Model
+	cfg.DailyEnabled = req.DailyEnabled
+	cfg.ExpertEnabled = req.ExpertEnabled
+	cfg.SearchEnabled = req.SearchEnabled
 	if credentialsChanged {
 		cfg.ResponseMode = ""
 		cfg.LastTestedAt = nil
@@ -97,6 +107,7 @@ func (h *CustomModelHandler) Update(c *gin.Context) {
 		return
 	}
 	if err := h.service.Save(c.Request.Context(), &cfg); err != nil {
+		log.Printf("[CustomModel] failed to save settings for user %s: %v", c.GetString("user_id"), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save custom model settings"})
 		return
 	}
@@ -143,6 +154,7 @@ func (h *CustomModelHandler) Test(c *gin.Context) {
 	now := time.Now()
 	old.BaseURL, old.Model, old.APIKeyCiphertext, old.ResponseMode, old.LastTestedAt = req.BaseURL, req.Model, keyCipher, mode, &now
 	if err := h.service.Save(c.Request.Context(), old); err != nil {
+		log.Printf("[CustomModel] failed to save test result for user %s: %v", c.GetString("user_id"), err)
 		c.JSON(500, gin.H{"error": "Failed to save test result"})
 		return
 	}
