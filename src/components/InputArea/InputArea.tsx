@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import './InputArea.css';
 import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
@@ -43,9 +43,6 @@ export function InputArea({
   onModeChange,
   onImageModeChange
 }: InputAreaProps) {
-  const reduceMotion = useReducedMotion();
-  const toolTransition = reduceMotion ? { duration: 0 } : { duration: 0.24, ease: [0.16, 1, 0.3, 1] as const };
-  const toolMotion = { initial: { opacity: 0, width: 0 }, animate: { opacity: 1, width: 'auto' }, exit: { opacity: 0, width: 0 }, transition: toolTransition };
   const showToast = useToast();
   const [text, setText] = useState('');
   const [isImageMode, setIsImageMode] = useState(false);
@@ -758,9 +755,8 @@ export function InputArea({
           </div>
           <div className="input-bottom-row">
             <div className="tools-left">
-              <AnimatePresence initial={false}>
                 {!isHermes && !isTemp && !isImageMode && (
-                  <motion.div key="mode" className="tool-slot" {...toolMotion}>
+                  <div className="tool-slot">
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
                       onClick={() => handleModeSelect('expert')}
@@ -769,10 +765,10 @@ export function InputArea({
                     >
                       {mode === 'daily' ? '日常' : '专家'}
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {!isHermes && !isTemp && mode !== 'expert' && (
-                  <motion.div key="image" className="tool-slot" {...toolMotion}>
+                  <div className="tool-slot">
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
                       onClick={() => handleModeSelect('image')}
@@ -783,10 +779,10 @@ export function InputArea({
                         <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
                       </svg>
                     </button>
-                  </motion.div>
+                  </div>
                 )}
                 {isImageMode && (
-                  <motion.div key="image-tools" className="tool-slot image-tools-slot" {...toolMotion}>
+                  <div className="tool-slot image-tools-slot">
                     <div className="resolution-selector" ref={popupRef}>
                       <button 
                         className="resolution-btn"
@@ -866,17 +862,16 @@ export function InputArea({
                       accept="image/*"
                       style={{ display: 'none' }}
                     />
-                  </motion.div>
+                  </div>
                 )}
                 {!isTemp && hermesAvailable && !isImageMode && mode !== 'expert' && (
-                  <motion.div key="hermes" className="tool-slot" {...toolMotion}>
+                  <div className="tool-slot">
                     <button className={`tool-btn hermes-mode-btn ${isHermes ? 'active' : ''}`} title="Hermes 模式" disabled={disabled || isUploading}
                       onClick={() => { setIsHermes(v => !v); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
                       <img className="hermes-icon" src="/HermesAgent.png" alt="" /><span>Hermes</span>
                     </button>
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
             </div>
             <div className="tools-right">
               {!isHermes && <>

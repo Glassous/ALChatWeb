@@ -112,8 +112,6 @@ body {
     var(--bg-color) 0%,
     color-mix(in srgb, var(--bg-color) 20%, transparent) 100%
   );
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
 
 :root { --app-topbar-height: 64px; }

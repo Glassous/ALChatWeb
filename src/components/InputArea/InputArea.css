@@ -657,5 +657,5 @@
   }
 }
 .hermes-mode-btn { width: auto !important; gap: 6px; padding: 0 11px !important; font-weight: 650; }
-.hermes-mode-btn.active { color: var(--md-sys-color-primary); background: transparent; outline: 1px solid color-mix(in srgb,var(--md-sys-color-primary) 45%,transparent); }
+.hermes-mode-btn.active { color: var(--md-sys-color-primary); background: transparent; border: 1px solid color-mix(in srgb,var(--md-sys-color-primary) 45%,transparent); }
 .hermes-icon { width:22px; height:22px; object-fit:contain; border-radius:6px; }
