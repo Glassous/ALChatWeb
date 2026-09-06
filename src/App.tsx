@@ -15,6 +15,9 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ResetPassword } from './pages/ResetPassword';
 import { UserSettings } from './pages/UserSettings';
+import { Membership } from './pages/Membership';
+import { ModelSettings } from './pages/ModelSettings';
+import { SystemPromptSettings } from './pages/SystemPromptSettings';
 import { SharedPage } from './pages/SharedPage/SharedPage';
 import { ShareDialog } from './components/ShareDialog/ShareDialog';
 import { ALingHome } from './pages/aling/ALingHome';
@@ -1016,7 +1019,7 @@ function ChatApp({
           onOverviewClick={() => setIsTreeViewOpen(!isTreeViewOpen)}
           isTreeViewOpen={isTreeViewOpen}
           userMemberType={userMemberType}
-          onShowUpgrade={() => navigate('/settings')}
+          onShowUpgrade={() => navigate('/membership')}
           hasMessages={hasMessages}
           hasConversation={!!currentConversationId}
           isImageMode={webIsImageMode}
@@ -1120,7 +1123,7 @@ function ChatApp({
             userMessages={activePath.filter(m => m.role === 'user').map(m => m.content)}
             userCredits={userCredits}
             userMemberType={userMemberType}
-            onShowUpgrade={() => navigate('/settings')}
+            onShowUpgrade={() => navigate('/membership')}
             style={(workspaceOpen && !isMobile) ? { right: `${workspaceWidth}px` } : undefined}
             isTemp={isTempChat}
             onModeChange={setWebMode}
@@ -1183,6 +1186,9 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route path="/membership" element={<ProtectedRoute><Membership /></ProtectedRoute>} />
+        <Route path="/settings/models" element={<ProtectedRoute><ModelSettings /></ProtectedRoute>} />
+        <Route path="/settings/system-prompt" element={<ProtectedRoute><SystemPromptSettings /></ProtectedRoute>} />
         <Route 
           path="/aling" 
           element={

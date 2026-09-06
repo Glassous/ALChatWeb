@@ -22,6 +22,7 @@ interface TopBarProps {
   hasConversation?: boolean;
   isImageMode?: boolean;
   mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  showBrand?: boolean;
 }
 
 export function TopBar({ 
@@ -44,7 +45,8 @@ export function TopBar({
   hasMessages = false,
   hasConversation = false,
   isImageMode = false,
-  mode = 'daily'
+  mode = 'daily',
+  showBrand = true
 }: TopBarProps) {
   const showTempChatBtn = !(hasMessages && hasConversation) && !isImageMode && mode !== 'expert';
 
@@ -65,7 +67,7 @@ export function TopBar({
           </md-icon-button>
         )}
         <div className="topbar-logo-container">
-          <h1 className="topbar-title">AL Chat</h1>
+          {showBrand && <h1 className="topbar-title">AL Chat</h1>}
           {isTempChat && <span className="temp-badge-logo">临时对话</span>}
           {conversationTitle && conversationTitle.trim() && (
             <div className="mobile-title-container">

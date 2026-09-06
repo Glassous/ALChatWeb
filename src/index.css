@@ -102,17 +102,24 @@ body {
 }
 
 .app-topbar-surface {
-  position: relative;
+  position: absolute;
+  inset: 0 0 auto 0;
+  width: 100%;
   z-index: var(--z-sticky);
   border: 0;
   background: linear-gradient(
     to bottom,
     var(--bg-color) 0%,
-    color-mix(in srgb, var(--bg-color) 72%, transparent) 62%,
     color-mix(in srgb, var(--bg-color) 20%, transparent) 100%
   );
   backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+
+:root { --app-topbar-height: 64px; }
+
+@media (max-width: 768px) {
+  :root { --app-topbar-height: 56px; }
 }
 
 * {

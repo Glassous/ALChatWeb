@@ -1,546 +1,107 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TopBar } from '../components/TopBar/TopBar';
 import Cropper from 'react-easy-crop';
-import type { Point, Area } from 'react-easy-crop';
-import { motion } from 'framer-motion';
+import type { Area, Point } from 'react-easy-crop';
+import { TopBar } from '../components/TopBar/TopBar';
+import { ModalCard, modalButtonStyles, useToast } from '../components/LayerSystem/LayerSystem';
 import { apiClient } from '../services/api';
-import type { CustomModelSettings, HermesSettings } from '../services/api';
-import { getCurrentPosition, formatCoordsAsString } from '../utils/location';
 import getCroppedImg from '../utils/cropImage';
 import '@material/web/iconbutton/icon-button.js';
-import '@material/web/list/list.js';
-import '@material/web/list/list-item.js';
 import '@material/web/textfield/outlined-text-field.js';
-import '@material/web/button/filled-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/progress/circular-progress.js';
 import './UserSettings.css';
-import { ModalCard, modalButtonStyles, useToast } from '../components/LayerSystem/LayerSystem';
 
 export function UserSettings() {
   const navigate = useNavigate();
   const showToast = useToast();
-  const [userNickname, setUserNickname] = useState('');
+  const [nickname, setNickname] = useState('');
   const [originalNickname, setOriginalNickname] = useState('');
-  const [userAvatar, setUserAvatar] = useState('');
-  const [userMemberType, setUserMemberType] = useState('free');
-  const [userMemberExpiry, setUserMemberExpiry] = useState<string | null>(null);
-  const [userCredits, setUserCredits] = useState<number | null>(null);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [isCropping, setIsCropping] = useState(false);
+  const [avatar, setAvatar] = useState('');
+  const [memberType, setMemberType] = useState('free');
+  const [isUploading, setIsUploading] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [includeDateTime, setIncludeDateTime] = useState(false);
-  const [includeLocation, setIncludeLocation] = useState(false);
-  const [locationPreview, setLocationPreview] = useState<string | null>(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-  const [isSavingSystemPrompt, setIsSavingSystemPrompt] = useState(false);
-  const [isLoadingSystemPrompt, setIsLoadingSystemPrompt] = useState(true);
-  const [invitationCode, setInvitationCode] = useState('');
-  const [isUpgrading, setIsUpgrading] = useState(false);
-  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
-	const [customModel, setCustomModel] = useState<CustomModelSettings>({ enabled: false, base_url: '', model: '', daily_enabled: false, expert_enabled: false, search_enabled: false, has_api_key: false });
-	const [customApiKey, setCustomApiKey] = useState('');
-	const [isTestingCustom, setIsTestingCustom] = useState(false);
-	const [isSavingCustom, setIsSavingCustom] = useState(false);
-	const [hermes, setHermes] = useState<HermesSettings>({ base_url: '', model: '', has_api_key: false, tested: false, context_version: 0 });
-	const [hermesKey, setHermesKey] = useState('');
-	const [hermesBusy, setHermesBusy] = useState(false);
-  const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
-
+  const [croppedPixels, setCroppedPixels] = useState<Area | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!includeLocation) return;
-    let cancelled = false;
-    const fetchPreview = async () => {
-      setIsLoadingLocation(true);
-      const pos = await getCurrentPosition();
-      if (cancelled) return;
-      if (!pos) {
-        setLocationPreview('无法获取位置');
-        setIsLoadingLocation(false);
-        return;
-      }
-      const addr = await apiClient.resolveLocation(pos.lat, pos.lng);
-      if (cancelled) return;
-      setLocationPreview(addr || formatCoordsAsString(pos.lat, pos.lng));
-      setIsLoadingLocation(false);
-    };
-    fetchPreview();
-    return () => { cancelled = true; };
-  }, [includeLocation]);
-
-  async function loadUserProfile() {
+  const loadProfile = useCallback(async () => {
     try {
       const user = await apiClient.getProfile();
-      setUserNickname(user.nickname || user.email || '');
-      setOriginalNickname(user.nickname || user.email || '');
-      setUserAvatar(user.avatar || '');
-      setUserMemberType(user.member_type || 'free');
-      setUserMemberExpiry(user.member_expiry || null);
-      setUserCredits(user.credits ?? 1000);
+      const name = user.nickname || user.email || '';
+      setNickname(name); setOriginalNickname(name); setAvatar(user.avatar || '');
+      setMemberType(user.member_type || 'free');
       localStorage.setItem('user', JSON.stringify(user));
-    } catch (error) {
-      console.error('Failed to load user profile:', error);
-    }
-  }
-
-  async function loadSystemPrompt() {
-    setIsLoadingSystemPrompt(true);
-    try {
-      const data = await apiClient.getSystemPrompt();
-      setSystemPrompt(data.system_prompt || '');
-      setIncludeDateTime(data.include_datetime || false);
-      setIncludeLocation(data.include_location || false);
-    } catch (error) {
-      console.error('Failed to load system prompt:', error);
-    } finally {
-      setIsLoadingSystemPrompt(false);
-    }
-  }
-
-	async function loadCustomModel() {
-		try { setCustomModel(await apiClient.getCustomModel()); }
-		catch (error) { console.error('Failed to load custom model settings:', error); }
-	}
-	async function loadHermes() { try { setHermes(await apiClient.getHermes()); } catch (error) { console.error('Failed to load Hermes settings:', error); } }
-
-  useEffect(() => {
-    // Profile requests populate local settings state after their network responses.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadUserProfile();
-    loadSystemPrompt();
-		loadCustomModel(); loadHermes();
-    const handleProfileUpdate = () => loadUserProfile();
-    window.addEventListener('user-profile-updated', handleProfileUpdate);
-    return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
+    } catch (error) { console.error('Failed to load user profile:', error); }
   }, []);
 
-  const handleAvatarClick = () => fileInputRef.current?.click();
+  // Profile data initializes this page after the request resolves.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void loadProfile(); }, [loadProfile]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      setImageToCrop(reader.result as string);
-      setIsCropping(true);
-    });
+    reader.addEventListener('load', () => setImageToCrop(reader.result as string));
     reader.readAsDataURL(file);
   };
 
-  const onCropComplete = useCallback((_: Area, _croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(_croppedAreaPixels);
-  }, []);
-
-  const handleConfirmCrop = async () => {
-    if (!imageToCrop || !croppedAreaPixels) return;
-    setIsUploadingAvatar(true);
-    setIsCropping(false);
+  const saveAvatar = async () => {
+    if (!imageToCrop || !croppedPixels) return;
+    setIsUploading(true);
     try {
-      const croppedBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
-      if (!croppedBlob) throw new Error('Failed to crop image');
-      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
-      const response = await apiClient.updateAvatar(croppedFile);
-      setUserAvatar(response.avatar);
-      window.dispatchEvent(new Event('user-profile-updated'));
+      const blob = await getCroppedImg(imageToCrop, croppedPixels);
+      if (!blob) throw new Error('Failed to crop image');
+      const response = await apiClient.updateAvatar(new File([blob], 'avatar.jpg', { type: 'image/jpeg' }));
+      setAvatar(response.avatar); window.dispatchEvent(new Event('user-profile-updated'));
     } catch (error) {
-      console.error('Failed to upload avatar', error);
+      console.error('Failed to upload avatar:', error);
       showToast({ tone: 'error', message: '上传头像失败，请稍后重试' });
-    } finally {
-      setIsUploadingAvatar(false);
-      setImageToCrop(null);
-    }
+    } finally { setIsUploading(false); setImageToCrop(null); }
   };
 
-  const handleUpdateNickname = async () => {
-    if (!userNickname.trim() || userNickname === originalNickname) return;
+  const saveNickname = async () => {
+    if (!nickname.trim() || nickname === originalNickname) return;
     try {
-      await apiClient.updateProfile({ nickname: userNickname });
-      setOriginalNickname(userNickname);
+      await apiClient.updateProfile({ nickname }); setOriginalNickname(nickname);
       window.dispatchEvent(new Event('user-profile-updated'));
+      showToast({ tone: 'success', message: '昵称已更新' });
     } catch (error) {
-      console.error('Failed to update nickname', error);
+      console.error('Failed to update nickname:', error);
       showToast({ tone: 'error', message: '修改昵称失败，请稍后重试' });
     }
   };
 
-  const handleSaveSystemPrompt = async () => {
-    setIsSavingSystemPrompt(true);
-    try {
-      await apiClient.updateSystemPrompt({
-        system_prompt: systemPrompt,
-        include_datetime: includeDateTime,
-        include_location: includeLocation
-      });
-      showToast({ tone: 'success', message: '系统提示词已保存' });
-    } catch (error) {
-      console.error('Failed to save system prompt', error);
-      showToast({ tone: 'error', message: '保存失败，请重试' });
-    } finally {
-      setIsSavingSystemPrompt(false);
-    }
+  const logout = async () => {
+    try { await apiClient.logout(); } catch (error) { console.error('Logout error:', error); }
+    localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = '/welcome';
   };
 
-  const handleUpgrade = async () => {
-    if (!invitationCode.trim()) return;
-    setIsUpgrading(true);
-    try {
-      await apiClient.upgrade(invitationCode.trim());
-      setInvitationCode('');
-      const user = await apiClient.getProfile();
-      setUpgradeInfo({ type: user.member_type || 'free', expiry: user.member_expiry || null });
-      setShowUpgradeSuccess(true);
-      window.dispatchEvent(new Event('user-profile-updated'));
-    } catch (error: unknown) {
-      showToast({ tone: 'error', message: error instanceof Error ? error.message : '升级失败' });
-    } finally {
-      setIsUpgrading(false);
-    }
-  };
+  const entries = [
+    { path: '/membership', title: '会员与额度', description: '查看套餐、剩余额度并使用邀请码升级', icon: 'M480-80 120-280v-400l360-200 360 200v400L480-80Zm0-92 280-155v-306L480-788 200-633v306l280 155Z' },
+    { path: '/settings/models', title: '模型与 Hermes', description: '配置自定义模型和 Hermes Agent 连接', icon: 'M320-200h320v-80H320v80Zm-80 80q-33 0-56.5-23.5T160-200v-560q0-33 23.5-56.5T240-840h480q33 0 56.5 23.5T800-760v560q0 33-23.5 56.5T720-120H240Zm0-80h480v-560H240v560Zm80-160h320v-80H320v80Zm0-160h320v-80H320v80Z' },
+    { path: '/settings/system-prompt', title: '前置提示词', description: '设置系统提示词、时间与位置信息', icon: 'M160-120v-640q0-33 23.5-56.5T240-840h480q33 0 56.5 23.5T800-760v400q0 33-23.5 56.5T720-280H320L160-120Zm126-240h434v-400H240v444l46-44Zm34-80h320v-80H320v80Zm0-120h320v-80H320v80Z' },
+  ];
 
-	const handleTestCustomModel = async () => {
-		setIsTestingCustom(true);
-		try {
-			const result = await apiClient.testCustomModel({ base_url: customModel.base_url, api_key: customApiKey || undefined, model: customModel.model });
-			setCustomModel(prev => ({ ...prev, has_api_key: prev.has_api_key || !!customApiKey, response_mode: result.response_mode, last_tested_at: result.last_tested_at }));
-			setCustomApiKey('');
-			showToast({ tone: 'success', message: result.response_mode === 'stream' ? '连接成功，支持流式输出' : '连接成功，将使用非流式输出' });
-		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '连通性检测失败' }); }
-		finally { setIsTestingCustom(false); }
-	};
-
-	const handleSaveCustomModel = async () => {
-		setIsSavingCustom(true);
-		try {
-			const saved = await apiClient.updateCustomModel({ ...customModel, api_key: customApiKey || undefined });
-			setCustomModel(saved); setCustomApiKey('');
-			showToast({ tone: 'success', message: '自定义模型设置已保存' });
-		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '保存失败' }); }
-		finally { setIsSavingCustom(false); }
-	};
-
-	const handleHermes = async (test: boolean) => {
-		setHermesBusy(true);
-		try {
-			const data = { base_url: hermes.base_url, model: hermes.model, api_key: hermesKey || undefined };
-			const saved = test ? await apiClient.testHermes(data) : await apiClient.updateHermes(data);
-			setHermes(saved); setHermesKey('');
-			showToast({ tone: 'success', message: test ? 'Hermes 连接成功' : 'Hermes 配置已保存' });
-		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : 'Hermes 操作失败' }); }
-		finally { setHermesBusy(false); }
-	};
-
-  return (
-    <div className="app-container">
-      <div className="main-content">
-        <TopBar 
-          conversationTitle="用户设置"
-          showBackButton={true}
-          onBack={() => navigate('/')}
-          userMemberType={userMemberType}
-        />
-        <div className="settings-page-container">
-          <div className="settings-sections">
-            {/* User Profile Section */}
-            <section className="settings-section">
-              <h3 className="section-title">个人信息</h3>
-              <div className="profile-edit-card">
-                <div className="avatar-edit-wrapper">
-                  <div className="avatar-edit-container" onClick={handleAvatarClick}>
-                    {userAvatar ? (
-                      <img 
-                        src={userAvatar} 
-                        alt="Avatar" 
-                        className="avatar-large" 
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          if (userAvatar && userAvatar.includes('alchatfiles.fiacloud.top')) {
-                            const fallback = userAvatar.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
-                            if (target.src !== fallback) {
-                              target.src = fallback;
-                            }
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="avatar-large-placeholder">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="48px" viewBox="0 -960 960 960" width="48px" fill="currentColor">
-                          <path d="M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Zm80-80h480v-32q0-11-5.5-20T700-306q-54-27-109-40.5T480-360q-56 0-111 13.5T260-306q-9 5-14.5 14t-5.5 20v32Zm240-320q33 0 56.5-23.5T560-640q0-33-23.5-56.5T480-720q-33 0-56.5 23.5T400-640q0 33 23.5 56.5T480-560Zm0-80Zm0 400Z"/>
-                        </svg>
-                      </div>
-                    )}
-                    {isUploadingAvatar && (
-                      <div className="avatar-loading-overlay">
-                        <md-circular-progress indeterminate style={{ '--md-circular-progress-size': '40px' }} />
-                      </div>
-                    )}
-                    <div className="avatar-hover-overlay">
-                      <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor">
-                        <path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/>
-                      </svg>
-                    </div>
-                  </div>
-                  <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" style={{ display: 'none' }} />
-                  <p className="avatar-hint">点击头像进行修改</p>
-                </div>
-                <div className="nickname-edit-wrapper">
-                  <md-outlined-text-field
-                    label="昵称"
-                    value={userNickname}
-                    onInput={(e: React.FormEvent<HTMLElement>) => setUserNickname((e.target as HTMLInputElement).value)}
-                    style={{ width: '100%' }}
-                  >
-                    {userNickname !== originalNickname && userNickname.trim() && (
-                      <div slot="trailing-icon" className="nickname-edit-actions">
-                        <md-icon-button onClick={() => setUserNickname(originalNickname)} title="取消">
-                          <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                            <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
-                          </svg>
-                        </md-icon-button>
-                        <md-icon-button onClick={handleUpdateNickname} title="确认">
-                          <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                            <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
-                          </svg>
-                        </md-icon-button>
-                      </div>
-                    )}
-                  </md-outlined-text-field>
-                </div>
-              </div>
-            </section>
-
-            {/* Subscription Section */}
-            <section className="settings-section">
-              <h3 className="section-title">套餐订阅</h3>
-              <div className="subscription-card">
-                <div className="subscription-status-row">
-                  <div className="status-item">
-                    <span className="label">当前等级</span>
-                    <div className="value-with-badge">
-                      <img src={`/badge-${userMemberType}.svg`} alt={userMemberType} className="member-badge-large" />
-                      <span className="member-type-text">{userMemberType.toUpperCase()}</span>
-                    </div>
-                  </div>
-                  <div className="status-item">
-                    <span className="label">剩余额度</span>
-                    <span className="value-text">{userCredits?.toLocaleString()} Credits</span>
-                  </div>
-                  {userMemberExpiry && (
-                    <div className="status-item">
-                      <span className="label">过期时间</span>
-                      <span className="value-text">{new Date(userMemberExpiry).toLocaleDateString()}</span>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="upgrade-input-wrapper">
-                  <md-outlined-text-field
-                    label="升级邀请码"
-                    value={invitationCode}
-                    onInput={(e: React.FormEvent<HTMLElement>) => setInvitationCode((e.target as HTMLInputElement).value)}
-                    placeholder="输入邀请码升级套餐"
-                    style={{ flex: 1 }}
-                  />
-                  <md-filled-button onClick={handleUpgrade} disabled={isUpgrading || !invitationCode.trim()}>
-                    {isUpgrading ? '处理中...' : '立即升级'}
-                  </md-filled-button>
-                </div>
-                
-                <div className="subscription-benefits-grid">
-                  <div className="benefit-card">
-                    <span className="benefit-name">Free</span>
-                    <span className="benefit-detail">1,000 Credit/天</span>
-                  </div>
-                  <div className="benefit-card pro">
-                    <span className="benefit-name">Pro</span>
-                    <span className="benefit-detail">5,000 Credit/天</span>
-                  </div>
-                  <div className="benefit-card max">
-                    <span className="benefit-name">Max</span>
-                    <span className="benefit-detail">10,000 Credit/天</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* System Prompt Section */}
-			<section className="settings-section">
-				<h3 className="section-title">自定义模型</h3>
-				<div className="custom-model-card">
-					<label className="custom-master-switch"><span><strong>启用自定义模型</strong><small>成功调用时不消耗 Credits</small></span><input type="checkbox" checked={customModel.enabled} onChange={e => setCustomModel({ ...customModel, enabled: e.target.checked })} /></label>
-					<div className="custom-model-fields">
-						<label>Base URL<input type="url" placeholder="https://api.example.com/v1" value={customModel.base_url} onChange={e => setCustomModel({ ...customModel, base_url: e.target.value, response_mode: '' })} /></label>
-						<label>API Key<input type="password" placeholder={customModel.has_api_key ? '已保存，留空则不修改' : '请输入 API Key'} value={customApiKey} onChange={e => { setCustomApiKey(e.target.value); setCustomModel({ ...customModel, response_mode: '' }); }} /></label>
-						<label>Model<input type="text" placeholder="模型名称" value={customModel.model} onChange={e => setCustomModel({ ...customModel, model: e.target.value, response_mode: '' })} /></label>
-					</div>
-					<div className="custom-scopes">
-						{([['daily_enabled','日常模式'],['expert_enabled','专家模式'],['search_enabled','联网搜索']] as const).map(([key,label]) => <label key={key}><input type="checkbox" disabled={!customModel.enabled} checked={customModel[key]} onChange={e => setCustomModel({ ...customModel, [key]: e.target.checked })} />{label}</label>)}
-					</div>
-					<div className="custom-model-status">{customModel.response_mode ? `已通过检测 · ${customModel.response_mode === 'stream' ? '流式输出' : '非流式输出'}` : '修改连接信息后需要重新检测'}。图片理解与图片生成仍使用项目模型并扣费。</div>
-					<div className="custom-model-actions"><md-outlined-button onClick={handleTestCustomModel} disabled={isTestingCustom}>{isTestingCustom ? '检测中...' : '测试连接'}</md-outlined-button><md-filled-button onClick={handleSaveCustomModel} disabled={isSavingCustom || (customModel.enabled && !customModel.response_mode)}>{isSavingCustom ? '保存中...' : '保存配置'}</md-filled-button></div>
-				</div>
-			</section>
-
-			<section className="settings-section">
-				<h3 className="section-title">Hermes</h3>
-				<div className="custom-model-card">
-					<div className="custom-model-fields">
-						<label>Base URL<input type="url" placeholder="https://hermes.example.com" value={hermes.base_url} onChange={e => setHermes({ ...hermes, base_url: e.target.value, tested: false })} /></label>
-						<label>API Key<input type="password" placeholder={hermes.has_api_key ? '已保存，留空则不修改' : '请输入 API Key'} value={hermesKey} onChange={e => { setHermesKey(e.target.value); setHermes({ ...hermes, tested: false }); }} /></label>
-						<label>Model<input type="text" placeholder="模型名称" value={hermes.model} onChange={e => setHermes({ ...hermes, model: e.target.value, tested: false })} /></label>
-					</div>
-					<div className="custom-model-status">{hermes.tested ? '已通过流式连接检测，可在聊天中使用' : '保存前请先测试连接'}。请求仅发送到你的 Hermes 主机，不消耗 Credits。</div>
-					<div className="custom-model-actions"><md-outlined-button disabled={hermesBusy} onClick={() => handleHermes(true)}>测试连接</md-outlined-button><md-filled-button disabled={hermesBusy || !hermes.tested} onClick={() => handleHermes(false)}>保存配置</md-filled-button></div>
-				</div>
-			</section>
-
-            <section className="settings-section">
-              <h3 className="section-title">前置提示词</h3>
-              <div className="prompt-config-card">
-                {isLoadingSystemPrompt ? (
-                  <div className="section-loading">
-                    <md-circular-progress indeterminate />
-                  </div>
-                ) : (
-                  <>
-                    <md-outlined-text-field
-                      type="textarea"
-                      label="自定义前置提示词"
-                      rows={8}
-                      value={systemPrompt}
-                      onInput={(e: React.FormEvent<HTMLElement>) => setSystemPrompt((e.target as HTMLInputElement).value)}
-                      style={{ width: '100%' }}
-                    />
-                    <div className="prompt-options-row">
-                      <div 
-                        className={`prompt-option-chip ${includeDateTime ? 'active' : ''}`}
-                        onClick={() => setIncludeDateTime(!includeDateTime)}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
-                          <path d="M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-80h80v80h320v-80h80v80h40q33 0 56.5 23.5T840-720v560q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm0-480h560v-80H200v80Zm0 0v-80 80Z"/>
-                        </svg>
-                        <span>包含日期和时间</span>
-                      </div>
-                      <div 
-                        className={`prompt-option-chip ${includeLocation ? 'active' : ''}`}
-                        onClick={() => setIncludeLocation(!includeLocation)}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor">
-                          <path d="M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 115-79.5 232.5T480-80Z"/>
-                        </svg>
-                        <span>包含地理位置</span>
-                      </div>
-                    </div>
-                    {includeLocation && (
-                      <div className="location-preview">
-                        <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor" className="location-icon"><path d="M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Zm0-480Z"/></svg>
-                        {isLoadingLocation ? '获取位置中...' : locationPreview || '无法获取位置'}
-                      </div>
-                    )}
-                    <div className="prompt-save-actions">
-                      <md-filled-button onClick={handleSaveSystemPrompt} disabled={isSavingSystemPrompt}>
-                        {isSavingSystemPrompt ? '保存中...' : '保存配置'}
-                      </md-filled-button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </section>
-            
-            <section className="settings-section logout-section-page">
-              <md-outlined-button 
-                onClick={async () => {
-                  try {
-                    await apiClient.logout();
-                  } catch (e) {
-                    console.error('Logout error:', e);
-                  }
-                  localStorage.removeItem('token');
-                  localStorage.removeItem('user');
-                  window.location.href = '/welcome';
-                }}
-                className="logout-button-full"
-              >
-                退出登录
-              </md-outlined-button>
-            </section>
-            
-            {/* Spacer for bottom padding */}
-            <div className="settings-bottom-spacer"></div>
-          </div>
-        </div>
-      </div>
-
-      {imageToCrop && (
-        <ModalCard
-          open={isCropping}
-          onClose={() => { setIsCropping(false); setImageToCrop(null); }}
-          title="裁剪头像"
-          size="large"
-          actions={(
-            <>
-              <button type="button" className={modalButtonStyles.secondary} onClick={() => { setIsCropping(false); setImageToCrop(null); }}>取消</button>
-              <button type="button" className={modalButtonStyles.primary} onClick={handleConfirmCrop}>确定</button>
-            </>
-          )}
-        >
-          <div className="crop-container">
-            <Cropper
-              image={imageToCrop}
-              crop={crop}
-              zoom={zoom}
-              aspect={1}
-              onCropChange={setCrop}
-              onCropComplete={onCropComplete}
-              onZoomChange={setZoom}
-            />
-          </div>
-        </ModalCard>
-      )}
-
-      {upgradeInfo && (
-        <ModalCard
-          open={showUpgradeSuccess}
-          onClose={() => setShowUpgradeSuccess(false)}
-          size="small"
-          ariaLabel="兑换成功"
-          actions={<button type="button" className={modalButtonStyles.primary} onClick={() => setShowUpgradeSuccess(false)}>太棒了</button>}
-        >
-          <div className="upgrade-success-content">
-            <motion.div
-              initial={{ scale: 0.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.1 }}
-            >
-              <div className="success-icon-wrapper">
-                <svg viewBox="0 0 52 52" className="success-check-svg">
-                  <circle className="success-check-circle" cx="26" cy="26" r="25" fill="none"/>
-                  <path className="success-check-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-                </svg>
-              </div>
-              <h2>兑换成功！</h2>
-              <div className="success-details">
-                <div className="success-detail-item">
-                  <span className="detail-label">当前等级</span>
-                  <img src={`/badge-${upgradeInfo.type}.svg`} alt={upgradeInfo.type} className="member-badge-icon large" />
-                </div>
-                {upgradeInfo.expiry && (
-                  <div className="success-detail-item">
-                    <span className="detail-label">有效期至</span>
-                    <span className="detail-value">{new Date(upgradeInfo.expiry).toLocaleDateString()}</span>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        </ModalCard>
-      )}
-    </div>
-  );
+  return <div className="app-container"><div className="main-content">
+    <TopBar conversationTitle="用户设置" showBackButton onBack={() => navigate('/')} userMemberType={memberType} showBrand={false} />
+    <div className="settings-page-container"><div className="settings-sections">
+      <section className="settings-section"><h3 className="section-title">个人信息</h3><div className="profile-edit-card">
+        <div className="avatar-edit-wrapper"><div className="avatar-edit-container" onClick={() => fileInputRef.current?.click()}>
+          {avatar ? <img src={avatar} alt="Avatar" className="avatar-large" /> : <div className="avatar-large-placeholder"><svg viewBox="0 -960 960 960"><path d="M480-480q-66 0-113-47t-47-113 47-113 113-47 113 47 47 113-47 113-113 47ZM160-160v-112q0-34 17.5-62.5T224-378q62-31 126-46.5T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v112H160Z"/></svg></div>}
+          {isUploading && <div className="avatar-loading-overlay"><md-circular-progress indeterminate /></div>}<div className="avatar-hover-overlay">修改</div>
+        </div><input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} hidden /><p className="avatar-hint">点击头像进行修改</p></div>
+        <div className="nickname-edit-wrapper"><md-outlined-text-field label="昵称" value={nickname} onInput={(e: React.FormEvent<HTMLElement>) => setNickname((e.target as HTMLInputElement).value)} style={{ width: '100%' }}>
+          {nickname !== originalNickname && nickname.trim() && <div slot="trailing-icon" className="nickname-edit-actions"><md-icon-button onClick={() => setNickname(originalNickname)} title="取消">×</md-icon-button><md-icon-button onClick={saveNickname} title="确认">✓</md-icon-button></div>}
+        </md-outlined-text-field></div>
+      </div></section>
+      <section className="settings-section"><h3 className="section-title">功能设置</h3><div className="settings-navigation-grid">{entries.map(entry => <button key={entry.path} className="settings-navigation-card" onClick={() => navigate(entry.path)}><svg viewBox="0 -960 960 960"><path d={entry.icon}/></svg><strong>{entry.title}</strong><span>{entry.description}</span></button>)}</div></section>
+      <section className="settings-section logout-section-page"><md-outlined-button className="logout-button-full" onClick={logout}>退出登录</md-outlined-button></section><div className="settings-bottom-spacer" />
+    </div></div>
+    <ModalCard open={!!imageToCrop} onClose={() => setImageToCrop(null)} title="裁剪头像" size="large" actions={<><button className={modalButtonStyles.secondary} onClick={() => setImageToCrop(null)}>取消</button><button className={modalButtonStyles.primary} onClick={saveAvatar}>确定</button></>}>
+      {imageToCrop && <div className="crop-container"><Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={(_, pixels) => setCroppedPixels(pixels)} /></div>}
+    </ModalCard>
+  </div></div>;
 }
