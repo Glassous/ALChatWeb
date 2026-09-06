@@ -408,7 +408,9 @@ func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatReque
 			assistantMsg.HermesResponseID = id
 			assistantMsg.HermesContextVersion = runtime.ContextVersion
 			assistantMsg.HermesResponseCompleted = false
-			_ = h.conversationService.UpdateMessage(ctx, assistantMsg)
+			if persistErr := h.conversationService.UpdateMessage(ctx, assistantMsg); persistErr != nil {
+				log.Printf("[Hermes] failed to persist response context: %v", persistErr)
+			}
 		}
 		onText := func(v string) {
 			content.WriteString(v)
@@ -453,7 +455,11 @@ func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatReque
 		assistantMsg.HermesContextVersion = runtime.ContextVersion
 		assistantMsg.HermesResponseID = result.ResponseID
 		assistantMsg.HermesResponseCompleted = result.Completed && err == nil
-		_ = h.conversationService.UpdateMessage(ctx, assistantMsg)
+		if persistErr := h.conversationService.UpdateMessage(ctx, assistantMsg); persistErr != nil {
+			log.Printf("[Hermes] failed to persist final message: %v", persistErr)
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Failed to persist Hermes response"})
+			return
+		}
 		if err != nil {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: err.Error()})
 			return

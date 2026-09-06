@@ -267,11 +267,16 @@ function ChatApp({
       const mergedMessages = newMessages.map(msg => {
         const localMsg = localMsgMap.get(msg.id);
         if (localMsg) {
+          const persistedHermesTrace = msg.hermes_trace || [];
           return { 
             ...msg, 
             clientId: localMsg.clientId || msg.clientId,
             reasoning: msg.reasoning || localMsg.reasoning,
             search: msg.search || localMsg.search,
+            hermes_trace: persistedHermesTrace.length > 0 ? persistedHermesTrace : localMsg.hermes_trace,
+            hermes_response_id: msg.hermes_response_id || localMsg.hermes_response_id,
+            hermes_context_version: msg.hermes_context_version ?? localMsg.hermes_context_version,
+            hermes_response_completed: msg.hermes_response_completed ?? localMsg.hermes_response_completed,
             metadata: msg.metadata || localMsg.metadata
           };
         }
@@ -291,7 +296,12 @@ function ChatApp({
             a.id !== b.id ||
             a.role !== b.role ||
             a.content !== b.content ||
-            a.parent_id !== b.parent_id
+            a.parent_id !== b.parent_id ||
+            a.mode !== b.mode ||
+            a.hermes_response_id !== b.hermes_response_id ||
+            a.hermes_context_version !== b.hermes_context_version ||
+            a.hermes_response_completed !== b.hermes_response_completed ||
+            JSON.stringify(a.hermes_trace || []) !== JSON.stringify(b.hermes_trace || [])
           ) {
             needsUpdate = true;
             break;

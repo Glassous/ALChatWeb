@@ -227,17 +227,31 @@ func (s *ConversationService) GetMessageBranch(ctx context.Context, conversation
 }
 
 func (s *ConversationService) UpdateMessage(ctx context.Context, message *models.Message) error {
-	updateFields := bson.M{
-		"content":   message.Content,
-		"reasoning": message.Reasoning,
-		"search":    message.Search,
-	}
+	updateFields := messageUpdateFields(message)
 	_, err := s.db.Messages().UpdateOne(
 		ctx,
 		bson.M{"_id": message.ID},
 		bson.M{"$set": updateFields},
 	)
 	return err
+}
+
+// messageUpdateFields is kept separate from the database call so every mutable
+// message field is updated consistently and the persisted wire shape is easy to
+// verify in unit tests. Hermes updates use this path both while streaming and at
+// completion, so omitting one of these fields makes the timeline disappear as
+// soon as a client reloads the message from MongoDB.
+func messageUpdateFields(message *models.Message) bson.M {
+	return bson.M{
+		"content":                   message.Content,
+		"reasoning":                 message.Reasoning,
+		"search":                    message.Search,
+		"mode":                      message.Mode,
+		"hermes_trace":              message.HermesTrace,
+		"hermes_response_id":        message.HermesResponseID,
+		"hermes_context_version":    message.HermesContextVersion,
+		"hermes_response_completed": message.HermesResponseCompleted,
+	}
 }
 
 func (s *ConversationService) DeleteConversation(ctx context.Context, conversationID string, userIDStr string) error {
