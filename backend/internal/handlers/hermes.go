@@ -22,7 +22,7 @@ type hermesRequest struct {
 }
 
 func hermesView(c *models.HermesConfig) gin.H {
-	return gin.H{"base_url": c.BaseURL, "model": c.Model, "has_api_key": c.APIKeyCiphertext != "", "tested": c.Tested, "last_tested_at": c.LastTestedAt}
+	return gin.H{"base_url": c.BaseURL, "model": c.Model, "has_api_key": c.APIKeyCiphertext != "", "tested": c.Tested, "context_version": c.ContextVersion, "last_tested_at": c.LastTestedAt}
 }
 func (h *HermesHandler) Get(c *gin.Context) {
 	v, e := h.service.Get(c.Request.Context(), c.GetString("user_id"))
@@ -52,7 +52,12 @@ func (h *HermesHandler) Update(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "Failed to load Hermes settings"})
 		return
 	}
-	changed := old.BaseURL != r.BaseURL || old.Model != r.Model || r.APIKey != "" || r.ClearAPIKey
+	oldKey := ""
+	if old.APIKeyCiphertext != "" {
+		oldKey, _ = h.service.Decrypt(old.APIKeyCiphertext)
+	}
+	keyChanged := (r.ClearAPIKey && old.APIKeyCiphertext != "") || (r.APIKey != "" && r.APIKey != oldKey)
+	changed := old.BaseURL != r.BaseURL || old.Model != r.Model || keyChanged
 	old.BaseURL = r.BaseURL
 	old.Model = r.Model
 	if r.ClearAPIKey {
@@ -66,6 +71,10 @@ func (h *HermesHandler) Update(c *gin.Context) {
 		}
 	}
 	if changed {
+		old.ContextVersion++
+		if old.ContextVersion == 0 {
+			old.ContextVersion = 1
+		}
 		old.Tested = false
 		old.LastTestedAt = nil
 	}
@@ -97,6 +106,10 @@ func (h *HermesHandler) Test(c *gin.Context) {
 		return
 	}
 	key := r.APIKey
+	oldKey := ""
+	if old.APIKeyCiphertext != "" {
+		oldKey, _ = h.service.Decrypt(old.APIKeyCiphertext)
+	}
 	if key == "" && old.APIKeyCiphertext != "" {
 		key, e = h.service.Decrypt(old.APIKeyCiphertext)
 	}
@@ -105,7 +118,7 @@ func (h *HermesHandler) Test(c *gin.Context) {
 		return
 	}
 	gotText := false
-	e = h.service.Stream(c.Request.Context(), &services.HermesRuntime{APIKey: key, BaseURL: r.BaseURL, Model: r.Model}, []models.AIMessage{{Role: "user", Content: "Reply with OK"}}, func(v string) {
+	_, e = h.service.Stream(c.Request.Context(), &services.HermesRuntime{APIKey: key, BaseURL: r.BaseURL, Model: r.Model}, []models.AIMessage{{Role: "user", Content: "Reply with OK"}}, "", func(string) {}, func(v string) {
 		if v != "" {
 			gotText = true
 		}
@@ -125,6 +138,12 @@ func (h *HermesHandler) Test(c *gin.Context) {
 		}
 	}
 	now := time.Now()
+	credentialsChanged := old.BaseURL != r.BaseURL || old.Model != r.Model || (r.APIKey != "" && r.APIKey != oldKey)
+	if old.ContextVersion == 0 {
+		old.ContextVersion = 1
+	} else if credentialsChanged {
+		old.ContextVersion++
+	}
 	old.BaseURL = r.BaseURL
 	old.Model = r.Model
 	old.Tested = true

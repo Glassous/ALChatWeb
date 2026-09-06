@@ -868,7 +868,7 @@ export function InputArea({
                   <div className="tool-slot">
                     <button className={`tool-btn hermes-mode-btn ${isHermes ? 'active' : ''}`} title="Hermes 模式" disabled={disabled || isUploading}
                       onClick={() => { setIsHermes(v => !v); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
-                      <span className="hermes-glyph">H</span><span>Hermes</span>
+                      <img className="hermes-icon" src="/HermesAgent.png" alt="" /><span>Hermes</span>
                     </button>
                   </div>
                 )}

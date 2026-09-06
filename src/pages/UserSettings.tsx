@@ -47,7 +47,7 @@ export function UserSettings() {
 	const [customApiKey, setCustomApiKey] = useState('');
 	const [isTestingCustom, setIsTestingCustom] = useState(false);
 	const [isSavingCustom, setIsSavingCustom] = useState(false);
-	const [hermes, setHermes] = useState<HermesSettings>({ base_url: '', model: '', has_api_key: false, tested: false });
+	const [hermes, setHermes] = useState<HermesSettings>({ base_url: '', model: '', has_api_key: false, tested: false, context_version: 0 });
 	const [hermesKey, setHermesKey] = useState('');
 	const [hermesBusy, setHermesBusy] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);

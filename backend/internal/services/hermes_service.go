@@ -24,10 +24,19 @@ type HermesService struct {
 	crypto *CustomModelService
 	client *http.Client
 }
-type HermesRuntime struct{ APIKey, BaseURL, Model string }
+type HermesRuntime struct {
+	APIKey, BaseURL, Model string
+	ContextVersion         uint64
+}
+type HermesStreamResult struct {
+	ResponseID              string
+	Completed               bool
+	ReceivedEvent           bool
+	InvalidPreviousResponse bool
+}
 
 func NewHermesService(db *database.MySQL, secret string) *HermesService {
-	return &HermesService{db: db, crypto: NewCustomModelService(db, secret), client: &http.Client{Timeout: 10 * time.Minute}}
+	return &HermesService{db: db, crypto: NewCustomModelService(db, secret), client: NewSafeOutboundHTTPClient(10 * time.Minute)}
 }
 func (s *HermesService) Get(ctx context.Context, uid string) (*models.HermesConfig, error) {
 	var c models.HermesConfig
@@ -64,7 +73,11 @@ func (s *HermesService) Runtime(ctx context.Context, uid string) (*HermesRuntime
 	if err != nil {
 		return nil, err
 	}
-	return &HermesRuntime{k, c.BaseURL, c.Model}, nil
+	version := c.ContextVersion
+	if version == 0 {
+		version = 1
+	}
+	return &HermesRuntime{APIKey: k, BaseURL: c.BaseURL, Model: c.Model, ContextVersion: version}, nil
 }
 func clipped(v string) string {
 	if len(v) > hermesDetailLimit {
@@ -130,27 +143,37 @@ func normalizeHermesEvent(m map[string]interface{}, seq int) models.HermesStep {
 	b, _ := json.Marshal(raw)
 	return models.HermesStep{ID: eventID(m, typ, seq), Type: typ, Title: title, Status: status, StartedAt: &now, Summary: summary, Details: clipped(string(b)), Raw: raw}
 }
-func (s *HermesService) Stream(ctx context.Context, rt *HermesRuntime, history []models.AIMessage, onText func(string), onStep func(models.HermesStep)) error {
+func (s *HermesService) Stream(ctx context.Context, rt *HermesRuntime, history []models.AIMessage, previousResponseID string, onContext func(string), onText func(string), onStep func(models.HermesStep)) (*HermesStreamResult, error) {
+	result := &HermesStreamResult{}
 	input := make([]map[string]interface{}, 0, len(history))
 	for _, m := range history {
 		input = append(input, map[string]interface{}{"role": m.Role, "content": m.Content})
 	}
-	body, _ := json.Marshal(map[string]interface{}{"model": rt.Model, "input": input, "stream": true})
+	payload := map[string]interface{}{"model": rt.Model, "input": input, "stream": true, "store": true}
+	if previousResponseID != "" {
+		payload["previous_response_id"] = previousResponseID
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, NormalizeHermesResponsesURL(rt.BaseURL), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return result, err
 	}
 	req.Header.Set("Authorization", "Bearer "+rt.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("Hermes HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		text := strings.TrimSpace(string(b))
+		lower := strings.ToLower(text)
+		if previousResponseID != "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound) && (strings.Contains(lower, "previous_response") || strings.Contains(lower, "not found") || strings.Contains(lower, "expired")) {
+			result.InvalidPreviousResponse = true
+		}
+		return result, fmt.Errorf("Hermes HTTP %d: %s", resp.StatusCode, text)
 	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -170,6 +193,19 @@ func (s *HermesService) Stream(ctx context.Context, rt *HermesRuntime, history [
 			continue
 		}
 		typ, _ := m["type"].(string)
+		result.ReceivedEvent = true
+		oldID := result.ResponseID
+		if response, ok := m["response"].(map[string]interface{}); ok {
+			if id, ok := response["id"].(string); ok && id != "" {
+				result.ResponseID = id
+			}
+		}
+		if id, ok := m["response_id"].(string); ok && id != "" {
+			result.ResponseID = id
+		}
+		if result.ResponseID != "" && result.ResponseID != oldID && onContext != nil {
+			onContext(result.ResponseID)
+		}
 		seq++
 		if typ == "response.output_text.delta" {
 			if d, ok := m["delta"].(string); ok {
@@ -180,16 +216,17 @@ func (s *HermesService) Stream(ctx context.Context, rt *HermesRuntime, history [
 		}
 		if typ == "response.completed" {
 			completed = true
+			result.Completed = true
 		}
 		if typ == "response.failed" || typ == "error" {
-			return fmt.Errorf("Hermes response failed")
+			return result, fmt.Errorf("Hermes response failed")
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return err
+		return result, err
 	}
 	if !completed {
-		return errors.New("Hermes stream ended before response.completed")
+		return result, errors.New("Hermes stream ended before response.completed")
 	}
-	return nil
+	return result, nil
 }

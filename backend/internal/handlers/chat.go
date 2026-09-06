@@ -397,12 +397,24 @@ func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatReque
 		for _, m := range messages {
 			history = append(history, models.AIMessage{Role: m.Role, Content: m.Content})
 		}
+		previousResponseID := findHermesPreviousResponse(messages, runtime.ContextVersion)
+		fullHistory := history
+		if previousResponseID != "" {
+			history = []models.AIMessage{{Role: "user", Content: req.Message}}
+		}
 		var content strings.Builder
 		trace := make([]models.HermesStep, 0)
-		err = h.hermesService.Stream(ctx, runtime, history, func(v string) {
+		onContext := func(id string) {
+			assistantMsg.HermesResponseID = id
+			assistantMsg.HermesContextVersion = runtime.ContextVersion
+			assistantMsg.HermesResponseCompleted = false
+			_ = h.conversationService.UpdateMessage(ctx, assistantMsg)
+		}
+		onText := func(v string) {
 			content.WriteString(v)
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "token", Content: v})
-		}, func(step models.HermesStep) {
+		}
+		onStep := func(step models.HermesStep) {
 			updated := false
 			for i := range trace {
 				if trace[i].ID == step.ID {
@@ -417,11 +429,30 @@ func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatReque
 			if !updated {
 				trace = append(trace, step)
 			}
+			assistantMsg.HermesTrace = append([]models.HermesStep(nil), trace...)
+			assistantMsg.Mode = "hermes"
+			if persistErr := h.conversationService.UpdateMessage(ctx, assistantMsg); persistErr != nil {
+				log.Printf("[Hermes] failed to persist step: %v", persistErr)
+			}
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "hermes_event", Data: step})
-		})
+		}
+		contextState := "new"
+		if previousResponseID != "" {
+			contextState = "continued"
+		}
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "hermes_context", Content: contextState})
+		result, streamErr := h.hermesService.Stream(ctx, runtime, history, previousResponseID, onContext, onText, onStep)
+		if streamErr != nil && result.InvalidPreviousResponse && !result.ReceivedEvent {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "hermes_context", Content: "rebuilt"})
+			result, streamErr = h.hermesService.Stream(ctx, runtime, fullHistory, "", onContext, onText, onStep)
+		}
+		err = streamErr
 		assistantMsg.Content = content.String()
 		assistantMsg.HermesTrace = trace
 		assistantMsg.Mode = "hermes"
+		assistantMsg.HermesContextVersion = runtime.ContextVersion
+		assistantMsg.HermesResponseID = result.ResponseID
+		assistantMsg.HermesResponseCompleted = result.Completed && err == nil
 		_ = h.conversationService.UpdateMessage(ctx, assistantMsg)
 		if err != nil {
 			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: err.Error()})
@@ -440,8 +471,23 @@ func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatReque
 				}
 			}
 		}
-		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "done", Data: gin.H{"user_message_id": userMsg.ID.Hex(), "assistant_message_id": assistantMsg.ID.Hex(), "credits": credits}})
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "done", Data: gin.H{"user_message_id": userMsg.ID.Hex(), "assistant_message_id": assistantMsg.ID.Hex(), "credits": credits, "hermes_response_id": assistantMsg.HermesResponseID, "hermes_context_version": assistantMsg.HermesContextVersion, "hermes_response_completed": assistantMsg.HermesResponseCompleted}})
 	}()
+}
+
+// findHermesPreviousResponse only inspects the selected local branch. Keeping
+// this state on assistant nodes prevents sibling branches from overwriting each
+// other's upstream Responses context.
+func findHermesPreviousResponse(branch []models.Message, contextVersion uint64) string {
+	for i := len(branch) - 1; i >= 0; i-- {
+		message := branch[i]
+		if message.Role == "assistant" && message.Mode == "hermes" &&
+			message.HermesResponseCompleted && message.HermesResponseID != "" &&
+			message.HermesContextVersion == contextVersion {
+			return message.HermesResponseID
+		}
+	}
+	return ""
 }
 
 func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userIDObj primitive.ObjectID) {

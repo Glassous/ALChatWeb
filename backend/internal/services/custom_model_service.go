@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"alchat-backend/internal/database"
 	"alchat-backend/internal/models"
@@ -96,6 +98,44 @@ func ValidateCustomBaseURL(raw string) error {
 		}
 	}
 	return nil
+}
+
+func isForbiddenOutboundIP(ip net.IP) bool {
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
+}
+
+// NewSafeOutboundHTTPClient revalidates every connection and redirect to
+// prevent localhost access, private-network access, and DNS rebinding.
+func NewSafeOutboundHTTPClient(timeout time.Duration) *http.Client {
+	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
+	// Do not honor proxy environment variables: a proxy could otherwise fetch a
+	// private destination on behalf of this server and bypass DialContext checks.
+	transport := &http.Transport{}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			if isForbiddenOutboundIP(ip) {
+				continue
+			}
+			if conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port)); dialErr == nil {
+				return conn, nil
+			}
+		}
+		return nil, errors.New("target resolves only to private or reserved addresses")
+	}
+	return &http.Client{Transport: transport, Timeout: timeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
+		return ValidateCustomBaseURL(req.URL.String())
+	}}
 }
 
 type CustomModelRuntime struct {

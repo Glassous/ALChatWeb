@@ -594,12 +594,12 @@ func (s *AIService) generateSearchStream(ctx context.Context, messages []models.
 
 func (s *AIService) generateCustom(ctx context.Context, messages []models.AIMessage, runtime *CustomModelRuntime, enableThinking bool, callback func(token string, reasoning string) error) error {
 	if runtime.ResponseMode == "non_stream" {
-		return s.generateCustomNonStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback)
+		return s.generateCustomNonStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback, NewSafeOutboundHTTPClient(customNonStreamGenerationTimeout))
 	}
-	return s.generateCustomStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback)
+	return s.generateCustomStream(ctx, messages, runtime.APIKey, runtime.BaseURL, runtime.Model, enableThinking, callback, NewSafeOutboundHTTPClient(0))
 }
 
-func (s *AIService) generateCustomNonStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
+func (s *AIService) generateCustomNonStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error, clients ...*http.Client) error {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -623,6 +623,9 @@ func (s *AIService) generateCustomNonStream(ctx context.Context, messages []mode
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	client := &http.Client{Timeout: customNonStreamGenerationTimeout}
+	if len(clients) > 0 && clients[0] != nil {
+		client = clients[0]
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -663,7 +666,7 @@ func (s *AIService) TestCustomModel(ctx context.Context, runtime *CustomModelRun
 			got = true
 		}
 		return nil
-	})
+	}, NewSafeOutboundHTTPClient(8*time.Second))
 	cancelStream()
 	if err == nil && got {
 		return "stream", nil
@@ -674,7 +677,7 @@ func (s *AIService) TestCustomModel(ctx context.Context, runtime *CustomModelRun
 	err = s.generateCustomNonStream(nonStreamCtx, testMessages, runtime.APIKey, runtime.BaseURL, runtime.Model, false, func(token, reasoning string) error {
 		got = token != "" || reasoning != ""
 		return nil
-	})
+	}, NewSafeOutboundHTTPClient(30*time.Second))
 	if err != nil {
 		return "", err
 	}
@@ -684,7 +687,7 @@ func (s *AIService) TestCustomModel(ctx context.Context, runtime *CustomModelRun
 	return "non_stream", nil
 }
 
-func (s *AIService) generateCustomStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error) error {
+func (s *AIService) generateCustomStream(ctx context.Context, messages []models.AIMessage, apiKey, baseURL, model string, enableThinking bool, callback func(token string, reasoning string) error, clients ...*http.Client) error {
 	type oaiMessage struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -731,6 +734,9 @@ func (s *AIService) generateCustomStream(ctx context.Context, messages []models.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	client := &http.Client{}
+	if len(clients) > 0 && clients[0] != nil {
+		client = clients[0]
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

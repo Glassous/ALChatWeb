@@ -16,6 +16,9 @@ export interface Message {
   reasoning?: string;
   mode?: 'daily' | 'expert' | 'search' | 'hermes';
   hermes_trace?: Array<{ id:string; type:string; title:string; status:'running'|'completed'|'failed'; duration_ms?:number; summary?:string; details?:string }>;
+  hermes_response_id?: string;
+  hermes_context_version?: number;
+  hermes_response_completed?: boolean;
   search?: {
     query: string;
     status: 'searching' | 'completed';
@@ -119,7 +122,7 @@ const WaitingForModel = ({ nonStreaming = false }: { nonStreaming?: boolean }) =
 
 const HermesTimeline = ({ steps, loading }: { steps: NonNullable<Message['hermes_trace']>; loading: boolean }) => (
   <section className="hermes-timeline" aria-label="Hermes 执行过程">
-    <div className="hermes-timeline-header"><span className={loading ? 'hermes-pulse' : 'hermes-done'}>H</span><strong>Hermes</strong><small>{loading ? '正在运行' : '已完成'}</small></div>
+    <div className="hermes-timeline-header"><img className={loading ? 'hermes-pulse' : 'hermes-done'} src="/HermesAgent.png" alt="" /><strong>Hermes</strong><small>{loading ? '正在运行' : '已完成'}</small></div>
     {steps.map(step => <details className={`hermes-step ${step.status}`} key={step.id}>
       <summary><span className="hermes-step-dot"/><span className="hermes-step-title">{step.title || step.type}</span>{step.summary && <span className="hermes-step-summary">{step.summary}</span>}{step.duration_ms ? <time>{step.duration_ms}ms</time> : null}</summary>
       {step.details && <pre>{step.details}</pre>}

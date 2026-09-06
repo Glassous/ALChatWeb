@@ -26,6 +26,7 @@ type HermesConfig struct {
 	APIKeyCiphertext string     `json:"-" gorm:"type:text"`
 	Model            string     `json:"model" gorm:"type:varchar(255)"`
 	Tested           bool       `json:"tested" gorm:"not null;default:false"`
+	ContextVersion   uint64     `json:"context_version" gorm:"not null;default:1"`
 	LastTestedAt     *time.Time `json:"last_tested_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`

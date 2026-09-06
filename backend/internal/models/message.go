@@ -7,16 +7,19 @@ import (
 )
 
 type Message struct {
-	ID             primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
-	ConversationID primitive.ObjectID  `bson:"conversation_id" json:"conversation_id"`
-	ParentID       *primitive.ObjectID `bson:"parent_id,omitempty" json:"parent_id,omitempty"`
-	Role           string              `bson:"role" json:"role"` // "user" or "assistant"
-	Content        string              `bson:"content" json:"content"`
-	Reasoning      string              `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
-	Search         *SearchData         `bson:"search,omitempty" json:"search,omitempty"`
-	Mode           string              `bson:"mode,omitempty" json:"mode,omitempty"`
-	HermesTrace    []HermesStep        `bson:"hermes_trace,omitempty" json:"hermes_trace,omitempty"`
-	CreatedAt      time.Time           `bson:"created_at" json:"created_at"`
+	ID                      primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
+	ConversationID          primitive.ObjectID  `bson:"conversation_id" json:"conversation_id"`
+	ParentID                *primitive.ObjectID `bson:"parent_id,omitempty" json:"parent_id,omitempty"`
+	Role                    string              `bson:"role" json:"role"` // "user" or "assistant"
+	Content                 string              `bson:"content" json:"content"`
+	Reasoning               string              `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
+	Search                  *SearchData         `bson:"search,omitempty" json:"search,omitempty"`
+	Mode                    string              `bson:"mode,omitempty" json:"mode,omitempty"`
+	HermesTrace             []HermesStep        `bson:"hermes_trace,omitempty" json:"hermes_trace,omitempty"`
+	HermesResponseID        string              `bson:"hermes_response_id,omitempty" json:"hermes_response_id,omitempty"`
+	HermesContextVersion    uint64              `bson:"hermes_context_version,omitempty" json:"hermes_context_version,omitempty"`
+	HermesResponseCompleted bool                `bson:"hermes_response_completed,omitempty" json:"hermes_response_completed,omitempty"`
+	CreatedAt               time.Time           `bson:"created_at" json:"created_at"`
 }
 
 type HermesStep struct {
