@@ -649,3 +649,6 @@
     font-size: 16px; /* Prevent zoom on iOS */
   }
 }
+.hermes-mode-btn { width: auto !important; gap: 6px; padding: 0 11px !important; font-weight: 650; }
+.hermes-mode-btn.active { color: #fff; background: linear-gradient(135deg,#6045d6,#1f9aa9); }
+.hermes-glyph { display:grid; place-items:center; width:20px; height:20px; border-radius:7px; background:currentColor; color:var(--md-sys-color-surface); font-size:12px; }

@@ -14,7 +14,22 @@ type Message struct {
 	Content        string              `bson:"content" json:"content"`
 	Reasoning      string              `bson:"reasoning,omitempty" json:"reasoning,omitempty"`
 	Search         *SearchData         `bson:"search,omitempty" json:"search,omitempty"`
+	Mode           string              `bson:"mode,omitempty" json:"mode,omitempty"`
+	HermesTrace    []HermesStep        `bson:"hermes_trace,omitempty" json:"hermes_trace,omitempty"`
 	CreatedAt      time.Time           `bson:"created_at" json:"created_at"`
+}
+
+type HermesStep struct {
+	ID        string      `bson:"id" json:"id"`
+	Type      string      `bson:"type" json:"type"`
+	Title     string      `bson:"title" json:"title"`
+	Status    string      `bson:"status" json:"status"`
+	StartedAt *time.Time  `bson:"started_at,omitempty" json:"started_at,omitempty"`
+	EndedAt   *time.Time  `bson:"ended_at,omitempty" json:"ended_at,omitempty"`
+	Duration  int64       `bson:"duration_ms,omitempty" json:"duration_ms,omitempty"`
+	Summary   string      `bson:"summary,omitempty" json:"summary,omitempty"`
+	Details   string      `bson:"details,omitempty" json:"details,omitempty"`
+	Raw       interface{} `bson:"raw,omitempty" json:"raw,omitempty"`
 }
 
 type ChatRequest struct {

@@ -5,7 +5,7 @@ import Cropper from 'react-easy-crop';
 import type { Point, Area } from 'react-easy-crop';
 import { motion } from 'framer-motion';
 import { apiClient } from '../services/api';
-import type { CustomModelSettings } from '../services/api';
+import type { CustomModelSettings, HermesSettings } from '../services/api';
 import { getCurrentPosition, formatCoordsAsString } from '../utils/location';
 import getCroppedImg from '../utils/cropImage';
 import '@material/web/iconbutton/icon-button.js';
@@ -47,6 +47,9 @@ export function UserSettings() {
 	const [customApiKey, setCustomApiKey] = useState('');
 	const [isTestingCustom, setIsTestingCustom] = useState(false);
 	const [isSavingCustom, setIsSavingCustom] = useState(false);
+	const [hermes, setHermes] = useState<HermesSettings>({ base_url: '', model: '', has_api_key: false, tested: false });
+	const [hermesKey, setHermesKey] = useState('');
+	const [hermesBusy, setHermesBusy] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState<{ type: string; expiry: string | null } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -105,13 +108,14 @@ export function UserSettings() {
 		try { setCustomModel(await apiClient.getCustomModel()); }
 		catch (error) { console.error('Failed to load custom model settings:', error); }
 	}
+	async function loadHermes() { try { setHermes(await apiClient.getHermes()); } catch (error) { console.error('Failed to load Hermes settings:', error); } }
 
   useEffect(() => {
     // Profile requests populate local settings state after their network responses.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUserProfile();
     loadSystemPrompt();
-		loadCustomModel();
+		loadCustomModel(); loadHermes();
     const handleProfileUpdate = () => loadUserProfile();
     window.addEventListener('user-profile-updated', handleProfileUpdate);
     return () => window.removeEventListener('user-profile-updated', handleProfileUpdate);
@@ -219,6 +223,17 @@ export function UserSettings() {
 			showToast({ tone: 'success', message: '自定义模型设置已保存' });
 		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '保存失败' }); }
 		finally { setIsSavingCustom(false); }
+	};
+
+	const handleHermes = async (test: boolean) => {
+		setHermesBusy(true);
+		try {
+			const data = { base_url: hermes.base_url, model: hermes.model, api_key: hermesKey || undefined };
+			const saved = test ? await apiClient.testHermes(data) : await apiClient.updateHermes(data);
+			setHermes(saved); setHermesKey('');
+			showToast({ tone: 'success', message: test ? 'Hermes 连接成功' : 'Hermes 配置已保存' });
+		} catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : 'Hermes 操作失败' }); }
+		finally { setHermesBusy(false); }
 	};
 
   return (
@@ -369,6 +384,19 @@ export function UserSettings() {
 					</div>
 					<div className="custom-model-status">{customModel.response_mode ? `已通过检测 · ${customModel.response_mode === 'stream' ? '流式输出' : '非流式输出'}` : '修改连接信息后需要重新检测'}。图片理解与图片生成仍使用项目模型并扣费。</div>
 					<div className="custom-model-actions"><md-outlined-button onClick={handleTestCustomModel} disabled={isTestingCustom}>{isTestingCustom ? '检测中...' : '测试连接'}</md-outlined-button><md-filled-button onClick={handleSaveCustomModel} disabled={isSavingCustom || (customModel.enabled && !customModel.response_mode)}>{isSavingCustom ? '保存中...' : '保存配置'}</md-filled-button></div>
+				</div>
+			</section>
+
+			<section className="settings-section">
+				<h3 className="section-title">Hermes</h3>
+				<div className="custom-model-card">
+					<div className="custom-model-fields">
+						<label>Base URL<input type="url" placeholder="https://hermes.example.com" value={hermes.base_url} onChange={e => setHermes({ ...hermes, base_url: e.target.value, tested: false })} /></label>
+						<label>API Key<input type="password" placeholder={hermes.has_api_key ? '已保存，留空则不修改' : '请输入 API Key'} value={hermesKey} onChange={e => { setHermesKey(e.target.value); setHermes({ ...hermes, tested: false }); }} /></label>
+						<label>Model<input type="text" placeholder="模型名称" value={hermes.model} onChange={e => setHermes({ ...hermes, model: e.target.value, tested: false })} /></label>
+					</div>
+					<div className="custom-model-status">{hermes.tested ? '已通过流式连接检测，可在聊天中使用' : '保存前请先测试连接'}。请求仅发送到你的 Hermes 主机，不消耗 Credits。</div>
+					<div className="custom-model-actions"><md-outlined-button disabled={hermesBusy} onClick={() => handleHermes(true)}>测试连接</md-outlined-button><md-filled-button disabled={hermesBusy || !hermes.tested} onClick={() => handleHermes(false)}>保存配置</md-filled-button></div>
 				</div>
 			</section>
 

@@ -14,6 +14,8 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
+  mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  hermes_trace?: HermesStep[];
   search?: {
     query: string;
     status: 'searching' | 'completed';
@@ -36,10 +38,16 @@ export interface ConversationWithMessages extends Conversation {
 }
 
 export interface ChatStreamResponse {
-  type: 'generation_mode' | 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start' | 'fallback';
+  type: 'generation_mode' | 'token' | 'reasoning' | 'done' | 'error' | 'search' | 'title' | 'image_gen_start' | 'fallback' | 'hermes_event';
   content?: string;
   data?: unknown;
 }
+
+export interface HermesStep {
+  id: string; type: string; title: string; status: 'running' | 'completed' | 'failed';
+  started_at?: string; ended_at?: string; duration_ms?: number; summary?: string; details?: string; raw?: unknown;
+}
+export interface HermesSettings { base_url: string; model: string; has_api_key: boolean; tested: boolean; last_tested_at?: string }
 
 export interface CustomModelSettings {
   enabled: boolean;
@@ -334,6 +342,16 @@ class APIClient {
     return this.handleResponse(response) as Promise<{ connected: boolean; response_mode: 'stream' | 'non_stream'; last_tested_at: string }>;
   }
 
+  async getHermes(): Promise<HermesSettings> {
+    return this.handleResponse(await fetch(`${this.baseURL}/api/auth/hermes`, { headers: this.getHeaders() }));
+  }
+  async updateHermes(data: Partial<HermesSettings> & { api_key?: string; clear_api_key?: boolean }): Promise<HermesSettings> {
+    return this.handleResponse(await fetch(`${this.baseURL}/api/auth/hermes`, { method: 'PUT', headers: this.getHeaders(), body: JSON.stringify(data) }));
+  }
+  async testHermes(data: { base_url: string; api_key?: string; model: string }): Promise<HermesSettings> {
+    return this.handleResponse(await fetch(`${this.baseURL}/api/auth/hermes/test`, { method: 'POST', headers: this.getHeaders(), body: JSON.stringify(data) }));
+  }
+
   async resolveLocation(lat: number, lng: number): Promise<string | null> {
     try {
       const response = await fetch(`${this.baseURL}/api/location/resolve`, {
@@ -606,7 +624,7 @@ class APIClient {
   async sendMessage(
     conversationId: string,
     message: string,
-    mode: 'daily' | 'expert' | 'search',
+    mode: 'daily' | 'expert' | 'search' | 'hermes',
     onToken: (token: string) => void,
     onReasoning: (reasoning: string) => void,
     onSearch: (data: StreamSearchData) => void,
@@ -618,6 +636,7 @@ class APIClient {
     onImageGenStart?: (resolution: string) => void,
 		onFallback?: (message: string) => void,
 		onGenerationMode?: (mode: 'stream' | 'non_stream') => void,
+		onHermesEvent?: (step: HermesStep) => void,
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -701,6 +720,8 @@ class APIClient {
                 onError(parsed.content || 'Unknown error');
 							} else if (parsed.type === 'fallback') {
 								onFallback?.(parsed.content || '已回退到项目模型');
+              } else if (parsed.type === 'hermes_event' && parsed.data) {
+                onHermesEvent?.(parsed.data as HermesStep);
               }
             } catch (e) {
               console.error('Failed to parse SSE data:', e, 'Data:', data);

@@ -14,6 +14,8 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
+  mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  hermes_trace?: Array<{ id:string; type:string; title:string; status:'running'|'completed'|'failed'; duration_ms?:number; summary?:string; details?:string }>;
   search?: {
     query: string;
     status: 'searching' | 'completed';
@@ -114,6 +116,16 @@ const WaitingForModel = ({ nonStreaming = false }: { nonStreaming?: boolean }) =
   useEffect(() => { const timer = window.setInterval(() => setSeconds(v => v + 1), 1000); return () => window.clearInterval(timer); }, []);
   return <div className="thinking-container"><div className="thinking-spinner"></div><span className="thinking-text">{nonStreaming ? '非流式输出 · 正在生成' : '正在等待模型响应'}{seconds >= 5 ? ` · ${seconds}s` : '...'}</span></div>;
 };
+
+const HermesTimeline = ({ steps, loading }: { steps: NonNullable<Message['hermes_trace']>; loading: boolean }) => (
+  <section className="hermes-timeline" aria-label="Hermes 执行过程">
+    <div className="hermes-timeline-header"><span className={loading ? 'hermes-pulse' : 'hermes-done'}>H</span><strong>Hermes</strong><small>{loading ? '正在运行' : '已完成'}</small></div>
+    {steps.map(step => <details className={`hermes-step ${step.status}`} key={step.id}>
+      <summary><span className="hermes-step-dot"/><span className="hermes-step-title">{step.title || step.type}</span>{step.summary && <span className="hermes-step-summary">{step.summary}</span>}{step.duration_ms ? <time>{step.duration_ms}ms</time> : null}</summary>
+      {step.details && <pre>{step.details}</pre>}
+    </details>)}
+  </section>
+);
 
 function MessageItem({ 
   msg, 
@@ -612,6 +624,7 @@ function MessageItem({
         ) : (
           <div className="assistant-message-content">
             <div className="message-text assistant-text">
+              {msg.role === 'assistant' && msg.mode === 'hermes' && <HermesTimeline steps={msg.hermes_trace || []} loading={msg.status === 'loading'} />}
               {renderContent()}
             </div>
             {!isPureImage && (

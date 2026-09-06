@@ -100,7 +100,7 @@ function ChatApp({
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search'>('daily');
+  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'hermes'>('daily');
   const [webIsImageMode, setWebIsImageMode] = useState(false);
 
   // Workspace states
@@ -357,7 +357,7 @@ function ChatApp({
     isImageMode: boolean; 
     resolution: string; 
     refImageUrl?: string; 
-    mode?: 'daily' | 'expert' | 'search';
+    mode?: 'daily' | 'expert' | 'search' | 'hermes';
     overrideParentId?: string | null;
   }) => {
     if (isLoading) return;
@@ -416,6 +416,7 @@ function ChatApp({
       parent_id: (effectiveParentId as string) || undefined,
       role: 'user',
       content: userMsgContent,
+      mode: currentMode,
       created_at: new Date().toISOString(),
       clientId: userMsgId,
     };
@@ -551,6 +552,7 @@ function ChatApp({
       role: 'assistant',
       content: '',
       reasoning: '',
+      mode: currentMode,
       status: 'loading',
       created_at: new Date().toISOString(),
       clientId: assistantMsgId,
@@ -561,7 +563,7 @@ function ChatApp({
     // Stream AI response
     try {
       let location = undefined;
-      if (systemPromptSettings?.include_location) {
+      if (currentMode !== 'hermes' && systemPromptSettings?.include_location) {
         try {
           const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
@@ -735,6 +737,15 @@ function ChatApp({
 						: msg
 				)
 			);
+		},
+		(step) => {
+			setMessages(prev => (Array.isArray(prev) ? prev : []).map((msg): Message => {
+				if (msg.id !== assistantMsgId) return msg;
+				const trace = [...(msg.hermes_trace || [])];
+				const index = trace.findIndex(existing => existing.id === step.id);
+				if (index >= 0) trace[index] = { ...trace[index], ...step, summary: step.type.endsWith('.delta') ? (trace[index].summary || '') + (step.summary || '') : step.summary }; else trace.push(step);
+				return { ...msg, hermes_trace: trace, mode: 'hermes', status: 'loading' };
+			}));
 		}
       );
     } catch (error) {

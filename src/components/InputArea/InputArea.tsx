@@ -5,7 +5,7 @@ import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'hermes' }) => void;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -16,7 +16,7 @@ interface InputAreaProps {
   onShowUpgrade?: () => void;
   style?: React.CSSProperties;
   isTemp?: boolean;
-  onModeChange?: (mode: 'daily' | 'expert' | 'search') => void;
+  onModeChange?: (mode: 'daily' | 'expert' | 'search' | 'hermes') => void;
   onImageModeChange?: (isImageMode: boolean) => void;
 }
 
@@ -48,14 +48,18 @@ export function InputArea({
   const [isImageMode, setIsImageMode] = useState(false);
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
   const [isSearch, setIsSearch] = useState(false);
+  const [isHermes, setIsHermes] = useState(false);
+  const [hermesAvailable, setHermesAvailable] = useState(false);
+
+  useEffect(() => { if (!isTemp) apiClient.getHermes().then(v => setHermesAvailable(v.tested)).catch(() => setHermesAvailable(false)); }, [isTemp]);
 
   useEffect(() => {
-    let currentEffectiveMode: 'daily' | 'expert' | 'search' = mode;
+    let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'hermes' = isHermes ? 'hermes' : mode;
     if (mode === 'daily' && isSearch) {
       currentEffectiveMode = 'search';
     }
     onModeChange?.(currentEffectiveMode);
-  }, [mode, isSearch, onModeChange]);
+  }, [mode, isSearch, isHermes, onModeChange]);
 
   useEffect(() => {
     onImageModeChange?.(isImageMode);
@@ -176,7 +180,7 @@ export function InputArea({
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
-      let finalMode: 'daily' | 'expert' | 'search' = mode;
+      let finalMode: 'daily' | 'expert' | 'search' | 'hermes' = isHermes ? 'hermes' : mode;
       if (isImageMode) {
         finalMode = 'daily';
       } else if (mode === 'daily' && isSearch) {
@@ -751,7 +755,7 @@ export function InputArea({
           </div>
           <div className="input-bottom-row">
             <div className="tools-left">
-                {!isTemp && !isImageMode && (
+                {!isHermes && !isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
@@ -763,7 +767,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isTemp && mode !== 'expert' && (
+                {!isHermes && !isTemp && mode !== 'expert' && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
@@ -860,8 +864,17 @@ export function InputArea({
                     />
                   </div>
                 )}
+                {!isTemp && hermesAvailable && !isImageMode && mode !== 'expert' && (
+                  <div className="tool-slot">
+                    <button className={`tool-btn hermes-mode-btn ${isHermes ? 'active' : ''}`} title="Hermes 模式" disabled={disabled || isUploading}
+                      onClick={() => { setIsHermes(v => !v); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
+                      <span className="hermes-glyph">H</span><span>Hermes</span>
+                    </button>
+                  </div>
+                )}
             </div>
             <div className="tools-right">
+              {!isHermes && <>
                 {!isEmpty && !isAtBottom && (
                   <div className="tool-slot">
                     <button 
@@ -937,6 +950,7 @@ export function InputArea({
                     )}
                   </button>
                 </div>
+              </>}
             </div>
           </div>
         </div>

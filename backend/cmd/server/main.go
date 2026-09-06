@@ -58,7 +58,7 @@ func main() {
 	defer mysqlDB.Close()
 
 	// Auto migrate MySQL schemas
-	if err := mysqlDB.DB.AutoMigrate(&models.User{}, &models.ModelConfig{}, &models.CustomModelConfig{}, &models.Announcement{}, &models.Feedback{}); err != nil {
+	if err := mysqlDB.DB.AutoMigrate(&models.User{}, &models.ModelConfig{}, &models.CustomModelConfig{}, &models.HermesConfig{}, &models.Announcement{}, &models.Feedback{}); err != nil {
 		slog.Error("Failed to auto migrate MySQL schemas", "error", err)
 		os.Exit(1)
 	}
@@ -120,11 +120,13 @@ func main() {
 
 	// Initialize handlers
 	customModelService := services.NewCustomModelService(mysqlDB, cfg.CustomModelEncryptionKey)
+	hermesService := services.NewHermesService(mysqlDB, cfg.CustomModelEncryptionKey)
 	authHandler := handlers.NewAuthHandler(db, mysqlDB, rdb, cfg.JWTSecret, ossService, memberService, tokenService, emailService)
 	customModelHandler := handlers.NewCustomModelHandler(customModelService, aiService)
+	hermesHandler := handlers.NewHermesHandler(hermesService)
 	conversationHandler := handlers.NewConversationHandler(conversationService, aiService)
 	conversationHandler.SetTempConversationService(tempConvService)
-	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, customModelService, db, mysqlDB, streamManager, imageService)
+	chatHandler := handlers.NewChatHandler(aiService, conversationService, memberService, customModelService, hermesService, db, mysqlDB, streamManager, imageService)
 	chatHandler.SetTempConversationService(tempConvService)
 	imageHandler := handlers.NewImageHandler(imageService, conversationService, ossService, aiService, streamManager, memberService, db, mysqlDB)
 	adminHandler := handlers.NewAdminHandler(db, mysqlDB, rdb, aiService, memberService, tokenService, emailService)
@@ -182,6 +184,9 @@ func main() {
 			protected.GET("/auth/custom-model", customModelHandler.Get)
 			protected.PUT("/auth/custom-model", customModelHandler.Update)
 			protected.POST("/auth/custom-model/test", customModelHandler.Test)
+			protected.GET("/auth/hermes", hermesHandler.Get)
+			protected.PUT("/auth/hermes", hermesHandler.Update)
+			protected.POST("/auth/hermes/test", hermesHandler.Test)
 			protected.POST("/auth/upgrade", authHandler.Upgrade)
 
 			// Conversation routes

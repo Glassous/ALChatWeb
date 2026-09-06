@@ -21,7 +21,7 @@ interface TopBarProps {
   hasMessages?: boolean;
   hasConversation?: boolean;
   isImageMode?: boolean;
-  mode?: 'daily' | 'expert' | 'search';
+  mode?: 'daily' | 'expert' | 'search' | 'hermes';
 }
 
 export function TopBar({ 

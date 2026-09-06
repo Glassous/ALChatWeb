@@ -24,6 +24,7 @@ type ChatHandler struct {
 	conversationService *services.ConversationService
 	memberService       *services.MemberService
 	customModelService  *services.CustomModelService
+	hermesService       *services.HermesService
 	db                  *database.MongoDB
 	mysqlDB             *database.MySQL
 	streamManager       *services.StreamManager
@@ -31,12 +32,13 @@ type ChatHandler struct {
 	imageService        *services.ImageService
 }
 
-func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, customModelService *services.CustomModelService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
+func NewChatHandler(aiService *services.AIService, conversationService *services.ConversationService, memberService *services.MemberService, customModelService *services.CustomModelService, hermesService *services.HermesService, db *database.MongoDB, mysqlDB *database.MySQL, streamManager *services.StreamManager, imageService *services.ImageService) *ChatHandler {
 	return &ChatHandler{
 		aiService:           aiService,
 		conversationService: conversationService,
 		memberService:       memberService,
 		customModelService:  customModelService,
+		hermesService:       hermesService,
 		db:                  db,
 		mysqlDB:             mysqlDB,
 		streamManager:       streamManager,
@@ -62,7 +64,7 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 	}
 
 	switch req.Mode {
-	case "daily", "expert", "search":
+	case "daily", "expert", "search", "hermes":
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported chat mode"})
 		return
@@ -77,13 +79,31 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 
-	// Reset credits if it's a new day
-	if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
-		log.Printf("Failed to reset credits: %v", err)
+	if req.Mode == "hermes" {
+		if utils.IsTempID(req.ConversationID) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Hermes 模式不支持临时会话"})
+			return
+		}
+		if strings.Contains(req.Message, "<file") || strings.Contains(req.Message, "<image") || strings.Contains(req.Message, "<video") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Hermes 模式仅支持文本输入"})
+			return
+		}
+		runtime, runtimeErr := h.hermesService.Runtime(c.Request.Context(), userID)
+		if runtimeErr != nil || runtime == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请先在设置中配置并测试 Hermes"})
+			return
+		}
+	}
+
+	// Reset credits if it's a new day (Hermes never participates in credit accounting).
+	if req.Mode != "hermes" {
+		if err := h.memberService.CheckAndResetCredits(c.Request.Context(), &user); err != nil {
+			log.Printf("Failed to reset credits: %v", err)
+		}
 	}
 	requestHasMultimodal := strings.Contains(req.Message, "<file") || strings.Contains(req.Message, "<image")
 	customCandidate, _ := h.customModelService.RuntimeForMode(c.Request.Context(), userID, req.Mode, requestHasMultimodal)
-	if customCandidate == nil && user.Credits <= 0 {
+	if req.Mode != "hermes" && customCandidate == nil && user.Credits <= 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Insufficient credits", "credits": user.Credits})
 		return
 	}
@@ -108,6 +128,14 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		return
 	}
 	h.streamManager.StartConversation(req.ConversationID)
+	userMsg.Mode, assistantMsg.Mode = req.Mode, req.Mode
+	_ = h.conversationService.UpdateMessage(c.Request.Context(), userMsg)
+	_ = h.conversationService.UpdateMessage(c.Request.Context(), assistantMsg)
+	if req.Mode == "hermes" {
+		h.handleHermesChat(context.WithoutCancel(c.Request.Context()), req, userID, user.Credits, userMsg, assistantMsg)
+		c.JSON(http.StatusOK, gin.H{"user_message_id": userMsg.ID.Hex(), "assistant_message_id": assistantMsg.ID.Hex()})
+		return
+	}
 
 	// Detached context for background processing
 	bgCtx := context.WithoutCancel(c.Request.Context())
@@ -350,6 +378,70 @@ func (h *ChatHandler) Chat(c *gin.Context) {
 		"user_message_id":      userMsg.ID.Hex(),
 		"assistant_message_id": assistantMsg.ID.Hex(),
 	})
+}
+
+func (h *ChatHandler) handleHermesChat(ctx context.Context, req models.ChatRequest, userID string, credits float64, userMsg, assistantMsg *models.Message) {
+	go func() {
+		defer h.streamManager.CloseConversation(req.ConversationID)
+		runtime, err := h.hermesService.Runtime(ctx, userID)
+		if err != nil || runtime == nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Hermes 配置不可用"})
+			return
+		}
+		messages, err := h.conversationService.GetMessageBranch(ctx, req.ConversationID, userMsg.ID.Hex())
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: "Failed to fetch conversation history"})
+			return
+		}
+		history := make([]models.AIMessage, 0, len(messages))
+		for _, m := range messages {
+			history = append(history, models.AIMessage{Role: m.Role, Content: m.Content})
+		}
+		var content strings.Builder
+		trace := make([]models.HermesStep, 0)
+		err = h.hermesService.Stream(ctx, runtime, history, func(v string) {
+			content.WriteString(v)
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "token", Content: v})
+		}, func(step models.HermesStep) {
+			updated := false
+			for i := range trace {
+				if trace[i].ID == step.ID {
+					if strings.HasSuffix(step.Type, ".delta") {
+						step.Summary = trace[i].Summary + step.Summary
+					}
+					trace[i] = step
+					updated = true
+					break
+				}
+			}
+			if !updated {
+				trace = append(trace, step)
+			}
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "hermes_event", Data: step})
+		})
+		assistantMsg.Content = content.String()
+		assistantMsg.HermesTrace = trace
+		assistantMsg.Mode = "hermes"
+		_ = h.conversationService.UpdateMessage(ctx, assistantMsg)
+		if err != nil {
+			h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "error", Content: err.Error()})
+			return
+		}
+		conversation, _ := h.conversationService.GetConversationWithMessages(ctx, req.ConversationID, userID)
+		if conversation != nil && strings.TrimSpace(conversation.Title) == "" {
+			title := strings.TrimSpace(regexp.MustCompile(`\s+`).ReplaceAllString(req.Message, " "))
+			r := []rune(title)
+			if len(r) > 32 {
+				title = string(r[:32]) + "…"
+			}
+			if title != "" {
+				if e := h.conversationService.UpdateConversationTitle(ctx, req.ConversationID, title, userID); e == nil {
+					h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "title", Content: title})
+				}
+			}
+		}
+		h.streamManager.Publish(req.ConversationID, models.ChatStreamResponse{Type: "done", Data: gin.H{"user_message_id": userMsg.ID.Hex(), "assistant_message_id": assistantMsg.ID.Hex(), "credits": credits}})
+	}()
 }
 
 func (h *ChatHandler) handleTempChat(c *gin.Context, req models.ChatRequest, userIDObj primitive.ObjectID) {

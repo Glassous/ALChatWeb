@@ -37,6 +37,8 @@ func main() {
 	err = mysqlDB.DB.AutoMigrate(
 		&models.User{},
 		&models.ModelConfig{},
+		&models.CustomModelConfig{},
+		&models.HermesConfig{},
 		&models.Announcement{},
 		&models.Feedback{},
 	)

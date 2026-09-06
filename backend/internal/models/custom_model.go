@@ -18,3 +18,15 @@ type CustomModelConfig struct {
 	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
+
+// HermesConfig stores the credentials for a user's self-hosted Hermes server.
+type HermesConfig struct {
+	UserID           string     `json:"-" gorm:"primaryKey;type:varchar(24)"`
+	BaseURL          string     `json:"base_url" gorm:"type:varchar(512)"`
+	APIKeyCiphertext string     `json:"-" gorm:"type:text"`
+	Model            string     `json:"model" gorm:"type:varchar(255)"`
+	Tested           bool       `json:"tested" gorm:"not null;default:false"`
+	LastTestedAt     *time.Time `json:"last_tested_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
