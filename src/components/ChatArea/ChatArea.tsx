@@ -146,6 +146,39 @@ const firstValue = (record: JsonRecord, ...keys: string[]) => {
 };
 const looksLikeUrl = (value: string) => /^https?:\/\/\S+$/i.test(value);
 
+// Hermes 事件有时以「[{Key, Value}, ...] 键值列表」的形式存储/下发，这里递归地
+// 把它规整成普通对象，例如 [{Key:'item',Value:[{Key:'name',Value:'terminal'}]}] -> { item: { name: 'terminal' } }
+const normalizeKeyValues = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    const isPairList = value.length > 0 && value.every((entry) => isRecord(entry) && ('Key' in entry || 'key' in entry) && ('Value' in entry || 'value' in entry));
+    if (isPairList) {
+      const record: JsonRecord = {};
+      for (const entry of value) {
+        const source = entry as JsonRecord;
+        const key = source.Key ?? source.key;
+        const raw = source.Value ?? source.value;
+        if (typeof key === 'string' && key) record[key] = normalizeKeyValues(raw);
+      }
+      return record;
+    }
+    return value.map(normalizeKeyValues);
+  }
+  if (isRecord(value)) {
+    const record: JsonRecord = {};
+    for (const [key, val] of Object.entries(value)) record[key] = normalizeKeyValues(val);
+    return record;
+  }
+  return value;
+};
+
+// 对序列化的 JSON 字符串做尝试解析（例如函数调用 arguments 里的命令参数），失败则原样返回。
+const parseJsonText = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text || !(text[0] === '{' || text[0] === '[' || text[0] === '"')) return value;
+  try { return JSON.parse(text); } catch { return value; }
+};
+
 const stepPayload = (step: HermesStep): unknown => {
   if (step.raw !== undefined && step.raw !== null) return step.raw;
   if (!step.details) return step.summary || null;
@@ -202,52 +235,103 @@ const LabeledValue = ({ label, value }: { label: string; value: unknown }) => va
   <div className="hermes-field"><span>{label}</span><JsonValueCard value={value} /></div>
 );
 
-const eventKind = (step: HermesStep, payload: JsonRecord, item: JsonRecord) => {
-  const names = [step.type, step.title, firstString(payload, 'type', 'name'), firstString(item, 'type', 'name')].join(' ').toLowerCase();
+const asText = (value: unknown) => (typeof value === 'string' ? value : displayJson(value));
+
+// 终端卡片：隐藏步骤元数据，只保留命令/输出，样式贴近真实终端窗口
+const HermesTerminal = ({ command, output }: { command?: unknown; output?: unknown }) => {
+  const commandText = command === undefined ? '' : asText(command).replace(/\n+$/, '');
+  const outputText = output === undefined ? '' : asText(output).replace(/\n+$/, '');
+  const screenText = [commandText, outputText].filter(Boolean).join('\n');
+  const commandLines = commandText.split('\n');
+  const outputLines = outputText ? outputText.split('\n') : [];
+  return (
+    <div className="hermes-terminal">
+      <div className="hermes-terminal-bar">
+        <span className="hermes-terminal-lights" aria-hidden="true"><i /><i /><i /></span>
+        {screenText ? <HermesCopyButton value={screenText} /> : <span className="hermes-terminal-spacer" />}
+      </div>
+      <div className="hermes-terminal-screen" aria-label="终端输出">
+        {commandLines.map((line, index) => (
+          <div className="hermes-term-line" key={`cmd-${index}`}>
+            <span className="hermes-term-prompt">{index === 0 ? '$' : '>'}</span>
+            <span className="hermes-term-cmd">{line || '\u00A0'}</span>
+          </div>
+        ))}
+        {outputLines.map((line, index) => (
+          <div className="hermes-term-line" key={`out-${index}`}><span className="hermes-term-out">{line || '\u00A0'}</span></div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const eventKind = (step: HermesStep, payload: JsonRecord, data: JsonRecord, item: JsonRecord) => {
+  const dataType = firstString(data, 'type') || firstString(item, 'type') || firstString(payload, 'type');
+  const dataName = firstString(data, 'name', 'function_name') || firstString(item, 'name', 'function_name') || firstString(payload, 'name');
+  const names = [step.type, step.title, firstString(payload, 'type', 'name'), dataType, dataName].join(' ').toLowerCase();
+  const argsRecord = asRecord(parseJsonText(firstValue(data, 'arguments', 'input', 'args', 'parameters')));
+  const isToolCall = dataType === 'function_call' || firstString(item, 'type') === 'function_call' || firstString(payload, 'type') === 'function_call';
+
   if (names.includes('response.created')) return 'response.created';
-  if (names.includes('function_call_output')) return 'function_call_output';
+  if (names.includes('function_call_output') || names.includes('function_output')) return 'function_call_output';
   if (names.includes('web_search')) return 'web_search';
   if (names.includes('web_extract')) return 'web_extract';
-  if (names.includes('terminal') || names.includes('shell') || names.includes('command')) return 'terminal';
+  // 终端类工具调用（terminal / shell / run_command…），命令常内嵌在 arguments 中
+  const terminalName = /terminal|shell|bash|zsh|cmd|powershell|^exec|execute/.test(dataName) || /^(?:run[-_ ]?command|execute[-_ ]?command|exec[-_ ]?command)$/.test(dataName);
+  const argsAreCommand = isToolCall && ['command', 'cmd', 'cwd', 'script', 'stdout', 'exit_code'].some((key) => key in argsRecord);
+  if (terminalName || argsAreCommand || names.includes('terminal') || names.includes('shell')) return 'terminal';
+  if (isToolCall) return 'function_call';
   if (names.includes('message')) return 'message';
   return 'generic';
 };
 
 const HermesEventDetails = ({ step }: { step: HermesStep }) => {
   const value = stepPayload(step);
-  const payload = asRecord(value);
+  const payload = asRecord(normalizeKeyValues(value));
   const item = asRecord(payload.item);
   const data = Object.keys(item).length ? item : payload;
-  const kind = eventKind(step, payload, item);
-  const rawPanel = <details className="hermes-raw"><summary>原始 JSON</summary><div className="hermes-raw-toolbar"><HermesCopyButton value={value} /></div><JsonValueCard value={value} /></details>;
+  const kind = eventKind(step, payload, data, item);
+  // 解析工具调用参数（可能为 JSON 字符串，例如 {"command":"uname -a"}）
+  const parsedArgs = () => asRecord(parseJsonText(firstValue(data, 'arguments', 'input', 'args', 'parameters')));
+  const parseCommand = (args: JsonRecord) => firstValue(args, 'command', 'cmd', 'script');
+  const parseOutput = (args: JsonRecord) => firstValue(args, 'output', 'stdout');
 
   if (kind === 'response.created') {
     const response = asRecord(payload.response);
     const source = Object.keys(response).length ? response : data;
-    return <><HermesDataCard title="响应已创建" icon="✦" tone="response"><div className="hermes-field-grid"><LabeledValue label="响应 ID" value={firstValue(source, 'id', 'response_id')} /><LabeledValue label="模型" value={firstValue(source, 'model')} /><LabeledValue label="状态" value={firstValue(source, 'status')} /><LabeledValue label="创建时间" value={firstValue(source, 'created_at', 'created')} /><LabeledValue label="上游响应" value={firstValue(source, 'previous_response_id')} /></div></HermesDataCard>{rawPanel}</>;
+    return <><HermesDataCard title="响应已创建" icon="✦" tone="response"><div className="hermes-field-grid"><LabeledValue label="响应 ID" value={firstValue(source, 'id', 'response_id')} /><LabeledValue label="模型" value={firstValue(source, 'model')} /><LabeledValue label="状态" value={firstValue(source, 'status')} /><LabeledValue label="创建时间" value={firstValue(source, 'created_at', 'created')} /><LabeledValue label="上游响应" value={firstValue(source, 'previous_response_id')} /></div></HermesDataCard></>;
   }
   if (kind === 'terminal') {
-    const command = firstValue(data, 'command', 'cmd', 'input', 'arguments');
-    const output = firstValue(data, 'output', 'stdout', 'result', 'content');
-    return <><HermesDataCard title="终端" icon=">_" tone="terminal"><LabeledValue label="工作目录" value={firstValue(data, 'cwd', 'working_directory', 'path')} />{command !== undefined && <div className="hermes-code-section"><span>命令</span><pre>{typeof command === 'string' ? command : displayJson(command)}</pre></div>}{output !== undefined && <div className="hermes-code-section"><span>输出</span><pre>{typeof output === 'string' ? output : displayJson(output)}</pre></div>}<div className="hermes-field-grid"><LabeledValue label="退出码" value={firstValue(data, 'exit_code', 'code')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div></HermesDataCard>{rawPanel}</>;
+    const args = parsedArgs();
+    const command = firstValue(data, 'command', 'cmd', 'script') ?? parseCommand(args);
+    const output = firstValue(data, 'output', 'stdout', 'result', 'content') ?? parseOutput(args);
+    return <><HermesTerminal command={command} output={output} /></>;
+  }
+  if (kind === 'function_call') {
+    const toolName = firstString(data, 'name', 'function_name') || 'function';
+    const args = parseJsonText(firstValue(data, 'arguments', 'input', 'args', 'parameters'));
+    return <><HermesDataCard title="函数调用" icon="ƒ" tone="function"><div className="hermes-field-grid"><LabeledValue label="函数" value={toolName} /><LabeledValue label="调用 ID" value={firstValue(data, 'call_id', 'id')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{args !== undefined && <div className="hermes-output-block"><span>参数</span><JsonValueCard value={args} /></div>}</HermesDataCard></>;
   }
   if (kind === 'function_call_output') {
-    const output = firstValue(data, 'output', 'result', 'content');
-    return <><HermesDataCard title="函数调用结果" icon="ƒ" tone="function"><div className="hermes-field-grid"><LabeledValue label="函数" value={firstValue(data, 'name', 'function_name')} /><LabeledValue label="调用 ID" value={firstValue(data, 'call_id', 'id')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div><LabeledValue label="参数" value={firstValue(data, 'arguments', 'input')} />{output !== undefined && <div className="hermes-output-block"><span>输出</span><JsonValueCard value={output} /></div>}</HermesDataCard>{rawPanel}</>;
+    const output = firstValue(data, 'output', 'result', 'content', 'stdout');
+    return <><HermesDataCard title="函数调用结果" icon="ƒ" tone="function"><div className="hermes-field-grid"><LabeledValue label="函数" value={firstValue(data, 'name', 'function_name')} /><LabeledValue label="调用 ID" value={firstValue(data, 'call_id', 'id')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{output !== undefined && <div className="hermes-output-block"><span>输出</span>{typeof output === 'string' ? <pre className="hermes-text-output">{output}</pre> : <JsonValueCard value={output} />}</div>}</HermesDataCard></>;
   }
   if (kind === 'web_search') {
+    const args = parsedArgs();
+    const query = firstValue(data, 'query', 'q', 'search_query') ?? firstValue(args, 'query', 'q', 'search_query', 'search');
     const resultsValue = firstValue(data, 'results', 'sources', 'items');
     const results = Array.isArray(resultsValue) ? resultsValue : [];
-    return <><HermesDataCard title="网页搜索" icon="⌕" tone="web"><div className="hermes-field-grid"><LabeledValue label="搜索词" value={firstValue(data, 'query', 'q', 'search_query')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{results.length > 0 && <div className="hermes-web-results">{results.map((result, index) => { const record = asRecord(result); const url = firstString(record, 'url', 'link'); return <article key={index}>{url ? <a href={url} target="_blank" rel="noopener noreferrer">{firstString(record, 'title', 'name') || url}</a> : <strong>{firstString(record, 'title', 'name') || `结果 ${index + 1}`}</strong>}<small>{firstString(record, 'domain', 'site_name', 'source')}</small><p>{firstString(record, 'snippet', 'description', 'text')}</p></article>; })}</div>}</HermesDataCard>{rawPanel}</>;
+    return <><HermesDataCard title="网页搜索" icon="⌕" tone="web"><div className="hermes-field-grid"><LabeledValue label="搜索词" value={query} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{results.length > 0 && <div className="hermes-web-results">{results.map((result, index) => { const record = asRecord(result); const url = firstString(record, 'url', 'link'); return <article key={index}>{url ? <a href={url} target="_blank" rel="noopener noreferrer">{firstString(record, 'title', 'name') || url}</a> : <strong>{firstString(record, 'title', 'name') || `结果 ${index + 1}`}</strong>}<small>{firstString(record, 'domain', 'site_name', 'source')}</small><p>{firstString(record, 'snippet', 'description', 'text')}</p></article>; })}</div>}</HermesDataCard></>;
   }
   if (kind === 'web_extract') {
-    const url = firstString(data, 'url', 'link', 'source_url');
+    const args = parsedArgs();
+    const url = firstString(data, 'url', 'link', 'source_url') || firstString(args, 'url', 'link', 'source_url');
     const content = firstValue(data, 'content', 'text', 'markdown', 'excerpt');
-    return <><HermesDataCard title="网页提取" icon="↗" tone="web"><div className="hermes-field-grid"><LabeledValue label="页面" value={firstValue(data, 'title', 'name')} /><LabeledValue label="来源" value={url} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{content !== undefined && <div className="hermes-extract-content"><JsonValueCard value={content} /></div>}</HermesDataCard>{rawPanel}</>;
+    return <><HermesDataCard title="网页提取" icon="↗" tone="web"><div className="hermes-field-grid"><LabeledValue label="页面" value={firstValue(data, 'title', 'name')} /><LabeledValue label="来源" value={url} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{content !== undefined && <div className="hermes-extract-content"><JsonValueCard value={content} /></div>}</HermesDataCard></>;
   }
   if (kind === 'message') {
     const content = firstValue(data, 'content', 'text', 'message');
-    return <><HermesDataCard title="消息" icon="◌" tone="message"><LabeledValue label="角色" value={firstValue(data, 'role')} />{typeof content === 'string' ? <div className="hermes-message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown></div> : <JsonValueCard value={content ?? data} />}</HermesDataCard>{rawPanel}</>;
+    return <><HermesDataCard title="消息" icon="◌" tone="message"><LabeledValue label="角色" value={firstValue(data, 'role')} />{typeof content === 'string' ? <div className="hermes-message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown></div> : <JsonValueCard value={content ?? data} />}</HermesDataCard></>;
   }
   return <HermesDataCard title="事件数据" icon="{}"><div className="hermes-generic-toolbar"><HermesCopyButton value={value} /></div><JsonValueCard value={value} /></HermesDataCard>;
 };

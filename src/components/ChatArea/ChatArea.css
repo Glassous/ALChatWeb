@@ -1183,6 +1183,25 @@
 .hermes-output-block > span { display: block; margin-bottom: 3px; color: var(--md-sys-color-on-surface-variant); font-size: .69em; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
 .hermes-code-section pre { max-height: 260px; margin: 0; overflow: auto; padding: 10px; border-radius: 8px; color: #e5e7eb; background: color-mix(in srgb, #111827 92%, var(--md-sys-color-surface)); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .76em; line-height: 1.55; }
 .hermes-output-block { display: grid; min-width: 0; padding-top: 4px; }
+.hermes-text-output { max-height: 260px; margin: 0; overflow: auto; padding: 10px; border-radius: 8px; color: #e5e7eb; background: color-mix(in srgb, #111827 92%, var(--md-sys-color-surface)); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .76em; line-height: 1.55; }
+
+.hermes-terminal { overflow: hidden; border: 1px solid color-mix(in srgb, var(--md-sys-color-outline) 26%, transparent); border-radius: 10px; background: #0d1117; box-shadow: 0 6px 18px color-mix(in srgb, var(--md-sys-color-shadow) 16%, transparent); }
+.hermes-terminal-bar { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 8px 0 12px; border-bottom: 1px solid color-mix(in srgb, #ffffff 8%, transparent); background: linear-gradient(#20242e, #171b24); border-radius: 10px 10px 0 0; }
+.hermes-terminal-lights { display: inline-flex; flex: 0 0 auto; gap: 6px; }
+.hermes-terminal-lights i { width: 11px; height: 11px; border-radius: 50%; }
+.hermes-terminal-lights i:nth-child(1) { background: #ff5f57; }
+.hermes-terminal-lights i:nth-child(2) { background: #febc2e; }
+.hermes-terminal-lights i:nth-child(3) { background: #28c840; }
+.hermes-terminal-bar .hermes-copy { flex: 0 0 auto; width: 26px; height: 22px; color: #98a1ad; background: transparent; }
+.hermes-terminal-bar .hermes-copy:hover { color: #e6edf3; background: color-mix(in srgb, #ffffff 10%, transparent); }
+.hermes-terminal-spacer { flex: 0 0 auto; width: 26px; }
+.hermes-terminal-screen { margin: 0; padding: 10px 14px 12px; min-height: 40px; max-height: 340px; overflow: auto; color: #d5e2ee; background: linear-gradient(180deg, #0d1117 0%, #0a0d13 100%); font: 400 .8em/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hermes-terminal-screen::-webkit-scrollbar { width: 8px; }
+.hermes-terminal-screen::-webkit-scrollbar-thumb { background: #2b313b; border-radius: 4px; }
+.hermes-term-line { display: flex; gap: 8px; min-width: 0; }
+.hermes-term-prompt { flex: 0 0 auto; color: #3fb950; font-weight: 700; user-select: none; }
+.hermes-term-cmd { min-width: 0; color: #e6edf3; }
+.hermes-term-out { min-width: 0; color: #9fb2c2; }
 
 .hermes-json-object,
 .hermes-json-array { display: grid; gap: 5px; min-width: 0; }
