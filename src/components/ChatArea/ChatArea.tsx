@@ -15,7 +15,18 @@ export interface Message {
   content: string;
   reasoning?: string;
   mode?: 'daily' | 'expert' | 'search' | 'hermes';
-  hermes_trace?: Array<{ id:string; type:string; title:string; status:'running'|'completed'|'failed'; duration_ms?:number; summary?:string; details?:string }>;
+  hermes_trace?: Array<{
+    id: string;
+    type: string;
+    title: string;
+    status: 'running' | 'completed' | 'failed';
+    started_at?: string;
+    ended_at?: string;
+    duration_ms?: number;
+    summary?: string;
+    details?: string;
+    raw?: unknown;
+  }>;
   hermes_response_id?: string;
   hermes_context_version?: number;
   hermes_response_completed?: boolean;
@@ -120,15 +131,161 @@ const WaitingForModel = ({ nonStreaming = false }: { nonStreaming?: boolean }) =
   return <div className="thinking-container"><div className="thinking-spinner"></div><span className="thinking-text">{nonStreaming ? '非流式输出 · 正在生成' : '正在等待模型响应'}{seconds >= 5 ? ` · ${seconds}s` : '...'}</span></div>;
 };
 
-const HermesTimeline = ({ steps, loading }: { steps: NonNullable<Message['hermes_trace']>; loading: boolean }) => (
-  <section className="hermes-timeline" aria-label="Hermes 执行过程">
-    <div className="hermes-timeline-header"><img className={loading ? 'hermes-pulse' : 'hermes-done'} src="/HermesAgent.png" alt="" /><strong>Hermes</strong><small>{loading ? '正在运行' : '已完成'}</small></div>
-    {steps.map(step => <details className={`hermes-step ${step.status}`} key={step.id}>
-      <summary><span className="hermes-step-dot"/><span className="hermes-step-title">{step.title || step.type}</span>{step.summary && <span className="hermes-step-summary">{step.summary}</span>}{step.duration_ms ? <time>{step.duration_ms}ms</time> : null}</summary>
-      {step.details && <pre>{step.details}</pre>}
-    </details>)}
+type HermesStep = NonNullable<Message['hermes_trace']>[number];
+type JsonRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is JsonRecord => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const asRecord = (value: unknown): JsonRecord => isRecord(value) ? value : {};
+const firstString = (record: JsonRecord, ...keys: string[]) => {
+  for (const key of keys) if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+  return '';
+};
+const firstValue = (record: JsonRecord, ...keys: string[]) => {
+  for (const key of keys) if (record[key] !== undefined && record[key] !== null) return record[key];
+  return undefined;
+};
+const looksLikeUrl = (value: string) => /^https?:\/\/\S+$/i.test(value);
+
+const stepPayload = (step: HermesStep): unknown => {
+  if (step.raw !== undefined && step.raw !== null) return step.raw;
+  if (!step.details) return step.summary || null;
+  try { return JSON.parse(step.details); } catch { return step.details; }
+};
+
+const displayJson = (value: unknown) => {
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+};
+
+const HermesCopyButton = ({ value }: { value: unknown }) => {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(typeof value === 'string' ? value : displayJson(value));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch (error) { console.error('Failed to copy Hermes data:', error); }
+  };
+  return <button className="hermes-copy" onClick={copy} title="复制数据" aria-label="复制步骤数据">{copied ? <CheckIcon /> : <CopyIcon />}</button>;
+};
+
+const JsonValueCard = ({ value, depth = 0 }: { value: unknown; depth?: number }) => {
+  if (value === null || value === undefined) return <span className="hermes-json-null">null</span>;
+  if (typeof value === 'boolean') return <span className={`hermes-json-bool ${value ? 'true' : 'false'}`}>{String(value)}</span>;
+  if (typeof value === 'number') return <span className="hermes-json-number">{value}</span>;
+  if (typeof value === 'string') {
+    if (looksLikeUrl(value)) return <a className="hermes-json-link" href={value} target="_blank" rel="noopener noreferrer">{value}</a>;
+    if (value.length > 360) return <details className="hermes-long-value"><summary>{value.slice(0, 180)}…</summary><pre>{value}</pre></details>;
+    return <span className="hermes-json-string">{value}</span>;
+  }
+  if (depth >= 4) return <code className="hermes-json-preview">{displayJson(value)}</code>;
+  if (Array.isArray(value)) return (
+    <div className="hermes-json-array">
+      {value.length === 0 ? <span className="hermes-json-empty">空数组</span> : value.map((item, index) => <div className="hermes-json-row" key={index}><span className="hermes-json-key">{index + 1}</span><JsonValueCard value={item} depth={depth + 1} /></div>)}
+    </div>
+  );
+  if (isRecord(value)) return (
+    <div className="hermes-json-object">
+      {Object.entries(value).map(([key, item]) => <div className="hermes-json-row" key={key}><span className="hermes-json-key">{key.replaceAll('_', ' ')}</span><JsonValueCard value={item} depth={depth + 1} /></div>)}
+    </div>
+  );
+  return <span className="hermes-json-string">{String(value)}</span>;
+};
+
+const HermesDataCard = ({ title, icon, children, tone = 'default' }: { title: string; icon: string; children: React.ReactNode; tone?: string }) => (
+  <section className={`hermes-data-card ${tone}`}>
+    <header><span aria-hidden="true">{icon}</span><strong>{title}</strong></header>
+    <div className="hermes-data-body">{children}</div>
   </section>
 );
+
+const LabeledValue = ({ label, value }: { label: string; value: unknown }) => value === undefined || value === null || value === '' ? null : (
+  <div className="hermes-field"><span>{label}</span><JsonValueCard value={value} /></div>
+);
+
+const eventKind = (step: HermesStep, payload: JsonRecord, item: JsonRecord) => {
+  const names = [step.type, step.title, firstString(payload, 'type', 'name'), firstString(item, 'type', 'name')].join(' ').toLowerCase();
+  if (names.includes('response.created')) return 'response.created';
+  if (names.includes('function_call_output')) return 'function_call_output';
+  if (names.includes('web_search')) return 'web_search';
+  if (names.includes('web_extract')) return 'web_extract';
+  if (names.includes('terminal') || names.includes('shell') || names.includes('command')) return 'terminal';
+  if (names.includes('message')) return 'message';
+  return 'generic';
+};
+
+const HermesEventDetails = ({ step }: { step: HermesStep }) => {
+  const value = stepPayload(step);
+  const payload = asRecord(value);
+  const item = asRecord(payload.item);
+  const data = Object.keys(item).length ? item : payload;
+  const kind = eventKind(step, payload, item);
+  const rawPanel = <details className="hermes-raw"><summary>原始 JSON</summary><div className="hermes-raw-toolbar"><HermesCopyButton value={value} /></div><JsonValueCard value={value} /></details>;
+
+  if (kind === 'response.created') {
+    const response = asRecord(payload.response);
+    const source = Object.keys(response).length ? response : data;
+    return <><HermesDataCard title="响应已创建" icon="✦" tone="response"><div className="hermes-field-grid"><LabeledValue label="响应 ID" value={firstValue(source, 'id', 'response_id')} /><LabeledValue label="模型" value={firstValue(source, 'model')} /><LabeledValue label="状态" value={firstValue(source, 'status')} /><LabeledValue label="创建时间" value={firstValue(source, 'created_at', 'created')} /><LabeledValue label="上游响应" value={firstValue(source, 'previous_response_id')} /></div></HermesDataCard>{rawPanel}</>;
+  }
+  if (kind === 'terminal') {
+    const command = firstValue(data, 'command', 'cmd', 'input', 'arguments');
+    const output = firstValue(data, 'output', 'stdout', 'result', 'content');
+    return <><HermesDataCard title="终端" icon=">_" tone="terminal"><LabeledValue label="工作目录" value={firstValue(data, 'cwd', 'working_directory', 'path')} />{command !== undefined && <div className="hermes-code-section"><span>命令</span><pre>{typeof command === 'string' ? command : displayJson(command)}</pre></div>}{output !== undefined && <div className="hermes-code-section"><span>输出</span><pre>{typeof output === 'string' ? output : displayJson(output)}</pre></div>}<div className="hermes-field-grid"><LabeledValue label="退出码" value={firstValue(data, 'exit_code', 'code')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div></HermesDataCard>{rawPanel}</>;
+  }
+  if (kind === 'function_call_output') {
+    const output = firstValue(data, 'output', 'result', 'content');
+    return <><HermesDataCard title="函数调用结果" icon="ƒ" tone="function"><div className="hermes-field-grid"><LabeledValue label="函数" value={firstValue(data, 'name', 'function_name')} /><LabeledValue label="调用 ID" value={firstValue(data, 'call_id', 'id')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div><LabeledValue label="参数" value={firstValue(data, 'arguments', 'input')} />{output !== undefined && <div className="hermes-output-block"><span>输出</span><JsonValueCard value={output} /></div>}</HermesDataCard>{rawPanel}</>;
+  }
+  if (kind === 'web_search') {
+    const resultsValue = firstValue(data, 'results', 'sources', 'items');
+    const results = Array.isArray(resultsValue) ? resultsValue : [];
+    return <><HermesDataCard title="网页搜索" icon="⌕" tone="web"><div className="hermes-field-grid"><LabeledValue label="搜索词" value={firstValue(data, 'query', 'q', 'search_query')} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{results.length > 0 && <div className="hermes-web-results">{results.map((result, index) => { const record = asRecord(result); const url = firstString(record, 'url', 'link'); return <article key={index}>{url ? <a href={url} target="_blank" rel="noopener noreferrer">{firstString(record, 'title', 'name') || url}</a> : <strong>{firstString(record, 'title', 'name') || `结果 ${index + 1}`}</strong>}<small>{firstString(record, 'domain', 'site_name', 'source')}</small><p>{firstString(record, 'snippet', 'description', 'text')}</p></article>; })}</div>}</HermesDataCard>{rawPanel}</>;
+  }
+  if (kind === 'web_extract') {
+    const url = firstString(data, 'url', 'link', 'source_url');
+    const content = firstValue(data, 'content', 'text', 'markdown', 'excerpt');
+    return <><HermesDataCard title="网页提取" icon="↗" tone="web"><div className="hermes-field-grid"><LabeledValue label="页面" value={firstValue(data, 'title', 'name')} /><LabeledValue label="来源" value={url} /><LabeledValue label="状态" value={firstValue(data, 'status')} /></div>{content !== undefined && <div className="hermes-extract-content"><JsonValueCard value={content} /></div>}</HermesDataCard>{rawPanel}</>;
+  }
+  if (kind === 'message') {
+    const content = firstValue(data, 'content', 'text', 'message');
+    return <><HermesDataCard title="消息" icon="◌" tone="message"><LabeledValue label="角色" value={firstValue(data, 'role')} />{typeof content === 'string' ? <div className="hermes-message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown></div> : <JsonValueCard value={content ?? data} />}</HermesDataCard>{rawPanel}</>;
+  }
+  return <HermesDataCard title="事件数据" icon="{}"><div className="hermes-generic-toolbar"><HermesCopyButton value={value} /></div><JsonValueCard value={value} /></HermesDataCard>;
+};
+
+const HermesChevron = ({ expanded }: { expanded: boolean }) => (
+  <span className={`hermes-chevron ${expanded ? 'expanded' : ''}`} aria-hidden="true">
+    <svg viewBox="0 0 24 24" focusable="false"><path d="m7 10 5 5 5-5" /></svg>
+  </span>
+);
+
+const HermesStepCard = ({ step }: { step: HermesStep }) => {
+  const [expanded, setExpanded] = useState(false);
+  const reactId = React.useId();
+  const panelId = `hermes-step-${reactId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${step.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  return <article className={`hermes-step ${step.status}`}>
+    <button className="hermes-step-header" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} aria-controls={panelId}>
+      <span className="hermes-step-dot"/><span className="hermes-step-title">{step.title || step.type}</span>{step.summary && <span className="hermes-step-summary">{step.summary}</span>}{step.duration_ms ? <time>{step.duration_ms}ms</time> : null}<HermesChevron expanded={expanded} />
+    </button>
+    <div className={`hermes-step-content ${expanded ? 'expanded' : ''}`} id={panelId}><div><HermesEventDetails step={step} /></div></div>
+  </article>;
+};
+
+const HermesTimeline = ({ steps, loading }: { steps: NonNullable<Message['hermes_trace']>; loading: boolean }) => {
+  const [expanded, setExpanded] = useState(loading);
+  const wasLoading = useRef(loading);
+  useEffect(() => {
+    if (wasLoading.current && !loading) setExpanded(false);
+    wasLoading.current = loading;
+  }, [loading]);
+  const failed = steps.some(step => step.status === 'failed');
+  const statusLabel = loading ? '正在运行' : failed ? '运行失败' : '已完成';
+  return <section className={`hermes-timeline ${expanded ? 'expanded' : 'collapsed'}`} aria-label="Hermes 执行过程">
+    <button className="hermes-timeline-header" onClick={() => setExpanded(value => !value)} aria-expanded={expanded}>
+      <img className={loading ? 'hermes-pulse' : 'hermes-done'} src="/HermesAgent.png" alt="" /><strong>Hermes</strong><span className="hermes-step-count">{steps.length} 个步骤</span><small className={failed ? 'failed' : ''}>{statusLabel}</small><HermesChevron expanded={expanded} />
+    </button>
+    <div className={`hermes-timeline-content ${expanded ? 'expanded' : ''}`}><div>{steps.map(step => <HermesStepCard step={step} key={step.id} />)}</div></div>
+  </section>;
+};
 
 function MessageItem({ 
   msg, 
