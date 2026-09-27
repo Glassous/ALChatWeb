@@ -1,0 +1,63 @@
+# 生产环境编排（服务器专用）
+#
+# 与本地开发用的 docker-compose.yml 的区别：
+#   - backend 使用 GitHub Actions 云端构建并推送到 GHCR 的镜像，不再在服务器上本地构建
+#   - 不挂载 ./backend 源码目录（无热重载）
+#
+# 服务器上的路径与项目名：文件同步到 /opt/alchat/alchatweb/ 后执行
+#   sudo env ALCHAT_IMAGE=ghcr.io/glassous/alchat-backend:<tag> \
+#     docker compose -f compose.prod.yaml up -d --no-deps backend
+# 项目名取自目录名（alchatweb），与既有容器/数据卷一致，数据库服务定义与开发版完全相同，
+# 且部署命令带 --no-deps，因此不会重建或影响 mongodb / mysql / redis 容器与数据。
+services:
+  backend:
+    image: ${ALCHAT_IMAGE:-ghcr.io/glassous/alchat-backend:latest}
+    container_name: alchat-backend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    ports:
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mongodb
+      - mysql
+      - redis
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  mongodb:
+    image: mongo:latest
+    container_name: alchat-mongodb
+    ports:
+      - "${MONGODB_HOST_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:latest
+    container_name: alchat-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: alchat
+    ports:
+      - "${MYSQL_HOST_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: alchat-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  mysql_data:
+  redis_data:

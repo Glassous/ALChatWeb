@@ -1,0 +1,228 @@
+name: Deploy
+
+# 前后端合并为单一流水线：任何推送到 main 的变更都触发完整构建与部署
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# 同一分支串行部署，避免并发操作服务器上的同一目录
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_SUFFIX: alchat-backend
+  DEPLOY_DIR: /opt/alchat/alchatweb
+  WEB_ROOT: /opt/1panel/www/sites/alchatweb/index
+  SSH_PORT: "22"
+  # 前端构建注入的 API 地址：优先使用仓库 Variable，未配置时回退到线上默认值
+  VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://alchat.fiacloud.top' }}
+
+jobs:
+  # ================= 云端构建：所有编译/打包都在 GitHub Runner 上完成 =================
+  build:
+    name: 云端构建（后端镜像 + 前端产物）
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 计算镜像地址（GHCR 要求全小写）
+        id: image
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_SUFFIX }}"
+          IMAGE=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')
+          echo "name=$IMAGE:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "base=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送后端镜像（服务器不再本地构建）
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}
+            ${{ steps.image.outputs.base }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 构建前端静态产物
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 3
+
+  # ================= 发布：服务器只接收产物、拉取镜像，不执行任何构建 =================
+  deploy:
+    name: 发布到服务器
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: 配置 SSH 私钥
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SERVER_HOST:-}" ] || [ -z "${SSH_KEY:-}" ]; then
+            echo "::error::SERVER_HOST 与 SERVER_SSH_KEY 均为必填 Secret，请检查 Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+          case "$SSH_KEY" in
+            *"PRIVATE KEY"*) ;;
+            *)
+              echo "::error::SERVER_SSH_KEY 不是有效的 OpenSSH 私钥，需包含完整的 BEGIN/END OPENSSH PRIVATE KEY 两行"
+              exit 1
+              ;;
+          esac
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          # 去掉可能存在的 Windows 换行与首尾引号，否则 ssh 会拒绝该密钥
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          # 统一连接参数：免交互、首次自动记录主机指纹（避免 ssh 因无法确认主机而失败）
+          {
+            echo "Host *"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  BatchMode yes"
+            echo "  ServerAliveInterval 30"
+            echo "  ServerAliveCountMax 3"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+          if ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null 2>&1; then
+            echo "私钥格式校验通过"
+          else
+            echo "::error::私钥无法解析，请确认粘贴内容完整、未加密（无 passphrase）、且为 openssh 或 rsa 格式"
+            exit 1
+          fi
+
+          if ! ssh-keyscan -p "$SSH_PORT" -H "$SERVER_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "::warning::ssh-keyscan 未能获取主机指纹，改用 accept-new 策略；若下一步仍失败，请检查 $SSH_PORT 端口是否对 GitHub Runner 开放"
+          fi
+
+      - name: 准备服务器目录
+        run: |
+          ssh -p "$SSH_PORT" "$SERVER_USER@$SERVER_HOST" \
+            "sudo mkdir -p '$DEPLOY_DIR' '$WEB_ROOT' && sudo chmod -R a+rX '$WEB_ROOT'"
+
+      - name: 预检 backend/.env（缺失或关键字段为空则提前失败）
+        run: |
+          cat > preflight.sh <<'PREFLIGHT'
+          set -euo pipefail
+          env_file="$1"
+          value_of() {
+            sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$env_file" | tail -n 1 | sed -e "s/^\"//" -e "s/\"$//" -e "s/^'//" -e "s/'$//" -e "s/[[:space:]]*$//"
+          }
+          if [ ! -f "$env_file" ]; then
+            echo "::error::$env_file 不存在，请先在服务器创建后端生产配置（可参考仓库 backend/.env.example）"
+            exit 1
+          fi
+          missing=""
+          for key in MONGODB_URI REDIS_ADDR JWT_SECRET; do
+            if [ -z "$(value_of "$key")" ]; then missing="$missing $key"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::$env_file 缺少必需配置:$missing"
+            exit 1
+          fi
+          if [ -z "$(value_of ALLOW_ORIGINS)" ]; then
+            echo "::warning::ALLOW_ORIGINS 未配置，生产环境跨域请求可能被拒绝（需包含前端域名）"
+          fi
+          echo "预检通过"
+          PREFLIGHT
+          ssh -p "$SSH_PORT" "$SERVER_USER@$SERVER_HOST" \
+            "bash -s $DEPLOY_DIR/backend/.env" < preflight.sh
+
+      - name: 同步生产编排文件
+        run: |
+          rsync -e "ssh -p $SSH_PORT" -a --chmod=D755,F644 --rsync-path="sudo rsync" \
+            compose.prod.yaml "$SERVER_USER@$SERVER_HOST:$DEPLOY_DIR/compose.prod.yaml"
+
+      - name: 发布前端静态产物
+        run: |
+          rsync -e "ssh -p $SSH_PORT" -a --delete --no-owner --no-group --chmod=D755,F644 \
+            --rsync-path="sudo rsync" \
+            frontend-dist/ "$SERVER_USER@$SERVER_HOST:$WEB_ROOT/"
+
+      - name: 登录 GHCR 并发布后端（服务器仅拉取镜像）
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+
+          # 用 GITHUB_TOKEN 登录 GHCR（凭证仅保留在服务器 root 的 docker 配置中）
+          printf '%s' "$GHCR_TOKEN" | ssh -p "$SSH_PORT" "$SERVER_USER@$SERVER_HOST" \
+            "sudo docker login '$REGISTRY' -u '${{ github.actor }}' --password-stdin"
+
+          # 在服务器上拉取新镜像并重建后端容器；--no-deps 保证不触碰数据库容器
+          ssh -p "$SSH_PORT" "$SERVER_USER@$SERVER_HOST" \
+            "bash -s '$DEPLOY_DIR' '$IMAGE'" <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_DIR="$1"
+          IMAGE="$2"
+
+          cd "$DEPLOY_DIR"
+
+          # 兼容 docker compose v2 与 docker-compose v1
+          if sudo docker compose version >/dev/null 2>&1; then
+            DC="sudo docker compose"
+          else
+            DC="sudo docker-compose"
+          fi
+
+          # 通过临时环境变量注入镜像地址，不改动服务器上任何现有文件
+          sudo env "ALCHAT_IMAGE=$IMAGE" $DC -f compose.prod.yaml pull backend
+          sudo env "ALCHAT_IMAGE=$IMAGE" $DC -f compose.prod.yaml up -d --no-deps backend
+
+          # 清理无标签的悬空镜像，释放磁盘
+          sudo docker image prune -f >/dev/null 2>&1 || true
+
+          echo "后端已更新为 $IMAGE"
+          REMOTE

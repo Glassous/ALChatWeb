@@ -1,0 +1,8 @@
+# 减小构建上下文并避免把本地敏感文件带入构建环境
+.env
+*.exe
+*.test
+*.out
+tmp/
+.git
+Dockerfile.dev
