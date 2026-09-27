@@ -1,0 +1,1 @@
+"""AL Chat FastAPI backend."""

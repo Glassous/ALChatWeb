@@ -1,6 +1,6 @@
 # AL Chat Web
 
-AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、高性能、功能丰富的 AI 智能对话平台，专为 Web 端进行了深度优化与交互设计。
+AL Chat Web 是一个基于 **React 19** 与 **Python/FastAPI + LangChain** 的 AI 对话平台。
 
 本项目采用 **MySQL + MongoDB + Redis 混合数据架构**，支持多分支对话历史管理、实时代码运行沙箱 (Workspace) 等特性，为用户提供兼具美学与实用性的 AI 交互体验。
 
@@ -39,10 +39,11 @@ AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、�
 - **网络图拓扑**: [React Xarrows](https://github.com/elrumordelaluz/react-xarrows)
 - **样式**: Vanilla CSS + CSS Variables (Material Theme Tokens)
 
-### 业务后端 (Go Backend)
-- **开发语言**: [Go 1.21+](https://go.dev/)
-- **Web 框架**: [Gin](https://gin-gonic.com/)
-- **ORM 框架**: [GORM](https://gorm.io/) (连接 MySQL)
+### 业务后端 (Python Backend)
+- **开发语言**: Python 3.12+
+- **Web 框架**: FastAPI，单个 Uvicorn worker
+- **AI 接口**: LangChain `ChatOpenAI` 与专用 LangChain 模型/工具适配器
+- **数据访问**: SQLAlchemy、PyMongo、Redis Python 客户端
 - **双数据库引擎**: 
   - **MySQL (v9.0+)**：存储用户、配置、公告、积分流水、反馈等结构化核心业务数据。
   - **MongoDB**：作为高吞吐的会话存储引擎，持久化海量非结构化的会话（Conversations, Messages, Shared Conversations）。
@@ -57,18 +58,14 @@ AL Chat Web 是一个基于 **React 19** 和 **Go (Gin)** 构建的现代化、�
 
 ```text
 alchatweb/
-├── backend/                  # Go 后端服务
-│   ├── cmd/
-│   │   ├── server/          # 业务主服务启动入口 (main.go)
-│   │   └── migrate/         # 一键数据迁移与 Schema 自动初始化工具
-│   ├── internal/
-│   │   ├── config/          # 基于 GoDotEnv 的环境变量加载
-│   │   ├── database/        # 数据库连接初始化 (MongoDB, MySQL, Redis)
-│   │   ├── handlers/        # 业务 API 控制器 (Auth, Chat, Admin, ALing 等)
-│   │   ├── middleware/      # 安全与频控中间件 (CORS, JWT, RateLimit)
-│   │   ├── models/          # 统一数据模型定义 (GORM Schema & BSON Tags)
-│   │   └── services/        # 腾讯云 COS、SMTP 邮箱、各 LLM API 服务的统一封装
-│   ├── Dockerfile.dev       # 容器化开发构建配置
+├── backend/                  # Python 后端服务
+│   ├── app/main.py          # FastAPI 入口
+│   ├── app/routes/          # 兼容的业务 API
+│   ├── app/ai.py            # LangChain 模型与工具适配器
+│   ├── app/storage.py       # MySQL、MongoDB、Redis
+│   ├── app/migrate.py       # 显式、可重复执行的数据迁移
+│   ├── pyproject.toml       # Python 依赖
+│   └── Dockerfile.dev       # 开发容器
 │
 ├── src/                      # React 前端源文件
 │   ├── components/          # 核心交互组件
@@ -82,8 +79,6 @@ alchatweb/
 │   └── main.tsx
 │
 ├── docker-compose.yml        # Docker 容器服务编排文件
-├── start-dev.ps1             # Windows 本地开发一键热启动脚本
-├── start-dev.sh              # Linux/macOS 本地开发一键热启动脚本
 └── README.md                 # 说明文档
 ```
 
@@ -91,7 +86,7 @@ alchatweb/
 
 ## 🚀 快速启动与部署
 
-推荐使用容器方式启动数据库与 Go 后端，并使用 Vite 启动 Web 前端。
+推荐使用 Docker Compose 运行数据库与 Python 后端，并使用 Vite 启动 Web 前端。
 
 ### 1. 配置本地环境变量
 在 `alchatweb/` 根目录和 `alchatweb/backend/` 目录下分别复制配置文件：
@@ -100,7 +95,7 @@ alchatweb/
   ```bash
   cp .env.example .env
   ```
-- **Go 后端环境变量** (用于业务逻辑及 API Key)：
+- **Python 后端环境变量** (用于业务逻辑及 API Key)：
   ```bash
   cp backend/.env.example backend/.env
   ```
@@ -108,19 +103,17 @@ alchatweb/
   - 大模型 API Key 及自定义 Base URL
   - Redis、MySQL 和 MongoDB 连接信息
 
-### 2. 运行一键热启动开发脚本
-在 `alchatweb/` 根目录下运行以下脚本，将会一键拉起 MySQL、MongoDB、Redis 容器，并自动以热重载模式构建并启动 Go 后端及前端 Vite 开发服务器：
+### 2. 启动数据库与后端
 
-- **Windows 用户**:
-  ```powershell
-  # 以管理员身份运行 PowerShell
-  Set-ExecutionPolicy Bypass -Scope Process
-  .\start-dev.ps1
-  ```
-- **Linux/macOS 用户**:
-  ```bash
-  bash start-dev.sh
-  ```
+首次部署先启动数据服务并执行显式迁移，然后启动 API：
+
+```bash
+docker compose up -d mysql mongodb redis
+docker compose run --rm backend python -m app.migrate
+docker compose up -d --build backend
+```
+
+本地开发也可在 `backend/` 执行 `python -m pip install -e '.[test]'`，再执行 `uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1`。
 
 ### 3. 初始化数据库（MySQL 自动建表与迁移）
 在后端服务运行前，运行数据迁移脚本。该脚本会自动在 MySQL 中建立最新的表结构（如 `users`, `configs`, `announcements`, `feedbacks` 等），并自动将 MongoDB 历史存量用户数据无损导入到 MySQL 中：
@@ -129,10 +122,10 @@ alchatweb/
 cd backend
 
 # 本地直接运行迁移
-go run cmd/migrate/main.go
+python -m app.migrate
 
-# 或者如果是在 Docker 容器中运行
-docker compose exec backend go run cmd/migrate/main.go
+# 或者在 Docker 容器中运行
+docker compose run --rm backend python -m app.migrate
 ```
 
 ---

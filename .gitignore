@@ -1,4 +1,14 @@
-# Logs
+# ---------------- 前端依赖与构建产物 ----------------
+node_modules
+dist
+dist-ssr
+.vite
+coverage
+.eslintcache
+*.tsbuildinfo
+*.local
+
+# 日志
 logs
 *.log
 npm-debug.log*
@@ -7,32 +17,46 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Environment variables
+# ---------------- 环境变量（切勿提交真实密钥） ----------------
 .env
 .env.local
 .env.*.local
+!.env.example
+!**/.env.example
 
-# Editor directories and files
+# ---------------- Python 后端（backend/） ----------------
+backend/.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+
+# ---------------- 旧 Go 后端的构建产物（源码已移除，保留忽略规则） ----------------
+backend/vendor/
+backend/tmp/
+backend/*.exe
+backend/*.test
+backend/*.out
+go.work
+
+# ---------------- 编辑器与系统文件 ----------------
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# Backend
-backend/.env
-backend/vendor/
-backend/*.exe
-backend/*.test
-backend/*.out
+*~
 
 docs

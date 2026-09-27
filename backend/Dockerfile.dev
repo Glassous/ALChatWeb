@@ -1,22 +1,10 @@
-FROM golang:1.25-alpine
+FROM python:3.12-slim
 
 WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+COPY pyproject.toml ./
+COPY app ./app
+RUN pip install --no-cache-dir -e .
 
-# 配置 Go 环境变量，使用代理加速下载
-ENV GOPROXY=https://goproxy.cn,direct
-
-# 复制依赖文件
-COPY go.mod go.sum ./
-RUN go mod download
-
-# 复制所有源代码
-COPY . .
-
-# 直接构建后端服务，不使用文件监听或热重载工具
-RUN CGO_ENABLED=0 GOOS=linux go build -o /usr/local/bin/alchat-server ./cmd/server
-
-# 暴露端口
 EXPOSE 8080
-
-# 直接启动后端服务
-CMD ["/usr/local/bin/alchat-server"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
