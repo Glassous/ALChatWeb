@@ -371,6 +371,65 @@ const HermesTimeline = ({ steps, loading }: { steps: NonNullable<Message['hermes
   </section>;
 };
 
+function GeneratedImageFrame({
+  src,
+  resolution,
+  onImageClick,
+}: {
+  src?: string;
+  resolution: string;
+  onImageClick: (url: string) => void;
+}) {
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const dimensions = /^(\d+)x(\d+)$/.exec(resolution);
+  const width = dimensions ? Number(dimensions[1]) : 0;
+  const height = dimensions ? Number(dimensions[2]) : 0;
+  const aspectRatio = width > 0 && height > 0
+    ? `${width} / ${height}`
+    : '1 / 1';
+  const maxWidth = width > 0 && height > 0 ? Math.round(512 * Math.min(1, width / height)) : 512;
+  const isReady = Boolean(src && loadedSrc === src);
+
+  const handleImageError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    if (src?.includes('alchatfiles.fiacloud.top')) {
+      const fallback = src.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
+      if (image.src !== fallback) {
+        image.src = fallback;
+        return;
+      }
+    }
+    setFailedSrc(src || null);
+  };
+
+  return (
+    <div
+      className={`generated-image-frame ${isReady ? 'is-ready' : ''}`}
+      style={{ aspectRatio, maxWidth }}
+      onClick={() => src && isReady && onImageClick(src)}
+    >
+      {src && (
+        <img
+          src={src}
+          alt="生成的图片"
+          className="generated-image-frame-picture"
+          onLoad={() => setLoadedSrc(src)}
+          onError={handleImageError}
+        />
+      )}
+      <div className="generated-image-frame-overlay" role="status" aria-live="polite" aria-hidden={isReady}>
+        <div className="image-loading-shimmer" />
+        <div className="loading-spinner-container">
+          {failedSrc === src && src ? null : <div className="loading-spinner" />}
+          <span>{failedSrc === src && src ? '图片加载失败' : src ? '正在加载图片...' : '正在生成图片...'}</span>
+          <small>{resolution.replace('x', ' × ')}</small>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MessageItem({ 
   msg, 
   allMessages,
@@ -398,6 +457,8 @@ function MessageItem({
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
   const [showExpandButton, setShowExpandButton] = useState(false);
   const userBubbleRef = useRef<HTMLDivElement>(null);
+  const pureImageUrl = msg.role === 'assistant' ? /^<image src="([^"]+)">$/.exec(msg.content.trim())?.[1] : undefined;
+  const isPureImage = Boolean(pureImageUrl);
 
   const siblings = allMessages.filter(m => (m.parent_id || null) === (msg.parent_id || null));
   const siblingIndex = siblings.findIndex(m => m.id === msg.id);
@@ -488,13 +549,7 @@ function MessageItem({
       return <WaitingForModel nonStreaming={msg.metadata?.generationMode === 'non_stream'} />;
     }
 
-    // Determine if we should show image loading placeholder
-    const showImageLoader = msg.status === 'loading' && msg.metadata?.resolution && !msg.content.includes('<image');
-    let aspectRatio: number | undefined;
-    if (showImageLoader && msg.metadata?.resolution) {
-      const [w, h] = msg.metadata.resolution.split('x').map(Number);
-      aspectRatio = w / h;
-    }
+    const showImageFrame = Boolean(msg.metadata?.resolution) && (msg.status === 'loading' || isPureImage);
 
     let contentForRender = msg.content;
     if (contentForRender.includes('<image')) {
@@ -575,7 +630,7 @@ function MessageItem({
         return (
           <span className="image-container-msg">
             <img 
-              src={getThumbnailUrl(src)} 
+              src={src}
               alt={alt || "Generated"} 
               className="generated-image" 
               onClick={() => onImageClick(src!)}
@@ -743,17 +798,12 @@ function MessageItem({
             </div>
           </div>
         )}
-        {showImageLoader ? (
-          <div 
-            className="image-loading-placeholder" 
-            style={{ aspectRatio: `${aspectRatio}` }}
-          >
-            <div className="image-loading-shimmer"></div>
-            <div className="loading-spinner-container">
-              <div className="loading-spinner"></div>
-              <span>正在绘制您的灵感...</span>
-            </div>
-          </div>
+        {showImageFrame ? (
+          <GeneratedImageFrame
+            src={pureImageUrl}
+            resolution={msg.metadata!.resolution!}
+            onImageClick={onImageClick}
+          />
         ) : (
           <ReactMarkdown 
             remarkPlugins={[remarkGfm]}
@@ -765,8 +815,6 @@ function MessageItem({
       </>
     );
   };
-
-  const isPureImage = msg.content.trim().startsWith('<image') && msg.content.replace(/<image src="[^"]+">/g, '').trim() === '';
 
   return (
     <div className={`message-wrapper ${msg.role}`}>
@@ -1104,7 +1152,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `generated-image-${Date.now()}.png`;
+      const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
+      a.download = `generated-image-${Date.now()}.${extension}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -1211,7 +1260,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
               </button>
             </div>
             <div className="preview-content" onClick={e => e.stopPropagation()}>
-              <img src={getThumbnailUrl(previewUrl)} alt="预览" className="preview-image" />
+              <img src={previewUrl} alt="预览" className="preview-image" />
             </div>
           </div>
         </FullscreenLayer>

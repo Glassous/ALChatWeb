@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -41,8 +42,10 @@ class Settings(BaseSettings):
     ALING_MODEL: str = "gpt-4o"
     BOCHA_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
-    VOLCENGINE_API_KEY: str = ""
-    VOLCENGINE_IMAGE_EP: str = ""
+    OPENAI_IMAGES_API_KEY: str = ""
+    OPENAI_IMAGES_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_IMAGES_MODEL: str = ""
+    OPENAI_IMAGES_PROTOCOL: Literal["openai", "openrouter"] = "openai"
     COS_SECRET_ID: str = ""
     COS_SECRET_KEY: str = ""
     COS_BUCKET: str = ""

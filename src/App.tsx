@@ -455,6 +455,7 @@ function ChatApp({
         clientId: assistantMsgId,
       };
       setMessages((prev) => [...(Array.isArray(prev) ? prev : []), loadingMsg]);
+      setCurrentNodeId(assistantMsgId);
       setIsLoading(true);
 
       try {

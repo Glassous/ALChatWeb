@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessageChunk
 import app.routes.chat_routes as chat_routes
 from app.ai import AIService, CompatibleChatModel, ReasoningChatOpenAI, Runtime
 from app.core import count_tokens, encrypt, now
-from app.storage import CustomModelConfig, HermesConfig
+from app.storage import CustomModelConfig, HermesConfig, User
 from app.streams import StreamManager
 from tests.conftest import CFG, auth, make_user, stream_of
 
@@ -168,6 +168,23 @@ def test_image_generation_publishes_events_and_deducts_flat_credits(client, stat
     assert events[0]["content"] == "1024x1024"
     assert events[1]["content"] == '<image src="https://cdn.example.com/images/uploadedimage.png">'
     assert events[-1]["data"]["credits"] == pytest.approx(950)
+
+
+def test_image_generation_failure_does_not_deduct_credits(client, state, fake_cos, monkeypatch):
+    user, jwt = make_user(state)
+    conversation = create_conversation(client, jwt)
+
+    def fail(prompt, size, reference):
+        raise RuntimeError("Images API unavailable")
+
+    monkeypatch.setattr(state.ai, "image", fail)
+    response = client.post("/api/chat/image", json={"conversation_id": conversation["id"], "prompt": "画一只猫"}, headers=auth(jwt))
+    assert response.status_code == 200
+    events = stream_of(client, jwt, conversation["id"])
+    assert [event["type"] for event in events] == ["image_gen_start", "error"]
+    assert "Images API unavailable" in events[-1]["content"]
+    with state.db.session() as session:
+        assert float(session.get(User, user["id"]).credits) == pytest.approx(1000)
 
 
 def test_temp_conversation_flow_uses_redis_and_promotes(client, state):
@@ -362,12 +379,33 @@ def test_multimodal_messages_use_blocks_for_every_role():
     assert service.has_multimodal([{"role": "user", "content": "纯文本"}], "") is False
 
 
-def test_image_reference_is_copied_from_parent_branch(client, state, fake_cos):
+def test_image_reference_is_copied_from_parent_branch(client, state, fake_cos, monkeypatch):
     user, jwt = make_user(state)
     conversation = create_conversation(client, jwt)
+    references = []
+    monkeypatch.setattr(state.ai, "image", lambda prompt, size, reference: references.append(reference) or state.ai.image_bytes)
     response = client.post("/api/chat/image", json={"conversation_id": conversation["id"], "prompt": "第二张"}, headers=auth(jwt))
     assert response.status_code == 200
     stream_of(client, jwt, conversation["id"])
     history = client.get(f"/api/conversations/{conversation['id']}", headers=auth(jwt)).json()["messages"]
     assert history[0]["content"] == "第二张"
     assert history[1]["content"].startswith('<image src="https://cdn.example.com/images/')
+    assert references == [""]
+
+    response = client.post("/api/chat/image", json={"conversation_id": conversation["id"], "parent_message_id": history[1]["id"], "prompt": "改成蓝色"}, headers=auth(jwt))
+    assert response.status_code == 200
+    stream_of(client, jwt, conversation["id"])
+    assert references[1] == "https://cdn.example.com/images/uploadedimage.png"
+
+
+def test_explicit_reference_and_output_extension(client, state, fake_cos, monkeypatch):
+    user, jwt = make_user(state)
+    conversation = create_conversation(client, jwt)
+    references = []
+    monkeypatch.setattr(state.ai, "image", lambda prompt, size, reference: references.append(reference) or b"\xff\xd8\xffimage")
+    ref = "https://cdn.example.com/reference_files/a.jpg"
+    response = client.post("/api/chat/image", json={"conversation_id": conversation["id"], "prompt": "换背景", "ref_image_url": ref}, headers=auth(jwt))
+    assert response.status_code == 200
+    events = stream_of(client, jwt, conversation["id"])
+    assert references == [ref]
+    assert events[1]["content"] == '<image src="https://cdn.example.com/images/uploadedimage.jpg">'

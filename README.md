@@ -17,7 +17,7 @@ AL Chat Web 是一个基于 **React 19** 与 **Python/FastAPI + LangChain** 的 
   - 智能识别 AI 生成的代码块（支持 HTML, CSS, SVG 等）。
   - 右侧提供独立的预览沙箱，支持实时渲染运行、源码编辑与动态交互，为开发者提供类似 Claude Artifacts 的沉浸式调试环境。
 - 🖼️ **多模态与图像生成**：
-  - **画图任务**：集成火山引擎 (Volcengine) 图像生成大模型接口，支持后台异步画图并在会话中渲染呈现。
+  - **画图任务**：可选择 OpenAI Images 或 OpenRouter Images 协议，通过配置的图片服务生成或参考图片编辑，支持后台异步画图并在会话中渲染呈现。
   - **多模态对话**：支持直接上传并解析图片，实现与多模态模型的看图对话。
 - 🔐 **完备的主体业务系统**：
   - **安全认证**：邮箱验证码注册/重置密码，JWT 双 Token 校验，配合 Redis 缓存实现安全的登录与登出白/黑名单机制。
@@ -101,6 +101,7 @@ alchatweb/
   ```
   编辑 `backend/.env`，重点配置：
   - 大模型 API Key 及自定义 Base URL
+  - 画图服务设置 `OPENAI_IMAGES_PROTOCOL=openai` 或 `openrouter`，只决定请求路径和格式：前者调用配置的 Base URL 下的 `/images/generations`、`/images/edits`，后者调用同一 Base URL 下的 `/images`。`OPENAI_IMAGES_BASE_URL`、`OPENAI_IMAGES_API_KEY`、`OPENAI_IMAGES_MODEL` 始终使用环境变量中填写的值；Base URL 可以是自定义上游网关，不要求指向 OpenRouter 官方域名。省略 Base URL 时默认 `https://api.openai.com/v1`。两种协议均保留参考图和客户端尺寸；模型须支持相应尺寸与参考图。OpenRouter 的 Image API 未定义通用 `watermark` 参数，OpenAI Images 兼容接口则会发送 `watermark: false`。
   - Redis、MySQL 和 MongoDB 连接信息
 
 ### 2. 启动数据库与后端

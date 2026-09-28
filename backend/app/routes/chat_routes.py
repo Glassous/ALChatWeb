@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from ..ai import HermesResponsesModel, Runtime
 from ..conversations import is_temp
 from ..core import auth, count_tokens, decrypt, deduct, fail, now, rate_limit, reset_credits
-from ..media import COS
+from ..media import COS, image_file_metadata
 from ..storage import CustomModelConfig, HermesConfig, User
 
 router = APIRouter()
@@ -457,7 +457,8 @@ def generate_image(body: dict, request: Request):
         try:
             st().streams.publish(cid, "image_gen_start", body.get("resolution") or "2048x2048")
             image = st().ai.image(prompt, body.get("resolution", ""), ref)
-            url = COS(st().cfg).upload(image, "image.png", "images")
+            filename, _ = image_file_metadata(image)
+            url = COS(st().cfg).upload(image, filename, "images")
             tag = f'<image src="{url}">'
             assistant["content"] = tag
             st().conversations.update_message(assistant)

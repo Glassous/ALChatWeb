@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import re
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from pydantic import Field, SecretStr
 
 from .config import Settings
 from .core import count_tokens, validate_public_url
+from .media import COS, MAX_IMAGE_BYTES, image_file_metadata
 
 
 def _wire_messages(messages: list[BaseMessage]) -> list[dict]:
@@ -160,23 +162,92 @@ class BochaSearchTool(BaseTool):
         return [{"title": v.get("name", ""), "url": v.get("url", ""), "snippet": v.get("snippet", ""), "site_name": v.get("siteName", ""), "site_icon": v.get("siteIcon", ""), "date_published": v.get("datePublished", "")} for v in response.json().get("data", {}).get("webPages", {}).get("value", [])]
 
 
-class ArkImageTool(BaseTool):
-    name: str = "ark_image_generation"
-    description: str = "Generate one image with Volcengine Ark"
-    api_key: str = Field(repr=False)
-    endpoint: str
+class OpenAIImagesTool:
+    def __init__(self, cfg: Settings):
+        self.cfg = cfg
 
-    def _run(self, prompt: str, size: str = "", image: str = "") -> bytes:
-        from volcenginesdkarkruntime import Ark
-        args = {"model": self.endpoint, "prompt": prompt, "response_format": "b64_json", "watermark": False}
+    def generate(self, prompt: str, size: str = "", reference: str = "") -> bytes:
+        if not self.cfg.OPENAI_IMAGES_API_KEY or not self.cfg.OPENAI_IMAGES_MODEL:
+            raise RuntimeError("OpenAI Images API key and model must be configured")
+        if self.cfg.OPENAI_IMAGES_PROTOCOL == "openrouter":
+            data = self._generate_openrouter(prompt, size, reference)
+        else:
+            client = OpenAI(
+                api_key=self.cfg.OPENAI_IMAGES_API_KEY,
+                base_url=self.cfg.OPENAI_IMAGES_BASE_URL,
+                timeout=300,
+                max_retries=0,
+            )
+            args = {"model": self.cfg.OPENAI_IMAGES_MODEL, "prompt": prompt, "extra_body": {"watermark": False}}
+            if size:
+                args["size"] = size
+            if reference:
+                image = COS(self.cfg).download_image(reference)
+                filename, mime = image_file_metadata(image)
+                response = client.images.edit(image=(filename, image, mime), **args)
+            else:
+                response = client.images.generate(**args)
+            data = response.data
+        if not data:
+            raise RuntimeError("No image returned from Images API")
+        first = data[0]
+        b64_json = first.get("b64_json") if isinstance(first, dict) else first.b64_json
+        url = first.get("url") if isinstance(first, dict) else first.url
+        if b64_json:
+            try:
+                content = base64.b64decode(b64_json, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise RuntimeError("Images API returned invalid base64 image data") from exc
+        elif url:
+            content = self._download_result(url)
+        else:
+            raise RuntimeError("Images API returned neither image data nor a URL")
+        image_file_metadata(content)
+        return content
+
+    def _generate_openrouter(self, prompt: str, size: str, reference: str) -> list[dict]:
+        payload: dict[str, Any] = {"model": self.cfg.OPENAI_IMAGES_MODEL, "prompt": prompt}
         if size:
-            args["size"] = size
-        if image:
-            args["image"] = image
-        response = Ark(api_key=self.api_key).images.generate(**args)
-        if not response.data or not response.data[0].b64_json:
-            raise RuntimeError("no image returned from API")
-        return base64.b64decode(response.data[0].b64_json)
+            payload["size"] = size
+        if reference:
+            image = COS(self.cfg).download_image(reference)
+            _, mime = image_file_metadata(image)
+            encoded = base64.b64encode(image).decode("ascii")
+            payload["input_references"] = [{"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}]
+        response = httpx.post(
+            f"{self.cfg.OPENAI_IMAGES_BASE_URL.rstrip('/')}/images",
+            headers={"Authorization": f"Bearer {self.cfg.OPENAI_IMAGES_API_KEY}"},
+            json=payload,
+            timeout=300,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            try:
+                error = response.json().get("error", {})
+                detail = error.get("message", "") if isinstance(error, dict) else ""
+            except (ValueError, AttributeError):
+                detail = ""
+            suffix = f": {detail}" if detail else ""
+            raise RuntimeError(f"OpenRouter Images API error ({response.status_code}){suffix}") from exc
+        result = response.json()
+        if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+            raise RuntimeError("OpenRouter Images API returned an invalid response")
+        return result["data"]
+
+    @staticmethod
+    def _download_result(url: str) -> bytes:
+        validate_public_url(url)
+        with httpx.stream("GET", url, follow_redirects=False, timeout=60) as response:
+            response.raise_for_status()
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    raise ValueError("Images API image exceeds the 50MB limit")
+                chunks.append(chunk)
+        return b"".join(chunks)
 
 
 SEARCH_GUIDANCE = (
@@ -316,4 +387,4 @@ class AIService:
         return [self.result_view(v.get("title", ""), v.get("url", ""), v.get("snippet", ""), v.get("site_name", ""), v.get("site_icon", ""), v.get("date_published", "")) for v in entries]
 
     def image(self, prompt: str, size: str, reference: str) -> bytes:
-        return ArkImageTool(api_key=self.cfg.VOLCENGINE_API_KEY, endpoint=self.cfg.VOLCENGINE_IMAGE_EP).invoke({"prompt": prompt, "size": size, "image": reference})
+        return OpenAIImagesTool(self.cfg).generate(prompt, size, reference)

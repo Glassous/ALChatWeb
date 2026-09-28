@@ -77,7 +77,7 @@ class FakeAI:
         self.title_value = "生成的标题"
         self.keywords_value = "关键词"
         self.results = [{"title": "标题", "url": "https://example.com/a", "snippet": "摘要", "site_name": "example.com"}]
-        self.image_bytes = b"\x89PNG-fake-image"
+        self.image_bytes = b"\x89PNG\r\n\x1a\nfake-image"
         self.fail_next_runtime_call = False
         self.multimodal_api_key = "multimodal-key"
         self.captured: list[dict] = []
