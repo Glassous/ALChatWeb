@@ -21,7 +21,7 @@ interface TopBarProps {
   hasMessages?: boolean;
   hasConversation?: boolean;
   isImageMode?: boolean;
-  mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent';
   showBrand?: boolean;
 }
 
@@ -48,7 +48,7 @@ export function TopBar({
   mode = 'daily',
   showBrand = true
 }: TopBarProps) {
-  const showTempChatBtn = !(hasMessages && hasConversation) && !isImageMode && mode !== 'expert';
+  const showTempChatBtn = !(hasMessages && hasConversation) && !isImageMode && mode !== 'expert' && mode !== 'agent';
 
   return (
     <header className={`topbar app-topbar-surface ${hasConversation ? 'has-conversation' : ''}`}>

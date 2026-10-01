@@ -205,7 +205,7 @@ def create_share(id: str, request: Request, body: dict | None = None):
             fail(400, "用户不存在")
         nickname, avatar = user.nickname or user.email, user.avatar
     requested_leaf = str((body or {}).get("leaf_message_id") or "")
-    messages = list(st().db.mongo["messages"].find({"conversation_id": oid(id)}).sort("created_at", -1))
+    messages = list(st().db.mongo["messages"].find({"conversation_id": oid(id)}).sort([("created_at", -1), ("_id", -1)]))
     leaf = next((m for m in messages if requested_leaf and str(m["_id"]) == requested_leaf), None)
     if requested_leaf and ObjectId.is_valid(requested_leaf) and not leaf:
         fail(400, "未找到消息")
@@ -277,6 +277,13 @@ def save_share(token: str, request: Request):
         ids[str(message["_id"])] = copied["id"]
         copied["reasoning"] = message.get("reasoning", "")
         copied["search"] = message.get("search")
+        if message.get("mode") == "agent":
+            copied.update(mode="agent", agent_trace=message.get("agent_trace", []), agent_status=message.get("agent_status", "completed"), agent_error=message.get("agent_error", ""))
+            copied.update(agent_budget=message.get("agent_budget", {}), agent_notice=message.get("agent_notice", ""), agent_finish_reason=message.get("agent_finish_reason", ""))
+            copied["agent_discovery"] = message.get("agent_discovery", {})
+            if copied["agent_status"] in ("running", "cancelling"):
+                copied["agent_status"] = "interrupted"
+                copied["agent_error"] = "分享副本仅包含保存时的执行结果"
         st().conversations.update_message(copied)
     return {"conversation_id": new["id"]}
 

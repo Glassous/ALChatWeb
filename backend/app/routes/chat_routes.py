@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ..ai import HermesResponsesModel, Runtime
+from ..agents import generation_endpoint
 from ..conversations import is_temp
 from ..core import auth, count_tokens, decrypt, deduct, fail, now, rate_limit, reset_credits
 from ..media import COS, image_file_metadata
@@ -366,6 +367,7 @@ def _process_hermes(user_id: str, body: dict, user_message: dict, assistant: dic
 
 
 @router.post("/api/chat")
+@generation_endpoint
 def chat(body: dict, request: Request):
     user_id = uid(request)
     stt = st()
@@ -420,6 +422,7 @@ def stream(request: Request, conversation_id: str = ""):
 
 
 @router.post("/api/chat/image")
+@generation_endpoint
 def generate_image(body: dict, request: Request):
     user_id = uid(request)
     rate_limit(request, st().db, 10, "/api/chat/image", user_id)

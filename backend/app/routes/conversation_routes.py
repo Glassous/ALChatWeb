@@ -8,6 +8,7 @@ from pymongo import ASCENDING
 from ..conversations import is_temp
 from ..core import auth, fail
 from ..storage import oid, public
+from ..agents import manager
 
 router = APIRouter()
 
@@ -124,6 +125,8 @@ def delete_conversation(id: str, request: Request):
     user = uid(request)
     if not ObjectId.is_valid(id):
         fail(500, "invalid conversation ID")
-    if not st().conversations.delete(user, id):
-        fail(404, "conversation not found or access denied")
+    with manager(st()).condition:
+        manager(st()).assert_idle(id)
+        if not st().conversations.delete(user, id):
+            fail(404, "conversation not found or access denied")
     return {"message": "Conversation deleted successfully"}

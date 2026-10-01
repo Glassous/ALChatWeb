@@ -5,7 +5,9 @@ import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'hermes' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' }) => void;
+  onStopAgent?: () => void;
+  agentCancelling?: boolean;
   disabled?: boolean;
   onScrollToBottom?: () => void;
   isAtBottom?: boolean;
@@ -16,7 +18,7 @@ interface InputAreaProps {
   onShowUpgrade?: () => void;
   style?: React.CSSProperties;
   isTemp?: boolean;
-  onModeChange?: (mode: 'daily' | 'expert' | 'search' | 'hermes') => void;
+  onModeChange?: (mode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent') => void;
   onImageModeChange?: (isImageMode: boolean) => void;
 }
 
@@ -41,7 +43,9 @@ export function InputArea({
   style,
   isTemp = false,
   onModeChange,
-  onImageModeChange
+  onImageModeChange,
+  onStopAgent,
+  agentCancelling = false
 }: InputAreaProps) {
   const showToast = useToast();
   const [text, setText] = useState('');
@@ -49,17 +53,18 @@ export function InputArea({
   const [mode, setMode] = useState<'daily' | 'expert'>('daily');
   const [isSearch, setIsSearch] = useState(false);
   const [isHermes, setIsHermes] = useState(false);
+  const [isAgent, setIsAgent] = useState(false);
   const [hermesAvailable, setHermesAvailable] = useState(false);
 
   useEffect(() => { if (!isTemp) apiClient.getHermes().then(v => setHermesAvailable(v.tested)).catch(() => setHermesAvailable(false)); }, [isTemp]);
 
   useEffect(() => {
-    let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'hermes' = isHermes ? 'hermes' : mode;
-    if (mode === 'daily' && isSearch) {
+    let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' = isAgent && !isTemp ? 'agent' : isHermes ? 'hermes' : mode;
+    if (!isAgent && mode === 'daily' && isSearch) {
       currentEffectiveMode = 'search';
     }
     onModeChange?.(currentEffectiveMode);
-  }, [mode, isSearch, isHermes, onModeChange]);
+  }, [mode, isSearch, isHermes, isAgent, isTemp, onModeChange]);
 
   useEffect(() => {
     onImageModeChange?.(isImageMode);
@@ -98,6 +103,7 @@ export function InputArea({
     }
 
     setMode(targetExpert ? 'expert' : 'daily');
+    setIsAgent(false);
     setIsImageMode(targetImage);
     setIsSearch(false);
 
@@ -180,10 +186,10 @@ export function InputArea({
 
   const handleSend = () => {
     if (text.trim() && !disabled && !isUploading) {
-      let finalMode: 'daily' | 'expert' | 'search' | 'hermes' = isHermes ? 'hermes' : mode;
+      let finalMode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' = isAgent && !isTemp ? 'agent' : isHermes ? 'hermes' : mode;
       if (isImageMode) {
         finalMode = 'daily';
-      } else if (mode === 'daily' && isSearch) {
+      } else if (!isAgent && mode === 'daily' && isSearch) {
         finalMode = 'search';
       }
 
@@ -300,7 +306,7 @@ export function InputArea({
   };
 
   const handleAttachmentClick = () => {
-    if (isTemp) return;
+    if (isTemp || isAgent) return;
     if (selectedAttachmentType) {
       attachmentInputRef.current?.click();
     } else {
@@ -405,7 +411,7 @@ export function InputArea({
     e.preventDefault();
     e.stopPropagation();
 
-    if (isTemp || disabled || isUploading) return;
+    if (isTemp || isAgent || disabled || isUploading) return;
 
     const items = e.dataTransfer.items;
     if (items && items.length > 0) {
@@ -484,7 +490,7 @@ export function InputArea({
     setDragStatus('none');
     setDragMessage('');
 
-    if (isTemp || disabled || isUploading || status !== 'supported') return;
+    if (isTemp || isAgent || disabled || isUploading || status !== 'supported') return;
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
@@ -520,7 +526,7 @@ export function InputArea({
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (isTemp || disabled || isUploading) return;
+    if (isTemp || isAgent || disabled || isUploading) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -755,7 +761,7 @@ export function InputArea({
           </div>
           <div className="input-bottom-row">
             <div className="tools-left">
-                {!isHermes && !isTemp && !isImageMode && (
+                {!isAgent && !isHermes && !isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn mode-toggle-btn ${mode === 'expert' ? 'expert' : ''}`}
@@ -767,7 +773,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isHermes && !isTemp && mode !== 'expert' && (
+                {!isAgent && !isHermes && !isTemp && mode !== 'expert' && (
                   <div className="tool-slot">
                     <button 
                       className={`tool-btn image-mode-btn ${isImageMode ? 'active' : ''}`}
@@ -864,14 +870,19 @@ export function InputArea({
                     />
                   </div>
                 )}
-                {!isTemp && hermesAvailable && !isImageMode && mode !== 'expert' && (
+                {!isAgent && !isTemp && hermesAvailable && !isImageMode && mode !== 'expert' && (
                   <div className="tool-slot">
                     <button className={`tool-btn hermes-mode-btn ${isHermes ? 'active' : ''}`} title="Hermes 模式" disabled={disabled || isUploading}
-                      onClick={() => { setIsHermes(v => !v); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
+                      onClick={() => { setIsHermes(v => !v); setIsAgent(false); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
                       <img className="hermes-icon" src="/HermesAgent.png" alt="" /><span>Hermes</span>
                     </button>
                   </div>
                 )}
+                {!isTemp && <div className="tool-slot">
+                  <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
+                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); setShowAttachmentMenu(false); }}>✦ Agent</button>
+                </div>}
+                {onStopAgent && <button className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}>{agentCancelling ? '停止中…' : '停止 Agent'}</button>}
             </div>
             <div className="tools-right">
               {!isHermes && <>
@@ -889,7 +900,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isTemp && !isImageMode && (
+                {!isAgent && !isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <div className="attachment-selector" ref={attachmentMenuRef}>
                       <button 

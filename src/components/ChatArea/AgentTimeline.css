@@ -1,0 +1,32 @@
+.agent-timeline { margin: 8px 0 16px; border: 1px solid var(--md-sys-color-outline-variant, #aaa); border-radius: 18px; overflow: hidden; background: var(--md-sys-color-surface-container-low, transparent); }
+.agent-timeline > summary { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; font-size: 13px; }
+.agent-timeline > summary strong { margin-left: auto; color: var(--md-sys-color-primary); font-weight: 500; }
+.agent-badge { font-size: 15px; font-weight: 600; color: var(--md-sys-color-primary); }
+.agent-steps { padding: 0 12px 12px; }
+.agent-step { padding: 10px; border-top: 1px solid var(--md-sys-color-outline-variant, #aaa); }
+.agent-step > summary { cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.agent-step small { opacity: .7; white-space: nowrap; }
+.agent-step pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; max-height: 260px; overflow-y: auto; }
+.agent-step article { padding: 8px 0; }
+.agent-step article p { font-size: 13px; opacity: .8; overflow-wrap: anywhere; }
+.agent-step a { color: var(--md-sys-color-primary); }
+.agent-query { font-weight: 500; }
+.agent-error { margin: 0; padding: 12px 16px; color: var(--md-sys-color-error, #b3261e); }
+.agent-step.failed > summary { color: var(--md-sys-color-error, #b3261e); }
+.agent-budget { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; padding: 0 16px 12px; font-size: 13px; opacity: .75; }
+.agent-notice { margin: -8px 0 16px; font-size: 13px; color: var(--md-sys-color-primary); }
+.agent-step.skipped > summary { opacity: .7; }
+.agent-step-icon { color: var(--md-sys-color-primary); font-size: 18px; }
+.agent-step-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.agent-step-brief { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .65; font-size: 12px; max-width: 100%; }
+.agent-provider { margin-left: 8px; opacity: .65; font-size: 12px; }
+.agent-preview { margin: 12px 0; border-radius: 10px; background: var(--md-sys-color-surface-container, transparent); padding: 10px; }
+.agent-preview > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+.agent-preview pre { margin-bottom: 0; }
+.agent-preview button, .agent-controls button { cursor: pointer; border: 1px solid var(--md-sys-color-outline-variant, #aaa); border-radius: 8px; padding: 4px 10px; color: var(--md-sys-color-primary); background: transparent; }
+.agent-controls { padding: 0 16px 12px; }
+.agent-controls button:disabled { cursor: default; opacity: .6; }
+.agent-discovery { font-size: 13px; overflow-wrap: anywhere; }
+.agent-operation, .agent-error-code { font-size: 12px; opacity: .7; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .agent-step > summary { flex-direction: row; flex-wrap: wrap; } .agent-step small { margin-left: auto; } .agent-timeline > summary { gap: 8px; flex-wrap: wrap; } }
+@media (max-width: 600px) { .agent-step > summary { align-items: flex-start; flex-direction: column; } }

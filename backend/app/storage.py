@@ -49,6 +49,18 @@ class ModelConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class AgentUsage(Base):
+    __tablename__ = "agent_usage"
+    # Stable per-run invocation key. Insertion and credit deduction share a transaction.
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(24), index=True)
+    run_id: Mapped[str] = mapped_column(String(24), index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer)
+    output_tokens: Mapped[int] = mapped_column(Integer)
+    cost: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class CustomModelConfig(Base):
     __tablename__ = "custom_model_configs"
     user_id: Mapped[str] = mapped_column(String(24), primary_key=True)

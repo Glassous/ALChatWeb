@@ -6,6 +6,8 @@ import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import { getThumbnailUrl } from '../../utils/image';
 import './ChatArea.css';
 import { FullscreenLayer } from '../LayerSystem/LayerSystem';
+import { AgentTimeline } from './AgentTimeline';
+import { type AgentBudget, type AgentStatus, type AgentStep } from '../../services/agentApi';
 
 export interface Message {
   id: string;
@@ -14,7 +16,14 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
-  mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent';
+  agent_run_id?: string;
+  agent_status?: AgentStatus;
+  agent_trace?: AgentStep[];
+  agent_error?: string;
+  agent_budget?: AgentBudget;
+  agent_notice?: string;
+  agent_finish_reason?: string;
   hermes_trace?: Array<{
     id: string;
     type: string;
@@ -59,6 +68,7 @@ interface ChatAreaProps {
   onSwitchBranch?: (messageId: string) => void;
   onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
   activeWorkspaceMessageId?: string | null;
+  onStopAgent?: () => void;
 }
 
 export interface ChatAreaHandle {
@@ -439,7 +449,8 @@ function MessageItem({
   onEdit,
   onSwitchBranch,
   onOpenWorkspace,
-  activeWorkspaceMessageId
+  activeWorkspaceMessageId,
+  onStopAgent
 }: { 
   msg: Message; 
   allMessages: Message[];
@@ -450,6 +461,7 @@ function MessageItem({
   onSwitchBranch?: (messageId: string) => void;
   onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
   activeWorkspaceMessageId?: string | null;
+  onStopAgent?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -917,6 +929,7 @@ function MessageItem({
           <div className="assistant-message-content">
             <div className="message-text assistant-text">
               {msg.role === 'assistant' && msg.mode === 'hermes' && <HermesTimeline steps={msg.hermes_trace || []} loading={msg.status === 'loading'} />}
+              {msg.role === 'assistant' && msg.mode === 'agent' && <AgentTimeline steps={msg.agent_trace || []} status={msg.agent_status} error={msg.agent_error} budget={msg.agent_budget} notice={msg.agent_notice} onStop={onStopAgent} />}
               {renderContent()}
             </div>
             {!isPureImage && (
@@ -993,7 +1006,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   onEdit,
   onSwitchBranch,
   onOpenWorkspace,
-  activeWorkspaceMessageId
+  activeWorkspaceMessageId,
+  onStopAgent
 }, ref) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
@@ -1225,6 +1239,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
               onSwitchBranch={onSwitchBranch}
               onOpenWorkspace={onOpenWorkspace}
               activeWorkspaceMessageId={activeWorkspaceMessageId}
+              onStopAgent={onStopAgent}
             />
           </div>
         ))}

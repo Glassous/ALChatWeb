@@ -155,9 +155,10 @@ class BochaSearchTool(BaseTool):
     name: str = "bocha_search"
     description: str = "Search Chinese web pages"
     api_key: str = Field(repr=False)
+    timeout: float = 30
 
     def _run(self, query: str, count: int = 10) -> list[dict]:
-        response = httpx.post("https://api.bochaai.com/v1/web-search", headers={"Authorization": f"Bearer {self.api_key}"}, json={"query": query, "count": count}, timeout=30)
+        response = httpx.post("https://api.bochaai.com/v1/web-search", headers={"Authorization": f"Bearer {self.api_key}"}, json={"query": query, "count": count}, timeout=self.timeout)
         response.raise_for_status()
         return [{"title": v.get("name", ""), "url": v.get("url", ""), "snippet": v.get("snippet", ""), "site_name": v.get("siteName", ""), "site_icon": v.get("siteIcon", ""), "date_published": v.get("datePublished", "")} for v in response.json().get("data", {}).get("webPages", {}).get("value", [])]
 
@@ -294,7 +295,7 @@ class AIService:
         if runtime is not None:
             # User supplied endpoints need the request-scoped adapter with SSRF checks.
             return CompatibleChatModel(model=rt.model, base_url=rt.base_url, api_key=rt.api_key, thinking=mode == "expert", safe_url=True, timeout=timeout)
-        options: dict[str, Any] = {"model": rt.model, "api_key": rt.api_key or "not-configured", "max_retries": 0}
+        options: dict[str, Any] = {"model": rt.model, "api_key": rt.api_key or "not-configured", "max_retries": 0, "timeout": timeout}
         if rt.base_url:
             options["base_url"] = rt.base_url
         if mode != "expert":
@@ -379,11 +380,18 @@ class AIService:
                 item[key] = value
         return item
 
-    def search(self, query: str, source: str) -> list[dict]:
+    def search(self, query: str, source: str, timeout: float | None = None) -> list[dict]:
         if source == "tavily":
-            result = TavilySearch(max_results=10, search_depth="basic", include_images=False, include_favicon=True, api_wrapper=TavilySearchAPIWrapper(tavily_api_key=SecretStr(self.cfg.TAVILY_API_KEY))).invoke({"query": query})
+            if timeout is not None:
+                # The existing Tavily adapter has no HTTP timeout. Agent calls use
+                # the same search API with a request-scoped bounded transport.
+                response = httpx.post("https://api.tavily.com/search", headers={"Authorization": f"Bearer {self.cfg.TAVILY_API_KEY}"}, json={"query": query, "max_results": 10, "search_depth": "basic", "include_images": False, "include_favicon": True}, timeout=timeout)
+                response.raise_for_status()
+                result = response.json()
+            else:
+                result = TavilySearch(max_results=10, search_depth="basic", include_images=False, include_favicon=True, api_wrapper=TavilySearchAPIWrapper(tavily_api_key=SecretStr(self.cfg.TAVILY_API_KEY))).invoke({"query": query})
             return [self.result_view(x.get("title", ""), x.get("url", ""), x.get("content", ""), (urlparse(x.get("url", "")).hostname or "").removeprefix("www."), x.get("favicon", ""), x.get("published_date", "")) for x in result.get("results", [])]
-        entries = BochaSearchTool(api_key=self.cfg.BOCHA_API_KEY).invoke({"query": query, "count": 10})
+        entries = BochaSearchTool(api_key=self.cfg.BOCHA_API_KEY, timeout=timeout or 30).invoke({"query": query, "count": 10})
         return [self.result_view(v.get("title", ""), v.get("url", ""), v.get("snippet", ""), v.get("site_name", ""), v.get("site_icon", ""), v.get("date_published", "")) for v in entries]
 
     def image(self, prompt: str, size: str, reference: str) -> bytes:

@@ -24,6 +24,8 @@ import { ALingHome } from './pages/aling/ALingHome';
 import { ALingTranslator } from './pages/aling/ALingTranslator';
 import { useToast } from './components/LayerSystem/LayerSystem';
 import './App.css';
+import { agentApi, agentActive, type AgentRun } from './services/agentApi';
+import { useAgentRun } from './hooks/useAgentRun';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
 
@@ -86,6 +88,7 @@ function ChatApp({
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const conversationView = useRef(0);
   const [hasMessages, setHasMessages] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -103,8 +106,36 @@ function ChatApp({
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [userMemberType, setUserMemberType] = useState('free');
   const [isShareOpen, setIsShareOpen] = useState(false);
-  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'hermes'>('daily');
+  const [webMode, setWebMode] = useState<'daily' | 'expert' | 'search' | 'hermes' | 'agent'>('daily');
   const [webIsImageMode, setWebIsImageMode] = useState(false);
+  const activeAgentMessage = messages.find(message => message.conversation_id === currentConversationId && message.role === 'assistant' && message.agent_run_id && agentActive(message.agent_status));
+  const agentBusy = !!activeAgentMessage;
+  const onAgentRun = useCallback((run: AgentRun) => {
+    apiClient.invalidateCache(run.conversation_id);
+    setMessages(previous => previous.map(message => message.id === run.assistant_message_id && message.conversation_id === run.conversation_id ? {
+      ...message, content: run.content, mode: 'agent', agent_run_id: run.id, agent_status: run.status, agent_trace: run.steps, agent_error: run.error,
+      agent_budget: run.budget, agent_notice: run.notice, agent_finish_reason: run.finish_reason,
+      status: agentActive(run.status) ? 'loading' : run.status === 'failed' || run.status === 'interrupted' ? 'error' : 'completed',
+    } : message));
+    setUserCredits(run.credits);
+    if (!agentActive(run.status)) {
+      void apiClient.getConversations().then(setConversations).catch(() => {});
+      void apiClient.getProfile().then(user => {
+        setUserCredits(user.credits);
+        localStorage.setItem('user', JSON.stringify(user));
+        window.dispatchEvent(new Event('user-profile-updated'));
+      }).catch(() => {});
+    }
+  }, []);
+  const onAgentDisconnect = useCallback(() => {
+    showToast({ tone: 'warning', message: 'Agent 连接暂时中断，正在重连；后端任务继续执行' });
+  }, [showToast]);
+  useAgentRun(activeAgentMessage?.agent_run_id, onAgentRun, onAgentDisconnect);
+  const stopAgent = async () => {
+    if (!activeAgentMessage?.agent_run_id) return;
+    try { onAgentRun(await agentApi.cancel(activeAgentMessage.agent_run_id)); }
+    catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '停止请求失败' }); }
+  };
 
   // Workspace states
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -305,6 +336,10 @@ function ChatApp({
             a.hermes_context_version !== b.hermes_context_version ||
             a.hermes_response_completed !== b.hermes_response_completed ||
             JSON.stringify(a.hermes_trace || []) !== JSON.stringify(b.hermes_trace || [])
+            || a.agent_run_id !== b.agent_run_id || a.agent_status !== b.agent_status || a.agent_error !== b.agent_error
+            || JSON.stringify(a.agent_trace || []) !== JSON.stringify(b.agent_trace || [])
+            || a.agent_notice !== b.agent_notice || a.agent_finish_reason !== b.agent_finish_reason
+            || JSON.stringify(a.agent_budget || {}) !== JSON.stringify(b.agent_budget || {})
           ) {
             needsUpdate = true;
             break;
@@ -370,10 +405,11 @@ function ChatApp({
     isImageMode: boolean; 
     resolution: string; 
     refImageUrl?: string; 
-    mode?: 'daily' | 'expert' | 'search' | 'hermes';
+    mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent';
     overrideParentId?: string | null;
   }) => {
-    if (isLoading) return;
+    if (isLoading || agentBusy) return;
+    const viewTicket = conversationView.current;
 
     let conversationId = currentConversationId;
     const currentMode = options?.mode || 'daily';
@@ -408,12 +444,34 @@ function ChatApp({
       }
     }
 
-    if (!hasMessages) {
+    if (!hasMessages && currentMode !== 'agent') {
       setIsExiting(true);
       setTimeout(() => {
         setHasMessages(true);
         setIsExiting(false);
       }, 400);
+    }
+
+    if (currentMode === 'agent') {
+      setIsLoading(true);
+      try {
+        let coordinates: string | undefined;
+        if (systemPromptSettings?.include_location) {
+          try {
+            const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
+            coordinates = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+          } catch { /* Location is optional, just as in ordinary chat. */ }
+        }
+        const run = await agentApi.start(conversationId, text, effectiveParentId, coordinates);
+        apiClient.invalidateCache(conversationId);
+        if (viewTicket === conversationView.current) {
+          await loadConversation(conversationId, run.assistant_message_id);
+          setHasMessages(true);
+        }
+      } catch (error) {
+        showToast({ tone: 'error', message: error instanceof Error ? error.message : 'Agent 启动失败' });
+      } finally { setIsLoading(false); }
+      return;
     }
 
     // Add user message to UI immediately
@@ -781,6 +839,7 @@ function ChatApp({
   };
 
   const handleNewChat = () => {
+    conversationView.current++;
     setMessages([]);
     setCurrentNodeId(null);
     setHasMessages(false);
@@ -794,6 +853,7 @@ function ChatApp({
   };
 
   const handleNewTempChat = () => {
+    conversationView.current++;
     setMessages([]);
     setCurrentNodeId(null);
     setHasMessages(false);
@@ -807,6 +867,7 @@ function ChatApp({
   };
 
   const handleSelectConversation = (conversationId: string) => {
+    conversationView.current++;
     setIsTempChat(isTempID(conversationId));
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
@@ -858,7 +919,7 @@ function ChatApp({
   };
 
   const handleResend = async (msg: Message) => {
-    if (isLoading || !currentConversationId) return;
+    if (isLoading || agentBusy || !currentConversationId) return;
 
     let textToResend = '';
     let parentId: string | null | undefined = null;
@@ -890,12 +951,13 @@ function ChatApp({
       isImageMode: false, 
       resolution: '1024x1024', 
       refImageUrl,
-      overrideParentId: parentId
+      overrideParentId: parentId,
+      mode: msg.mode === 'agent' ? 'agent' : undefined
     });
   };
 
   const handleEdit = (msg: Message) => {
-    if (isLoading) return;
+    if (isLoading || agentBusy) return;
     
     let messageToEdit = msg;
     if (msg.role === 'assistant') {
@@ -929,7 +991,8 @@ function ChatApp({
       isImageMode: false, 
       resolution: '1024x1024', 
       refImageUrl,
-      overrideParentId: targetParentId
+      overrideParentId: targetParentId,
+      mode: editingMessage.mode === 'agent' ? 'agent' : undefined
     });
 
     setIsEditOpen(false);
@@ -1057,6 +1120,7 @@ function ChatApp({
                   onSwitchBranch={handleSwitchBranch}
                   onOpenWorkspace={handleOpenWorkspace}
                   activeWorkspaceMessageId={workspaceMessageId}
+                  onStopAgent={agentBusy ? stopAgent : undefined}
                 />
               </div>
               <AnimatePresence>
@@ -1117,7 +1181,9 @@ function ChatApp({
           )}
           <InputArea 
             onSend={handleSend} 
-            disabled={isLoading} 
+            disabled={isLoading || agentBusy}
+            onStopAgent={agentBusy ? stopAgent : undefined}
+            agentCancelling={activeAgentMessage?.agent_status === 'cancelling'}
             onScrollToBottom={() => chatAreaRef.current?.scrollToBottom()}
             isAtBottom={isAtBottom}
             isEmpty={!hasMessages}

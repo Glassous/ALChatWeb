@@ -13,6 +13,7 @@ from .config import settings
 from .conversations import Conversations, TemporaryConversations
 from .storage import ModelConfig, Storage, User
 from .streams import StreamManager
+from .agents import AgentManager
 
 
 class State:
@@ -23,6 +24,7 @@ class State:
         self.conversations = Conversations(self.db)
         self.temp = TemporaryConversations(self.db)
         self.streams = StreamManager()
+        self.agents = AgentManager(self)
 
     def connect(self):
         self.db.connect()
@@ -65,6 +67,7 @@ def current() -> State:
 async def lifespan(app: FastAPI):
     instance = current()
     instance.connect()
+    instance.agents.recover()
     expiry = asyncio.create_task(_expiry_loop(instance))
     try:
         yield
@@ -117,7 +120,7 @@ def health():
     return {"status": "ok" if all(v == "ok" for v in statuses.values()) else "partial_outage", **statuses, "version": "1.0.0", "gin_mode": s.cfg.GIN_MODE}
 
 
-from .routes import auth_routes, conversation_routes, chat_routes, aling_routes, misc_routes, admin_routes
+from .routes import auth_routes, conversation_routes, chat_routes, aling_routes, misc_routes, admin_routes, agent_routes
 
-for router in (auth_routes.router, conversation_routes.router, chat_routes.router, aling_routes.router, misc_routes.router, admin_routes.router):
+for router in (auth_routes.router, conversation_routes.router, chat_routes.router, aling_routes.router, misc_routes.router, admin_routes.router, agent_routes.router):
     app.include_router(router)

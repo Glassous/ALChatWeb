@@ -1,4 +1,5 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+import type { AgentBudget, AgentStatus, AgentStep } from './agentApi';
 
 export interface Conversation {
   id: string;
@@ -14,7 +15,14 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
-  mode?: 'daily' | 'expert' | 'search' | 'hermes';
+  mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent';
+  agent_run_id?: string;
+  agent_status?: AgentStatus;
+  agent_trace?: AgentStep[];
+  agent_error?: string;
+  agent_budget?: AgentBudget;
+  agent_notice?: string;
+  agent_finish_reason?: string;
   hermes_trace?: HermesStep[];
   hermes_response_id?: string;
   hermes_context_version?: number;

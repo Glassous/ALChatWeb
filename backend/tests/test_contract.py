@@ -23,7 +23,8 @@ def test_all_legacy_routes_are_registered():
 
     actual = {(method, route.path) for route in expanded(app.routes) for method in (getattr(route, "methods", None) or set()) if method in {"GET", "POST", "PUT", "DELETE"}}
     assert len(expected) == 80
-    assert actual == expected
+    agent_routes = {("POST", "/api/agent/runs"), ("GET", "/api/agent/runs/{id}"), ("GET", "/api/agent/runs/{id}/events"), ("POST", "/api/agent/runs/{id}/cancel")}
+    assert actual == expected | agent_routes
 
 
 def test_legacy_password_jwt_and_encrypted_key_formats():

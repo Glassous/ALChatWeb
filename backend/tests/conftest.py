@@ -35,6 +35,7 @@ CFG = Settings(
     ALLOW_ORIGINS="http://localhost:5173",
     JWT_SECRET="legacy-secret-with-at-least-32-characters",
     CUSTOM_MODEL_ENCRYPTION_KEY="legacy-encryption-secret",
+    SUPERBOX_ENABLED=False,
 )
 
 

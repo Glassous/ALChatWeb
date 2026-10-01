@@ -195,6 +195,8 @@ def test_chat_endpoints_are_rate_limited(client, state):
         assert client.post("/api/chat", json={"conversation_id": "c", "message": "m", "mode": "ghost"}, headers=auth(jwt)).status_code == 400
     limited = client.post("/api/chat", json={"conversation_id": "c", "message": "m", "mode": "ghost"}, headers=auth(jwt))
     assert limited.status_code == 429 and limited.json() == {"error": "Too many requests. Please try again in a minute."}
+    state.streams.start("c")
+    state.streams.close("c")
     assert client.get("/api/chat/stream", params={"conversation_id": "c"}, headers=auth(jwt)).status_code == 200
 
 
@@ -320,9 +322,9 @@ def test_upload_reference_and_delete(client, state, fake_cos):
     assert client.post("/api/chat/upload-reference", files=[("file", ("a.txt", b"hello", "text/plain"))], headers=auth(jwt)).json() == {"error": "Invalid file type. Only common image and video formats are allowed"}
     uploaded = client.post("/api/chat/upload-reference", files=[("file", ("a.png", b"\x89PNGdata", "image/png"))], headers=auth(jwt)).json()
     assert uploaded == {"url": "https://cdn.example.com/reference_files/uploadeda.png"}
-    assert client.delete("/api/chat/reference-image", json={"url": "https://cdn.example.com/reference_files/uploadeda.png"}, headers=auth(jwt)).json() == {"message": "Image deleted successfully"}
+    assert client.request("DELETE", "/api/chat/reference-image", json={"url": "https://cdn.example.com/reference_files/uploadeda.png"}, headers=auth(jwt)).json() == {"message": "Image deleted successfully"}
     assert fake_cos.deleted == ["reference_files/uploadeda.png"]
-    assert client.delete("/api/chat/reference-image", json={"url": "not-a-url"}, headers=auth(jwt)).json() == {"error": "Invalid image URL"}
+    assert client.request("DELETE", "/api/chat/reference-image", json={"url": "not-a-url"}, headers=auth(jwt)).json() == {"error": "Invalid image URL"}
 
 
 def test_health_and_cors_contract(client, state):
@@ -332,6 +334,7 @@ def test_health_and_cors_contract(client, state):
     assert client.get("/health/").status_code != 307
     preflight = client.options("/api/chat", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "authorization"})
     assert preflight.headers["access-control-allow-origin"] == "http://localhost:5173"
-    assert "X-New-Token" in preflight.headers["access-control-expose-headers"]
+    response = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert "X-New-Token" in response.headers["access-control-expose-headers"]
     assert "POST" in preflight.headers["access-control-allow-methods"]
     assert client.options("/api/chat", headers={"Origin": "http://evil.example.com", "Access-Control-Request-Method": "POST"}).status_code == 400

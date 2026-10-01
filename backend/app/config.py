@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from pydantic import Field
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,6 +43,17 @@ class Settings(BaseSettings):
     ALING_MODEL: str = "gpt-4o"
     BOCHA_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
+    AGENT_MAX_MODEL_CALLS: int = Field(default=16, gt=0)
+    AGENT_MAX_SEARCH_CALLS: int = Field(default=12, gt=0)
+    AGENT_MAX_PLUGIN_CALLS: int = Field(default=24, gt=0)
+    AGENT_TIMEOUT_SECONDS: float = Field(default=600, gt=0)
+    AGENT_MODEL_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
+    AGENT_SEARCH_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
+    AGENT_PLUGIN_TIMEOUT_SECONDS: float = Field(default=30, gt=0)
+    AGENT_DISCOVERY_TIMEOUT_SECONDS: float = Field(default=10, gt=0)
+    AGENT_FINAL_RESERVE_SECONDS: float = Field(default=60, ge=0)
+    SUPERBOX_ENABLED: bool = True
+    SUPERBOX_BASE_URL: str = "https://superbox.fiacloud.top/api/v1"
     OPENAI_IMAGES_API_KEY: str = ""
     OPENAI_IMAGES_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_IMAGES_MODEL: str = ""

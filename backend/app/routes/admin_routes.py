@@ -11,6 +11,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from ..core import admin, auth, credits_for, fail, now, rate_limit
 from ..storage import Announcement, Feedback, ModelConfig, User, oid, public
+from ..agents import manager
 from .auth_routes import _send_message
 
 router = APIRouter()
@@ -144,8 +145,10 @@ def admin_conversation(id: str, request: Request):
 def admin_delete_conversation(id: str, request: Request):
     admin_uid(request)
     valid_id(id, "conversation ID")
-    st().db.mongo["conversations"].delete_one({"_id": oid(id)})
-    st().db.mongo["messages"].delete_many({"conversation_id": oid(id)})
+    with manager(st()).condition:
+        manager(st()).assert_idle(id)
+        st().db.mongo["conversations"].delete_one({"_id": oid(id)})
+        st().db.mongo["messages"].delete_many({"conversation_id": oid(id)})
     return {"message": "Conversation and its messages deleted successfully"}
 
 

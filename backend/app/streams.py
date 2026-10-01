@@ -13,6 +13,7 @@ class StreamState:
     events: list[dict] = field(default_factory=list)
     subscribers: list[queue.Queue] = field(default_factory=list)
     closed: bool = False
+    started: bool = False
 
 
 class StreamManager:
@@ -26,7 +27,7 @@ class StreamManager:
             if old:
                 for subscriber in old.subscribers:
                     subscriber.put(None)
-            self.states[conversation_id] = StreamState()
+            self.states[conversation_id] = StreamState(started=True)
 
     def publish(self, conversation_id: str, typ: str, content: str = "", data=None) -> None:
         event = {"type": typ}
