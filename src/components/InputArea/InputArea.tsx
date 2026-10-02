@@ -885,7 +885,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isTemp && <div className="tool-slot">
+                {!isHermes && !isTemp && <div className="tool-slot">
                   <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
                     onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setRefImageUrl(null); setShowAttachmentMenu(false); }}>Agent</button>
                 </div>}
