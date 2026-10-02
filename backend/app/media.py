@@ -16,6 +16,19 @@ MAX_IMAGE_BYTES = 50 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 MAX_TRANSFER_BYTES = 10 * 1024 * 1024
 DOCUMENT_MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+TEXT_EXTENSIONS = {"txt", "md", "markdown", "csv", "tsv", "log", "json", "jsonl", "ndjson", "yaml", "yml", "xml", "ini", "cfg", "conf", "toml", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "sh", "bat", "ps1", "sql", "r", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "tex"}
+
+
+def text_file_metadata(filename: str, content: str) -> tuple[str, bytes]:
+    if not isinstance(filename, str) or not filename.strip() or clean_filename(filename) != filename or "." not in filename or not filename.rsplit(".", 1)[0].strip(". ") or filename.rsplit(".", 1)[-1].lower() not in TEXT_EXTENSIONS:
+        raise ValueError("请指定有效的文件名和纯文本扩展名，例如 报告.txt、笔记.md、数据.csv")
+    if not isinstance(content, str) or not content.strip() or "\x00" in content:
+        raise ValueError("必须提供非空纯文本内容，不能包含二进制空字符")
+    data = content.encode("utf-8")
+    if len(data) > MAX_TRANSFER_BYTES:
+        raise ValueError("创建的文本文件不能超过 10 MiB")
+    mime = {"md": "text/markdown", "markdown": "text/markdown", "csv": "text/csv", "tsv": "text/tab-separated-values", "json": "application/json", "xml": "application/xml"}.get(filename.rsplit(".", 1)[-1].lower(), "text/plain")
+    return mime + "; charset=utf-8", data
 MEDIA_TAG = re.compile(r'<(image|file|video)\s+src="([^"]+)">', re.I)
 
 

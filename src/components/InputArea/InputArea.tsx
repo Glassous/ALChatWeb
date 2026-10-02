@@ -4,6 +4,9 @@ import './InputArea.css';
 import { documentFile, fileSize, type AttachmentDescriptor } from '../../services/attachments';
 import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
+import { VideoIcon } from '../Icons/VideoIcon';
+
+type ComposerMode = 'daily' | 'expert' | 'image' | 'agent' | 'hermes';
 
 interface InputAreaProps {
   onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; attachments?: AttachmentDescriptor[]; mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' }) => void;
@@ -54,14 +57,16 @@ export function InputArea({
 }: InputAreaProps) {
   const showToast = useToast();
   const [text, setText] = useState('');
-  const [isImageMode, setIsImageMode] = useState(false);
-  const [mode, setMode] = useState<'daily' | 'expert'>('daily');
+  const [composerMode, setComposerMode] = useState<ComposerMode>('daily');
+  const isImageMode = composerMode === 'image';
+  const isAgent = composerMode === 'agent';
+  const isHermes = composerMode === 'hermes';
+  const mode = composerMode === 'expert' ? 'expert' : 'daily';
   const [isSearch, setIsSearch] = useState(false);
-  const [isHermes, setIsHermes] = useState(false);
-  const [isAgent, setIsAgent] = useState(false);
   const [hermesAvailable, setHermesAvailable] = useState(false);
 
   useEffect(() => { if (!isTemp) apiClient.getHermes().then(v => setHermesAvailable(v.tested)).catch(() => setHermesAvailable(false)); }, [isTemp]);
+  useEffect(() => { if (isTemp) setComposerMode('daily'); }, [isTemp]);
 
   useEffect(() => {
     let currentEffectiveMode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' = isAgent && !isTemp ? 'agent' : isHermes ? 'hermes' : mode;
@@ -113,34 +118,22 @@ export function InputArea({
     setAttachments(previous => previous.filter(item => item.type !== 'document'));
     setSelectedAttachmentType(null);
   }, [isAgent]);
-  const leaveAgent = () => {
-    if (attachments.some(item => item.type === 'document')) showToast({ tone: 'info', message: '已移除文档附件，文档仅限 Agent 模式' });
-    setAttachments(previous => previous.filter(item => item.type !== 'document'));
-    setIsAgent(false);
-  };
-
-  const handleModeSelect = (selected: 'expert' | 'image') => {
-    if (disabled || isUploading) return;
-
-    let targetExpert = false;
-    let targetImage = false;
-
-    if (selected === 'expert') {
-      targetExpert = mode !== 'expert';
-    } else if (selected === 'image') {
-      targetImage = !isImageMode;
+  const handleModeSelect = (selected: ComposerMode) => {
+    if (disabled || isUploading || uploadingNow.current || isTemp) return;
+    const target = selected === composerMode ? 'daily' : selected;
+    if (isAgent && target !== 'agent') {
+      if (attachments.some(item => item.type === 'document')) showToast({ tone: 'info', message: '已移除文档附件，文档仅限 Agent 模式' });
+      setAttachments(previous => previous.filter(item => item.type !== 'document'));
     }
-
-    setMode(targetExpert ? 'expert' : 'daily');
-    leaveAgent();
-    setIsImageMode(targetImage);
+    setComposerMode(target);
     setIsSearch(false);
-
-    if (targetImage) {
+    setShowAttachmentMenu(false);
+    setShowResolutions(false);
+    setSelectedAttachmentType(null);
+    refDescriptor.current = null;
+    setRefImageUrl(null);
+    if (target === 'image' || target === 'hermes') {
       setAttachments([]);
-      setSelectedAttachmentType(null);
-      refDescriptor.current = null;
-      setRefImageUrl(null);
     }
   };
 
@@ -452,9 +445,7 @@ export function InputArea({
                 />
               ) : (
                 <div className="video-preview-placeholder" title={`${att.filename} · ${fileSize(att.size)}`}>
-                  <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
-                    <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09s-.03 1.29-.1 2.09c-.06.8-.15 1.43-.28 1.9-.13.47-.4.83-.8 1.08-.4.25-.97.43-1.7.54-1 .16-2.23.23-3.69.23-1.47 0-2.7-.07-3.69-.23-.74-.11-1.3-.29-1.7-.54-.4-.25-.67-.61-.8-1.08-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09s.03-1.29.1-2.09c.06-.8.15-1.43.28-1.9.13-.46.4-.82.8-1.07.4-.25.97-.43 1.7-.54 1-.16 2.23-.23 3.69-.23 1.47 0 2.7.07 3.69.23.74.11 1.3.29 1.7.54.4.25.67.61.8 1.07z" />
-                  </svg>
+                  <VideoIcon size={32} />
                 </div>
               )}
               <button className="remove-ref-image" onClick={() => removeAttachment(index)}>
@@ -634,18 +625,18 @@ export function InputArea({
                     />
                   </div>
                 )}
+                {!isHermes && !isTemp && !isImageMode && mode !== 'expert' && <div className="tool-slot">
+                  <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
+                    onClick={() => handleModeSelect('agent')}>Agent</button>
+                </div>}
                 {!isAgent && !isTemp && hermesAvailable && !isImageMode && mode !== 'expert' && (
                   <div className="tool-slot">
                     <button className={`tool-btn hermes-mode-btn ${isHermes ? 'active' : ''}`} title="Hermes 模式" disabled={disabled || isUploading}
-                      onClick={() => { setIsHermes(v => !v); setIsAgent(false); setIsSearch(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); }}>
+                      onClick={() => handleModeSelect('hermes')}>
                       <img className="hermes-icon" src="/HermesAgent.png" alt="" /><span>Hermes</span>
                     </button>
                   </div>
                 )}
-                {!isHermes && !isTemp && <div className="tool-slot">
-                  <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
-                    onClick={() => { if (isAgent) leaveAgent(); else setIsAgent(true); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setRefImageUrl(null); setShowAttachmentMenu(false); }}>Agent</button>
-                </div>}
                 {onStopAgent && <button type="button" className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}
                   aria-label={agentCancelling ? '停止中' : '停止 Agent'} title={agentCancelling ? '停止中' : '停止 Agent'}>
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" /></svg>
@@ -695,12 +686,13 @@ export function InputArea({
                               <span>图片</span>
                             </div>
                             <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('video')}>
-                              <svg viewBox="0 -960 960 960" width="20" height="20" fill="currentColor">
-                                <path d="m380-380 280-100-280-100v200Zm0 180q-108 0-184-76t-76-184q0-108 76-184t184-76q108 0 184 76t76 184q0 108-76 184t-184 76Zm0-80q75 0 127.5-52.5T560-440q0-75-52.5-127.5T380-620q-75 0-127.5 52.5T200-440q0 75 52.5 127.5T380-280Zm0-160Z"/>
-                              </svg>
+                              <VideoIcon size={20} />
                               <span>视频</span>
                             </div>
-                            {isAgent && <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('document')}>PDF / DOCX / XLSX · 5 MiB</div>}
+                            {isAgent && <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('document')}>
+                              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
+                              <span>附件</span>
+                            </div>}
                           </motion.div>
                       </AnchoredPopover>
                       <input 

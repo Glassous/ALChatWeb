@@ -1324,4 +1324,8 @@
 .attachment-preview-image { width: 100%; max-height: 55vh; object-fit: contain; border-radius: 8px; }
 .attachment-file-info { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; font-size: 14px; }
 .attachment-file-info dd { margin: 0; overflow-wrap: anywhere; }
+.attachment-text-section { margin-top: 20px; }
+.attachment-text-section > strong { font-size: 14px; }
+.attachment-text-section p { color: var(--text-color); font-size: 14px; }
+.attachment-raw-text { max-height: 42vh; overflow: auto; margin: 12px 0 0; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-color); color: var(--text-color); font: 13px/1.6 'Cascadia Code', Consolas, monospace; white-space: pre; tab-size: 4; text-align: left; user-select: text; }
 .user-message-text.text-collapsed { max-height: 160px; overflow: hidden; }
