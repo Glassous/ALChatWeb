@@ -185,7 +185,7 @@ export function InputArea({
   };
 
   const handleSend = () => {
-    if (text.trim() && !disabled && !isUploading) {
+    if ((text.trim() || attachments.length > 0) && !disabled && !isUploading) {
       let finalMode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' = isAgent && !isTemp ? 'agent' : isHermes ? 'hermes' : mode;
       if (isImageMode) {
         finalMode = 'daily';
@@ -208,7 +208,7 @@ export function InputArea({
       });
       
       // Update history
-      const newHistory = [text.trim(), ...history.filter(h => h !== text.trim())].slice(0, 50);
+      const newHistory = text.trim() ? [text.trim(), ...history.filter(h => h !== text.trim())].slice(0, 50) : history;
       setHistory(newHistory);
       setHistoryIndex(-1);
       setSuggestion('');
@@ -306,7 +306,7 @@ export function InputArea({
   };
 
   const handleAttachmentClick = () => {
-    if (isTemp || isAgent) return;
+    if (isTemp) return;
     if (selectedAttachmentType) {
       attachmentInputRef.current?.click();
     } else {
@@ -315,6 +315,10 @@ export function InputArea({
   };
 
   const handleAttachmentTypeSelect = (type: 'image' | 'video') => {
+    if (attachments.some(attachment => attachment.type !== type)) {
+      showToast({ tone: 'warning', message: '不能同时上传图片和视频，请先移除已有附件' });
+      return;
+    }
     if (isImageMode && type === 'video') {
       showToast({ tone: 'warning', message: '图片生成模式下只能上传图片' });
       return;
@@ -370,6 +374,7 @@ export function InputArea({
         const file = files[i];
         const url = await apiClient.uploadReferenceImage(file);
         newAttachments.push({ url, type: selectedAttachmentType! });
+        setAttachments([...newAttachments]);
       }
       setAttachments(newAttachments);
     } catch (error) {
@@ -411,7 +416,7 @@ export function InputArea({
     e.preventDefault();
     e.stopPropagation();
 
-    if (isTemp || isAgent || disabled || isUploading) return;
+    if (isTemp || disabled || isUploading) return;
 
     const items = e.dataTransfer.items;
     if (items && items.length > 0) {
@@ -490,7 +495,7 @@ export function InputArea({
     setDragStatus('none');
     setDragMessage('');
 
-    if (isTemp || isAgent || disabled || isUploading || status !== 'supported') return;
+    if (isTemp || disabled || isUploading || status !== 'supported') return;
 
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
@@ -515,6 +520,7 @@ export function InputArea({
 
         const url = await apiClient.uploadReferenceImage(file);
         newAttachments.push({ url, type: fileType });
+        setAttachments([...newAttachments]);
       }
       setAttachments(newAttachments);
     } catch (error) {
@@ -526,7 +532,7 @@ export function InputArea({
   };
 
   const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (isTemp || isAgent || disabled || isUploading) return;
+    if (isTemp || disabled || isUploading) return;
 
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -608,6 +614,7 @@ export function InputArea({
       for (const file of newFiles) {
         const url = await apiClient.uploadReferenceImage(file);
         newAttachments.push({ url, type: currentType! });
+        setAttachments([...newAttachments]);
       }
       setAttachments(newAttachments);
     } catch (error) {
@@ -747,7 +754,7 @@ export function InputArea({
                 {dragMessage}
               </div>
             )}
-            {text.trim() && (
+            {(text.trim() || attachments.length > 0) && (
               <button 
                 className="send-button" 
                 onClick={handleSend}
@@ -880,7 +887,7 @@ export function InputArea({
                 )}
                 {!isTemp && <div className="tool-slot">
                   <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
-                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); setShowAttachmentMenu(false); }}>Agent</button>
+                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setRefImageUrl(null); setShowAttachmentMenu(false); }}>Agent</button>
                 </div>}
                 {onStopAgent && <button type="button" className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}
                   aria-label={agentCancelling ? '停止中' : '停止 Agent'} title={agentCancelling ? '停止中' : '停止 Agent'}>
@@ -903,7 +910,7 @@ export function InputArea({
                     </button>
                   </div>
                 )}
-                {!isAgent && !isTemp && !isImageMode && (
+                {!isTemp && !isImageMode && (
                   <div className="tool-slot">
                     <div className="attachment-selector" ref={attachmentMenuRef}>
                       <button 

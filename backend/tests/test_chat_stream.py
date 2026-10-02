@@ -372,9 +372,11 @@ def test_multimodal_messages_use_blocks_for_every_role():
     ]
     messages = service.messages(history, multimodal=True)
     assistant = messages[0].content
-    assert [block["type"] for block in assistant] == ["text", "image_url", "text"]
-    assert assistant[1]["image_url"]["url"] == "https://cdn.example.com/a.png"
-    assert messages[1].content[0] == {"type": "image_url", "image_url": {"url": "https://cdn.example.com/b.pdf"}}
+    assert [block["type"] for block in assistant] == ["text", "text", "image_url", "text"]
+    assert "原始 COS URL：https://cdn.example.com/a.png" in assistant[1]["text"]
+    assert assistant[2]["image_url"]["url"] == "https://cdn.example.com/a.png"
+    assert all(block["type"] == "text" for block in messages[1].content)
+    assert "未知类型附件" in messages[1].content[0]["text"]
     assert service.has_multimodal([{"role": "user", "content": "纯文本"}], "系统 <image src=\"x\">") is True
     assert service.has_multimodal([{"role": "user", "content": "纯文本"}], "") is False
 

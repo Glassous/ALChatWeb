@@ -1,6 +1,6 @@
 # Agent 部署与验收
 
-Agent 运行在现有 FastAPI 单 Uvicorn worker 内，使用项目日常模型（`OPENAI_*` 和现有管理端日常模型覆盖配置）。日常模型必须支持标准工具调用；Bocha/Tavily 或 Superbox 至少启用一个。首版只支持普通会话中的文本任务，Android 和管理端前端不扩展。
+Agent 运行在现有 FastAPI 单 Uvicorn worker 内，使用项目日常模型（`OPENAI_*` 和现有管理端日常模型覆盖配置）。日常模型必须支持标准工具调用；搜索、Superbox 或多模态服务至少启用一个。Web 与 Android 的普通持久会话支持图片、视频附件，上传沿用 COS 预签名链路。视频仅提供原始 URL，本版不分析视频内容。管理端配置方式不变。
 
 ## 部署
 
@@ -50,7 +50,13 @@ JWT 的 `InsecureKeyLengthWarning` 与 Agent 计费错误无关。HS256 的 `JWT
 
 每个新任务在首次模型调用前读取 `/skill`、`/skill.json`、`/openapi.json`，保存目录版本、内容摘要、可用操作和未支持原因。Markdown 不可用时使用清单说明；必要目录或 OpenAPI 不可用时降级到已配置的搜索，没有可用工具则明确失败。刷新、SSE 重连或幂等提交只读取原任务，不重新发现或执行功能。
 
-从清单与 OpenAPI 动态注册 JSON 请求体、查询参数和路径参数功能，支持内部 schema 引用，拒绝外部或循环引用。新增兼容功能会在下一任务自动出现，无需增加专用后端函数或前端组件。文件上传、二进制结果、请求头及 Cookie 参数暂不支持，原因在发现步骤展开后可见。当前真实服务发现 10 个可用文本操作、2 个不支持的文件操作。
+从清单与 OpenAPI 动态注册 JSON 请求体、查询参数和路径参数功能，支持内部 schema 引用，拒绝外部或循环引用。新增兼容 JSON 功能会在下一任务自动出现。EXIF 读取和编辑使用专用 multipart 适配，可写标签查询沿用 JSON 适配；其他文件接口、请求头及 Cookie 参数暂不支持，原因在发现步骤展开后可见。
+
+附件统一从当前分支的媒体标签解析；COS MIME 优先，缺失时参考标签与扩展名。原始 URL 作为模型可读文字保留，供应商图片域名转换不会覆盖原始 URL。`analyze_image(image_url, question)` 使用现有 `MULTIMODAL_*` 配置分析图片，日常模型继续负责调度；工具读取 COS 原文件，支持 JPEG、PNG、WebP、GIF，读取上限 50 MiB，供应商额外限制或不可用会返回明确错误。图片分析与日常模型共享模型次数、时限和积分账目，并保留最后一次模型调用整理答案。步骤类型 `media` 只保存 URL、问题、分析摘要和错误，不保存图片字节或 Base64。
+
+EXIF 支持 JPEG、PNG、WebP，原图上限 20 MiB，模型通过 `body.image_url` 指定当前分支附件或本次生成结果。`body.changes` 是 1–100 项结构化操作数组，`set` 需要 1–4096 字符的 `value`，`delete` 不需要值。后端从 COS 读取原文件提交给 Superbox，不重新编码像素。编辑前必须用读取或标签查询验证可写 key；只读 key 拒绝修改。成功返回图片格式、大小和新 COS URL，原文件不覆盖；JSON 响应上限仍为 2 MiB，EXIF 图片响应独立上限为 21 MiB。
+
+无法恢复的图片/插件错误会在正式回复说明“当前做不到”、原因及已完成部分。只有修改结果成功上传 COS 才算交付；后端确保正式回复包含预览和下载链接，最后一轮模型失败也保留已生成结果。仅上传图片时默认概述内容；仅上传视频时直接正式说明无法分析视频并提供链接。取消保持原有语义。部署无需新增依赖或数据库迁移；更新代码并在没有运行中任务时重启后端。人工验收见 [AGENT_MEDIA_TESTS.md](tests/agent_media/AGENT_MEDIA_TESTS.md)。
 
 调用只使用配置的 HTTPS 服务地址及已发现的路径，忽略文档中的 HTTP 基础地址，不接受模型指定任意 URL、不跟随重定向、不转发用户 JWT。插件 HTTP 请求具有覆盖整个请求的绝对超时，不自动重试。参数及响应上限分别为 1 MiB / 2 MiB；传给模型的结果最多 32768 字符，步骤参数和结果预览最多 8192 字符，截断会明确标记。常见凭证字段隐藏，卡片不展示原始请求头，也不执行返回的 HTML。
 
@@ -64,7 +70,7 @@ JWT 的 `InsecureKeyLengthWarning` 与 Agent 计费错误无关。HS256 的 `JWT
 
 全部要求 `Authorization: Bearer <JWT>`。
 
-- `POST /api/agent/runs`：`conversation_id`、`message`、`request_id`，可选 `parent_message_id`、`location`。首次返回 201，同用户相同请求标识及内容返回原任务 200；标识与不同内容冲突返回 409。只支持普通持久会话文本。
+- `POST /api/agent/runs`：`conversation_id`、`message`、`request_id`，可选 `parent_message_id`、`location`。首次返回 201，同用户相同请求标识及内容返回原任务 200；标识与不同内容冲突返回 409。普通持久会话支持文本及现有 `<image src="…">`、`<file src="…">` 附件格式，无新增必填字段。
 - `GET /api/agent/runs/{id}`：返回快照，包含消息 ID、`status`、`steps`、`content`、`error`、`credits`、`seq`。
 - `GET /api/agent/runs/{id}/events?after_seq=0`：SSE `data` JSON 为 `{run_id, seq, type, data}`。类型为 `status`、`step`、`terminal`、`snapshot`；快照需整体替换客户端状态，其余按序号去重。
 - `POST /api/agent/runs/{id}/cancel`：幂等返回当前状态，运行中先变为 `cancelling`，结束为 `cancelled`；已结束任务不改变状态。

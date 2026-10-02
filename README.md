@@ -10,7 +10,7 @@ AL Chat Web 是一个基于 **React 19** 与 **Python/FastAPI + LangChain** 的 
 ## ✨ 核心特性
 
 - 💬 **流式对话与思维链**：基于 **SSE (Server-Sent Events)** 实现毫秒级打字机流式输出。支持展示大模型的 Reasoning 思考过程（思维链），让生成逻辑更透明。
-- ✦ **Agent 模式**：普通会话中使用项目日常模型自主多轮搜索，并动态发现和调用 Superbox 文本功能；全部执行由后端负责，默认 16 次模型调用、12 次搜索、24 次插件调用、10 分钟。Web 使用统一步骤卡片，支持刷新重连、复制结果和停止。部署、接口、计费及验收说明见 [backend/AGENT.md](backend/AGENT.md)。
+- ✦ **Agent 模式**：普通会话中使用项目日常模型自主多轮搜索、理解 COS 图片，并动态发现和调用 Superbox 功能（包含 EXIF 读取与编辑）；Web、Android 支持图片和视频附件，视频仅提供 URL，暂不分析内容。全部执行由后端负责，默认 16 次模型调用、12 次搜索、24 次插件调用、10 分钟。支持统一步骤、刷新重连、复制结果和停止。部署与接口见 [backend/AGENT.md](backend/AGENT.md)，手动验收见 [backend/tests/agent_media/AGENT_MEDIA_TESTS.md](backend/tests/agent_media/AGENT_MEDIA_TESTS.md)。
 - 🌳 **分支对话历史树 (Conversation Branching)**：
   - 用户可随时对已发送的任意历史消息进行二次编辑，系统将自动分裂出新的对话分支。
   - 前端通过优雅的可视化节点与连接线拓扑图（基于 `react-xarrows`），支持在不同的历史分支间无缝切换、编辑和管理。

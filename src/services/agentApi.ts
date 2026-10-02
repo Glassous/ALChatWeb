@@ -22,7 +22,7 @@ export interface AgentDiscovery {
 }
 export interface AgentStep {
   id: string;
-  type: 'discovery' | 'model' | 'search' | 'plugin';
+  type: 'discovery' | 'model' | 'search' | 'plugin' | 'media';
   title: string;
   status: AgentStatus | 'skipped';
   started_at?: string;

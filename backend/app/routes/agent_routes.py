@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 from bson import ObjectId
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -34,8 +32,8 @@ def start(body: StartRun, request: Request):
     user_id = auth(request, state.db)["user_id"]
     service = manager(state)
     cid, message, parent = body.conversation_id, body.message.strip(), body.parent_message_id or ""
-    if not ObjectId.is_valid(cid) or not message or any(tag in message for tag in ("<file", "<image", "<video")):
-        fail(400, "Agent 仅支持普通会话中的文本任务")
+    if not ObjectId.is_valid(cid) or not message:
+        fail(400, "Agent 仅支持普通持久会话中的任务")
     with service.condition:
         if not state.conversations.convs.find_one({"_id": oid(cid), "user_id": oid(user_id)}):
             fail(404, "会话不存在")
@@ -49,8 +47,8 @@ def start(body: StartRun, request: Request):
         if parent and (not ObjectId.is_valid(parent) or not state.conversations.messages.find_one({"_id": oid(parent), "conversation_id": oid(cid)})):
             fail(400, "父消息不属于当前会话")
         service.assert_idle(cid)
-        if not (state.cfg.BOCHA_API_KEY or state.cfg.TAVILY_API_KEY or state.cfg.SUPERBOX_ENABLED):
-            fail(400, "请先配置搜索服务或启用 Superbox")
+        if not (state.cfg.BOCHA_API_KEY or state.cfg.TAVILY_API_KEY or state.cfg.SUPERBOX_ENABLED or state.cfg.MULTIMODAL_API_KEY):
+            fail(400, "请先配置搜索、多模态服务或启用 Superbox")
         if not state.ai.runtime("daily").api_key:
             fail(400, "请先配置项目日常模型")
         require_agent_schema(state.db)
@@ -73,9 +71,6 @@ def start(body: StartRun, request: Request):
         service.runs.insert_one(run)
         service.persist(run, "status", {"status": "running"})
         history = _cleanup_history(state.conversations.branch(cid, user_message["id"]))
-        # Text-only Agent: historical media is retained as links, never sent to a vision model.
-        for item in history:
-            item["content"] = re.sub(r'<(?:file|image|video) src="([^"]+)">', r"[附件链接：\1]", item.get("content", ""))
         snapshot = service.snapshot(run)
         service.launch(run, history, prompt)
         return JSONResponse(snapshot, status_code=201)

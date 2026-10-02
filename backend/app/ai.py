@@ -21,7 +21,7 @@ from pydantic import Field, SecretStr
 
 from .config import Settings
 from .core import count_tokens, validate_public_url
-from .media import COS, MAX_IMAGE_BYTES, image_file_metadata
+from .media import COS, MAX_IMAGE_BYTES, MEDIA_TAG, attachment_type, attachment_text, image_file_metadata
 
 
 def _wire_messages(messages: list[BaseMessage]) -> list[dict]:
@@ -315,8 +315,8 @@ class AIService:
             return url.replace(domain, f"{cfg.COS_BUCKET}.cos.{cfg.COS_REGION}.myqcloud.com")
         return url
 
-    def _blocks(self, content: str) -> list[dict]:
-        matches = list(re.finditer(r'<(?:image|file) src="([^"]+)">', content))
+    def _blocks(self, content: str, multimodal: bool = True) -> list[dict]:
+        matches = list(MEDIA_TAG.finditer(content))
         if not matches:
             return [{"type": "text", "text": content}] if content else []
         blocks: list[dict] = []
@@ -324,7 +324,17 @@ class AIService:
         for match in matches:
             if match.start() > last:
                 blocks.append({"type": "text", "text": content[last:match.start()]})
-            blocks.append({"type": "image_url", "image_url": {"url": self._external_url(match.group(1))}})
+            url, tag = match.group(2), match.group(1)
+            mime = ""
+            if all((self.cfg.COS_SECRET_ID, self.cfg.COS_SECRET_KEY, self.cfg.COS_BUCKET, self.cfg.COS_REGION)):
+                try:
+                    mime = COS(self.cfg).metadata(url)["mime_type"]
+                except Exception:
+                    pass
+            kind = attachment_type(url, tag, mime)
+            blocks.append({"type": "text", "text": attachment_text(url, kind)})
+            if multimodal and kind == "image":
+                blocks.append({"type": "image_url", "image_url": {"url": self._external_url(url)}})
             last = match.end()
         if content[last:]:
             blocks.append({"type": "text", "text": content[last:]})
@@ -336,8 +346,9 @@ class AIService:
             output.append(SystemMessage(content=system_prompt))
         for m in history:
             content: Any = m.get("content", "")
-            if multimodal:
-                content = self._blocks(content)
+            if multimodal or MEDIA_TAG.search(content):
+                blocks = self._blocks(content, multimodal)
+                content = blocks if multimodal else "".join(block["text"] for block in blocks)
             cls = {"system": SystemMessage, "assistant": AIMessage}.get(m.get("role"), HumanMessage)
             output.append(cls(content=content))
         return output

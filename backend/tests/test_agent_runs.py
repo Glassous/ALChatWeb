@@ -248,7 +248,7 @@ def test_timeout_partial_failure_and_usage_fallback(client, agent):
     model.script = [broken]
     run, _ = start(client, agent, request_id="partial-failure")
     done = wait(state, run["id"])
-    assert done["status"] == "failed" and done["content"] == "部分输出"
+    assert done["status"] == "failed" and "当前做不到" in done["content"]
     with state.db.session() as session:
         usage = session.get(AgentUsage, f"{run['id']}:model:1")
         assert usage.output_tokens > 0 and usage.input_tokens > 0
@@ -275,7 +275,6 @@ def test_restart_recovery_and_idempotent_migration_indexes(client, agent):
 @pytest.mark.parametrize("patch,body,status", [
     ({"BOCHA_API_KEY": "", "TAVILY_API_KEY": ""}, {}, 400),
     ({}, {"conversation_id": "temp_agent"}, 400),
-    ({}, {"message": '<file src="https://example.com">问题'}, 400),
     ({}, {"message": " "}, 400),
     ({}, {"request_id": ""}, 400),
 ])

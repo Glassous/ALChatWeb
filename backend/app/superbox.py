@@ -11,6 +11,25 @@ from urllib.parse import quote, unquote, urlsplit
 import httpx
 from jsonschema import Draft202012Validator
 
+from .media import image_file_metadata
+
+EXIF_INPUT_LIMIT = 20 * 1024 * 1024
+EXIF_OUTPUT_LIMIT = 21 * 1024 * 1024
+EXIF_PATHS = {"/exif/inspect", "/exif/edit"}
+
+
+def exif_schema(edit):
+    properties = {"image_url": {"type": "string", "minLength": 1, "maxLength": 2048}}
+    required = ["image_url"]
+    if edit:
+        common = {"key": {"type": "string", "minLength": 1, "maxLength": 200}}
+        properties["changes"] = {"type": "array", "minItems": 1, "maxItems": 100, "items": {"oneOf": [
+            {"type": "object", "properties": {**common, "action": {"const": "set"}, "value": {"type": "string", "minLength": 1, "maxLength": 4096}}, "required": ["key", "action", "value"], "additionalProperties": False},
+            {"type": "object", "properties": {**common, "action": {"const": "delete"}}, "required": ["key", "action"], "additionalProperties": False},
+        ]}}
+        required.append("changes")
+    return {"type": "object", "properties": properties, "required": required, "additionalProperties": False}
+
 MANAGEMENT = {"/health", "/tools", "/tools/{slug}", "/skill", "/skill.json", "/openapi.json"}
 SENSITIVE = re.compile(r"authorization|api[_-]?key|password|secret|access[_-]?token|cookie|credentials", re.I)
 
@@ -70,6 +89,7 @@ class Operation:
     path: str
     schema: dict
     validator: Draft202012Validator = field(repr=False)
+    transport: str = "json"
 
     def validate(self, arguments):
         error = next(self.validator.iter_errors(arguments), None)
@@ -108,6 +128,8 @@ class Superbox:
             raise Unsupported("Superbox 必须配置不含凭证的 HTTPS 服务地址")
         self.base_url = base_url.rstrip("/")
         self.prefix = url.path.rstrip("/")
+        self.writable = set()
+        self.readonly = {}
 
     def relative(self, path):
         if not isinstance(path, str) or not path.startswith("/") or path.startswith("//") or "?" in path or "#" in path or "\\" in path:
@@ -118,7 +140,7 @@ class Superbox:
             raise Unsupported("无效的操作路径")
         return path
 
-    def request(self, method, path, timeout, **kwargs):
+    def request(self, method, path, timeout, max_bytes=2 * 1024 * 1024, **kwargs):
         # No redirects, cookies from other requests, user JWT, or inherited auth.
         async def fetch():
             # An absolute timeout also bounds redirects/streaming/slow trickles,
@@ -129,8 +151,9 @@ class Superbox:
                         data = bytearray()
                         async for chunk in response.aiter_bytes():
                             data.extend(chunk)
-                            if len(data) > 2 * 1024 * 1024:
-                                raise Unsupported("Superbox 响应超过 2 MiB 上限")
+                            limit = max_bytes if response.headers.get("content-type", "").split(";")[0] in ("image/jpeg", "image/png", "image/webp") and 200 <= response.status_code < 300 else 2 * 1024 * 1024
+                            if len(data) > limit:
+                                raise Unsupported("Superbox 响应超过大小上限")
                         return response.status_code, response.headers.get("content-type", ""), bytes(data)
         return asyncio.run(fetch())
 
@@ -186,19 +209,29 @@ class Superbox:
                             required.append(location)
                 if any(p.get("in") not in ("query", "path") for p in params):
                     raise Unsupported("暂不支持请求头或 Cookie 参数")
+                transport = "json"
                 body = resolve_schema(operation.get("requestBody", {}), spec)
                 if body:
                     content = body.get("content", {})
-                    if "application/json" not in content or any(t != "application/json" for t in content):
-                        raise Unsupported("暂不支持文件上传或非 JSON 请求")
-                    properties["body"] = content["application/json"]["schema"]
-                    if body.get("required"):
+                    if method == "POST" and path in EXIF_PATHS and set(content) == {"multipart/form-data"}:
+                        fields = content["multipart/form-data"]["schema"].get("properties", {})
+                        if "image" not in fields or "image_url" not in fields or (path == "/exif/edit" and "changes" not in fields):
+                            raise Unsupported("EXIF 接口参数不兼容")
+                        transport = "exif"
+                        properties["body"] = exif_schema(path == "/exif/edit")
                         required.append("body")
+                    elif "application/json" not in content or any(t != "application/json" for t in content):
+                        raise Unsupported("暂不支持文件上传或非 JSON 请求")
+                    else:
+                        properties["body"] = content["application/json"]["schema"]
+                        if body.get("required"):
+                            required.append("body")
                 responses = operation.get("responses", {})
                 for code, response in responses.items():
                     if str(code).startswith("2"):
                         types = resolve_schema(response, spec).get("content", {})
-                        if types and any(t != "application/json" for t in types):
+                        allowed = {"application/json", "image/jpeg", "image/png", "image/webp"} if transport == "exif" and path == "/exif/edit" else {"application/json"}
+                        if types and any(t not in allowed for t in types):
                             raise Unsupported("暂不支持二进制或非 JSON 结果")
                 placeholders = re.findall(r"\{([^{}]+)\}", path)
                 if any(p not in properties.get("path", {}).get("properties", {}) for p in placeholders):
@@ -208,7 +241,10 @@ class Superbox:
                 signature = f"{method} {path}"
                 label = re.sub(r"[^a-zA-Z0-9_]", "_", str(operation.get("operationId", "tool")))[:36]
                 name = f"superbox_{label}_{hashlib.sha256(signature.encode()).hexdigest()[:10]}"
-                catalog.operations.append(Operation(name, title, str(endpoint.get("summary", ""))[:1000], method, path, schema, Draft202012Validator(schema)))
+                description = str(endpoint.get("summary", ""))[:1000]
+                if transport == "exif":
+                    description += " 仅处理当前会话 COS 原始图片（JPEG/PNG/WebP，20 MiB）。编辑前先调用读取或可写标签查询确认 key；changes 是结构化数组。编辑成功返回 COS 图片 URL，最终回复须提供预览和下载链接。"
+                catalog.operations.append(Operation(name, title, description, method, path, schema, Draft202012Validator(schema), transport))
             except (ValueError, KeyError, TypeError, AttributeError) as exc:
                 reason = str(exc) if isinstance(exc, Unsupported) else "无法解析参数 schema"
                 catalog.unsupported.append({"title": title, "reason": reason})
@@ -216,8 +252,22 @@ class Superbox:
                 catalog.unsupported.append({"title": title, "reason": "无法解析参数 schema"})
         return catalog
 
-    def call(self, operation, arguments, timeout):
+    def validate(self, operation, arguments):
         invalid = operation.validate(arguments)
+        if invalid:
+            return invalid
+        if operation.transport == "exif" and operation.path == "/exif/edit":
+            body = arguments["body"]
+            for change in body["changes"]:
+                key = change["key"]
+                if key in self.readonly.get(body["image_url"], set()):
+                    return failure("VALIDATION_ERROR", f"标签 {key} 为只读，当前做不到该修改")
+                if key not in self.writable:
+                    return failure("VALIDATION_ERROR", f"请先调用 EXIF 读取或可写标签查询确认 {key} 可以编辑")
+        return None
+
+    def call(self, operation, arguments, timeout, attachments=None):
+        invalid = self.validate(operation, arguments)
         if invalid:
             return invalid
         path = operation.path
@@ -225,11 +275,40 @@ class Superbox:
             path = path.replace("{" + name + "}", quote(str(value), safe=""))
         try:
             kwargs = {"params": arguments.get("query", {})}
-            if "body" in arguments:
+            if operation.transport == "exif":
+                if attachments is None:
+                    return failure("ATTACHMENT_UNAVAILABLE", "当前做不到附件处理：附件上下文不可用")
+                body = arguments["body"]
+                try:
+                    image = attachments.download(body["image_url"], EXIF_INPUT_LIMIT)
+                    filename, mime = image_file_metadata(image)
+                except (ValueError, TimeoutError) as exc:
+                    return failure("ATTACHMENT_UNSUPPORTED", f"当前做不到该 EXIF 处理：{exc}")
+                except Exception:
+                    attachments.check()
+                    return failure("ATTACHMENT_UNAVAILABLE", "当前做不到该 EXIF 处理：无法读取 COS 原始图片")
+                kwargs["files"] = {"image": (filename, image, mime)}
+                if operation.path == "/exif/edit":
+                    kwargs["data"] = {"changes": json.dumps(body["changes"], ensure_ascii=False)}
+                    kwargs["max_bytes"] = EXIF_OUTPUT_LIMIT
+                timeout = min(timeout, attachments.timeout())
+            elif "body" in arguments:
                 if len(json.dumps(arguments["body"]).encode()) > 1024 * 1024:
                     return failure("INPUT_TOO_LARGE", "插件请求体超过 1 MiB 上限")
                 kwargs["json"] = arguments["body"]
             status, kind, raw = self.request(operation.method, path, timeout, **kwargs)
+            if operation.transport == "exif" and operation.path == "/exif/edit" and 200 <= status < 300:
+                filename, mime = image_file_metadata(raw)
+                if kind.split(";")[0].lower() != mime or len(raw) > EXIF_OUTPUT_LIMIT:
+                    return failure("UNSUPPORTED_RESPONSE", "当前做不到结果交付：EXIF 返回的图片格式或大小无效")
+                try:
+                    url = attachments.cos().upload(raw, filename, "images")
+                    attachments.add(url, mime=mime)
+                    attachments.check()
+                except Exception:
+                    attachments.check()
+                    return failure("COS_UPLOAD_FAILED", "当前做不到结果交付：修改后的图片上传 COS 失败，未交付结果文件")
+                return {"result": {"url": url, "mime_type": mime, "size": len(raw)}, "truncated": False}
             if "application/json" not in kind.lower():
                 return failure("UNSUPPORTED_RESPONSE", "Superbox 返回非 JSON 结果，首版暂不支持", http_status=status)
             payload = safe_value(json.loads(raw))
@@ -238,6 +317,11 @@ class Superbox:
                 code = code if re.fullmatch(r"[A-Z0-9_]{1,64}", code) else "HTTP_ERROR"
                 message = str(payload.get("message", "插件请求失败"))[:1000] if isinstance(payload, dict) else "插件请求失败"
                 return failure(code, message, http_status=status)
+            if path in ("/exif/inspect", "/exif/tags") and isinstance(payload, dict):
+                tags = payload.get("tags", [])
+                self.writable.update(t["key"] for t in tags if isinstance(t, dict) and t.get("writable") is True and isinstance(t.get("key"), str))
+                if path == "/exif/inspect":
+                    self.readonly[arguments["body"]["image_url"]] = {t["key"] for t in tags if isinstance(t, dict) and t.get("writable") is False and isinstance(t.get("key"), str)}
             text, truncated = preview(payload, 32768)
             return {"result": payload if not truncated else text, "truncated": truncated}
         except (httpx.HTTPError, ValueError, TimeoutError):

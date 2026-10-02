@@ -25,7 +25,7 @@ export function AgentTimeline({ steps, status, error, budget, notice, onStop }: 
   const starts = steps.flatMap(step => step.started_at ? [Date.parse(step.started_at)] : []).filter(Number.isFinite);
   const ends = steps.flatMap(step => step.ended_at ? [Date.parse(step.ended_at)] : []).filter(Number.isFinite);
   const duration = starts.length ? Math.max(0, ((active ? clock : Math.max(...ends, ...starts)) - Math.min(...starts)) / 1000) : undefined;
-  const icons = { discovery: '◈', model: '✦', search: '⌕', plugin: '◇' };
+  const icons = { discovery: '◈', model: '✦', search: '⌕', plugin: '◇', media: '▧' };
   return <div className="agent-result"><details className="agent-timeline" open={active}>
     <summary><span className="agent-badge">Agent</span><span>{visibleSteps.length} 个步骤{duration !== undefined ? ` · ${Math.floor(duration)} 秒` : ''}</span><strong aria-live="polite">{status === 'running' && budget?.phase === 'summarizing' ? '正在整理' : labels[status || 'completed']}</strong></summary>
     {budget?.search_limit !== undefined && <div className="agent-budget"><span>模型 {budget.model_used}/{budget.model_limit}</span><span>搜索 {budget.search_used}/{budget.search_limit}</span>{budget.plugin_limit !== undefined && <span>插件 {budget.plugin_used || 0}/{budget.plugin_limit}</span>}</div>}
