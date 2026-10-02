@@ -14,7 +14,7 @@
 .agent-error { margin: 0; padding: 12px 16px; color: var(--md-sys-color-error, #b3261e); }
 .agent-step.failed > summary { color: var(--md-sys-color-error, #b3261e); }
 .agent-budget { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; padding: 0 16px 12px; font-size: 13px; opacity: .75; }
-.agent-notice { margin: -8px 0 16px; font-size: 13px; color: var(--md-sys-color-primary); }
+.agent-notice { margin: 0; padding: 0 16px 12px; font-size: 13px; color: var(--md-sys-color-primary); }
 .agent-step.skipped > summary { opacity: .7; }
 .agent-step-icon { color: var(--md-sys-color-primary); font-size: 18px; }
 .agent-step-heading { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -25,6 +25,7 @@
 .agent-preview pre { margin-bottom: 0; }
 .agent-preview button, .agent-controls button { cursor: pointer; border: 1px solid var(--md-sys-color-outline-variant, #aaa); border-radius: 8px; padding: 4px 10px; color: var(--md-sys-color-primary); background: transparent; }
 .agent-controls { padding: 0 16px 12px; }
+.agent-controls button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 36px; height: 36px; padding: 5px; }
 .agent-controls button:disabled { cursor: default; opacity: .6; }
 .agent-discovery { font-size: 13px; overflow-wrap: anywhere; }
 .agent-operation, .agent-error-code { font-size: 12px; opacity: .7; overflow-wrap: anywhere; }

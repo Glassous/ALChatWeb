@@ -19,6 +19,7 @@ function Preview({ title, text, truncated }: { title: string; text: string; trun
 
 export function AgentTimeline({ steps, status, error, budget, notice, onStop }: { steps: AgentStep[]; status?: AgentStatus; error?: string; budget?: AgentBudget; notice?: string; onStop?: () => void }) {
   const active = status === 'running' || status === 'cancelling';
+  const visibleSteps = steps.filter(step => step.type !== 'discovery');
   const [clock, setClock] = useState(Date.now);
   useEffect(() => { if (!active) return; const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, [active]);
   const starts = steps.flatMap(step => step.started_at ? [Date.parse(step.started_at)] : []).filter(Number.isFinite);
@@ -26,10 +27,14 @@ export function AgentTimeline({ steps, status, error, budget, notice, onStop }: 
   const duration = starts.length ? Math.max(0, ((active ? clock : Math.max(...ends, ...starts)) - Math.min(...starts)) / 1000) : undefined;
   const icons = { discovery: '◈', model: '✦', search: '⌕', plugin: '◇' };
   return <div className="agent-result"><details className="agent-timeline" open={active}>
-    <summary><span className="agent-badge">✦ Agent</span><span>{steps.length} 个步骤{duration !== undefined ? ` · ${Math.floor(duration)} 秒` : ''}</span><strong aria-live="polite">{status === 'running' && budget?.phase === 'summarizing' ? '正在整理' : labels[status || 'completed']}</strong></summary>
+    <summary><span className="agent-badge">Agent</span><span>{visibleSteps.length} 个步骤{duration !== undefined ? ` · ${Math.floor(duration)} 秒` : ''}</span><strong aria-live="polite">{status === 'running' && budget?.phase === 'summarizing' ? '正在整理' : labels[status || 'completed']}</strong></summary>
     {budget?.search_limit !== undefined && <div className="agent-budget"><span>模型 {budget.model_used}/{budget.model_limit}</span><span>搜索 {budget.search_used}/{budget.search_limit}</span>{budget.plugin_limit !== undefined && <span>插件 {budget.plugin_used || 0}/{budget.plugin_limit}</span>}</div>}
-    {active && onStop && <div className="agent-controls"><button type="button" onClick={onStop} disabled={status === 'cancelling'}>{status === 'cancelling' ? '停止中…' : '停止任务'}</button></div>}
-    <div className="agent-steps">{steps.map(step => <details className={`agent-step ${step.status}`} key={step.id} open={step.status === 'running'}>
+    {active && onStop && <div className="agent-controls"><button type="button" onClick={onStop} disabled={status === 'cancelling'}
+      aria-label={status === 'cancelling' ? '停止中' : '停止任务'} title={status === 'cancelling' ? '停止中' : '停止任务'}>
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" /></svg>
+    </button></div>}
+    {notice && <p className="agent-notice" role="status">{notice}</p>}
+    <div className="agent-steps">{visibleSteps.map(step => <details className={`agent-step ${step.status}`} key={step.id} open={step.status === 'running'}>
       <summary><span className="agent-step-icon" aria-hidden="true">{step.status === 'completed' ? '✓' : step.status === 'failed' ? '!' : icons[step.type] || '◇'}</span><span className="agent-step-heading"><span>{step.title}<span className="agent-provider">{step.provider}</span></span>{step.summary && <span className="agent-step-brief">{step.summary.split('\n')[0]}</span>}</span><small>{step.status === 'completed' ? '成功' : labels[step.status]}{step.duration_ms !== undefined ? ` · ${(step.duration_ms / 1000).toFixed(1)}s` : ''}</small></summary>
       {step.query && <p className="agent-query">{step.query}</p>}
       {step.discovery && <div className="agent-discovery"><p>Superbox {step.discovery.version || ''} · {step.discovery.available?.length || 0} 个可用操作</p>{step.discovery.available?.map(operation => <p key={operation.name}>{operation.title} <small>{operation.method} {operation.path}</small></p>)}{step.discovery.unsupported?.map((operation, i) => <p key={i}>{operation.title}：{operation.reason}</p>)}{step.discovery.warnings?.map(warning => <p key={warning}>{warning}</p>)}</div>}
@@ -43,5 +48,5 @@ export function AgentTimeline({ steps, status, error, budget, notice, onStop }: 
       </article>)}
     </details>)}</div>
     {error && <p className="agent-error" role="status">{error}</p>}
-  </details>{notice && <p className="agent-notice" role="status">{notice}</p>}</div>;
+  </details></div>;
 }

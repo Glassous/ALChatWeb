@@ -8,6 +8,7 @@ import './ChatArea.css';
 import { FullscreenLayer } from '../LayerSystem/LayerSystem';
 import { AgentTimeline } from './AgentTimeline';
 import { type AgentBudget, type AgentStatus, type AgentStep } from '../../services/agentApi';
+import { agentMessageDisplay } from '../../services/agentPresentation';
 
 export interface Message {
   id: string;
@@ -556,14 +557,18 @@ function MessageItem({
     }
   };
 
+  const agentDisplay = msg.role === 'assistant' && msg.mode === 'agent'
+    ? agentMessageDisplay(msg.content, msg.agent_trace || [], msg.id) : undefined;
+
   const renderContent = () => {
+    if (msg.mode === 'agent' && (msg.agent_status === 'running' || msg.agent_status === 'cancelling')) return null;
     if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
       return <WaitingForModel nonStreaming={msg.metadata?.generationMode === 'non_stream'} />;
     }
 
     const showImageFrame = Boolean(msg.metadata?.resolution) && (msg.status === 'loading' || isPureImage);
 
-    let contentForRender = msg.content;
+    let contentForRender = agentDisplay?.content ?? msg.content;
     if (contentForRender.includes('<image')) {
       contentForRender = contentForRender.substring(contentForRender.indexOf('<image'));
     }
@@ -750,7 +755,7 @@ function MessageItem({
 
     return (
       <>
-        {displaySearch && (
+        {msg.mode !== 'agent' && displaySearch && (
           <div 
             className={`search-container ${displaySearch.status === 'completed' ? 'completed' : ''}`}
             onClick={() => displaySearch?.status === 'completed' && onShowSearch?.(displaySearch as SearchData)}
@@ -929,7 +934,7 @@ function MessageItem({
           <div className="assistant-message-content">
             <div className="message-text assistant-text">
               {msg.role === 'assistant' && msg.mode === 'hermes' && <HermesTimeline steps={msg.hermes_trace || []} loading={msg.status === 'loading'} />}
-              {msg.role === 'assistant' && msg.mode === 'agent' && <AgentTimeline steps={msg.agent_trace || []} status={msg.agent_status} error={msg.agent_error} budget={msg.agent_budget} notice={msg.agent_notice} onStop={onStopAgent} />}
+              {msg.role === 'assistant' && msg.mode === 'agent' && <AgentTimeline steps={agentDisplay?.steps || []} status={msg.agent_status} error={msg.agent_error} budget={msg.agent_budget} notice={msg.agent_notice} onStop={onStopAgent} />}
               {renderContent()}
             </div>
             {!isPureImage && (

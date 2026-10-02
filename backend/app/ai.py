@@ -361,9 +361,10 @@ class AIService:
         result = self.model_for(mode).invoke(self.messages(history))
         return result.content if isinstance(result.content, str) else ""
 
-    def title(self, history: list[dict]) -> str:
+    def title(self, history: list[dict], timeout: float = 240) -> str:
         prompt = "Please generate a short, concise title for this conversation based on the above messages. The title should be in the same language as the conversation and should not exceed 10 words. Only output the title itself, no quotes or extra text."
-        return self.complete(history + [{"role": "user", "content": prompt}], "title").strip()
+        result = self.model_for("title", timeout=timeout).invoke(self.messages(history + [{"role": "user", "content": prompt}]))
+        return (result.content if isinstance(result.content, str) else "").strip()
 
     def keywords(self, history: list[dict], runtime: Runtime | None = None) -> str:
         prompt = "你是一个搜索专家。根据提供的对话历史，总结出 1-3 个最适合用于联网搜索的联网搜索关键词或短语。要求：1. 关键词应简洁、准确；2. 只输出关键词，用空格分隔；3. 不要包含任何解释或标点符号。"

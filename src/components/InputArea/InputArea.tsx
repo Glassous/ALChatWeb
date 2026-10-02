@@ -880,9 +880,12 @@ export function InputArea({
                 )}
                 {!isTemp && <div className="tool-slot">
                   <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
-                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); setShowAttachmentMenu(false); }}>✦ Agent</button>
+                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null); setShowAttachmentMenu(false); }}>Agent</button>
                 </div>}
-                {onStopAgent && <button className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}>{agentCancelling ? '停止中…' : '停止 Agent'}</button>}
+                {onStopAgent && <button type="button" className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}
+                  aria-label={agentCancelling ? '停止中' : '停止 Agent'} title={agentCancelling ? '停止中' : '停止 Agent'}>
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" /></svg>
+                </button>}
             </div>
             <div className="tools-right">
               {!isHermes && <>
