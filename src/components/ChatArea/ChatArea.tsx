@@ -3,14 +3,16 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
 import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
-import { getThumbnailUrl } from '../../utils/image';
 import './ChatArea.css';
+import { FileAttachment } from './FileAttachment';
+import { messageAttachments, attachmentFor, type AttachmentDescriptor } from '../../services/attachments';
 import { FullscreenLayer } from '../LayerSystem/LayerSystem';
 import { AgentTimeline } from './AgentTimeline';
 import { type AgentBudget, type AgentStatus, type AgentStep } from '../../services/agentApi';
 import { agentMessageDisplay } from '../../services/agentPresentation';
 
 export interface Message {
+  attachments?: AttachmentDescriptor[];
   id: string;
   conversation_id: string;
   parent_id?: string;
@@ -583,18 +585,9 @@ function MessageItem({
 
     const showImageFrame = Boolean(msg.metadata?.resolution) && (msg.status === 'loading' || isPureImage);
 
-    if (contentForRender.includes('<image')) {
-      contentForRender = contentForRender.substring(contentForRender.indexOf('<image'));
-    }
-    if (contentForRender.includes('<search>')) {
-      contentForRender = contentForRender.substring(contentForRender.indexOf('<search>'));
-    }
-    if (contentForRender.includes('<weather>')) {
-      contentForRender = contentForRender.substring(contentForRender.indexOf('<weather>'));
-    }
-
     const processedContent = contentForRender
       .replace(/<image src="([^"]+)">/g, '![generated-image]($1)')
+      .replace(/<(?:file|video) src="([^"]+)">/g, '![alchat-file]($1)')
       .replace(/\n?<search>[\s\S]*?<\/search>\n?/g, '') // Remove completed search tag and surrounding newlines
       .replace(/\n?<search>[\s\S]*/g, '') // Remove partial search tag during streaming and leading newline
       .replace(/\n?<weather>[\s\S]*?<\/weather>\n?/g, '') // Remove weather tag
@@ -649,6 +642,10 @@ function MessageItem({
 
     const markdownComponents = {
       img: ({ src, alt }: { src?: string, alt?: string }) => {
+        if (alt === 'alchat-file' && src) {
+          const file = attachmentFor(src, msg.attachments);
+          if (file.type !== 'image') return <FileAttachment file={file} />;
+        }
         const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
           const target = e.target as HTMLImageElement;
           if (src && src.includes('alchatfiles.fiacloud.top')) {
@@ -853,60 +850,15 @@ function MessageItem({
         {msg.role === 'user' ? (
           <>
             <div 
-              className={`message-bubble user-bubble ${showExpandButton && isUserCollapsed ? 'collapsed' : ''}`}
+              className={`message-bubble user-bubble ${showExpandButton && isUserCollapsed ? 'text-folded' : ''}`}
               ref={userBubbleRef}
             >
-              {(msg.content.includes('<image') || msg.content.includes('<file')) ? (
-                <div className="user-message-with-image">
-                  {(() => {
-                    const imageRegex = /<(?:image|file) src="([^"]+)">/g;
-                    const images: string[] = [];
-                    let match;
-                    while ((match = imageRegex.exec(msg.content)) !== null) {
-                      const url = match[1];
-                      // Simple image extension check or just assume it's an image for now as requested
-                      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)(?:\?.*)?$/i.test(url) || url.includes('image');
-                      if (isImage) {
-                        images.push(url);
-                      }
-                    }
-                    
-                    const textContent = msg.content.replace(/<(?:image|file) src="([^"]+)">/g, '').trim();
-                    
-                    return (
-                      <>
-                        {images.length > 0 && (
-                          <div className="user-images-grid">
-                            {images.map((url, idx) => {
-                              const handleUserImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-                                const target = e.target as HTMLImageElement;
-                                if (url && url.includes('alchatfiles.fiacloud.top')) {
-                                  const fallback = url.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
-                                  if (target.src !== fallback) {
-                                    target.src = fallback;
-                                  }
-                                }
-                              };
-                              return (
-                                <div key={idx} className="user-ref-image-card" onClick={() => onImageClick(url)}>
-                                  <img 
-                                    src={getThumbnailUrl(url)} 
-                                    alt={`Reference ${idx}`} 
-                                    onError={handleUserImgError}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {textContent && <div className="user-message-text">{textContent}</div>}
-                      </>
-                    );
-                  })()}
-                </div>
-              ) : (
-                msg.content
-              )}
+              {messageAttachments(msg.content, msg.attachments).length > 0 && <div className="user-attachment-cards">
+                {messageAttachments(msg.content, msg.attachments).map((file, index) => <FileAttachment key={`${file.url}:${index}`} file={file} />)}
+              </div>}
+              <div className={`user-message-text ${showExpandButton && isUserCollapsed ? 'text-collapsed' : ''}`}>
+                {msg.content.replace(/<(?:image|file|video)\s+src="[^"]+">/gi, '').trim()}
+              </div>
               {showExpandButton && (
                 <button 
                   className={`user-collapse-toggle ${isUserCollapsed ? 'collapsed' : 'expanded'}`}

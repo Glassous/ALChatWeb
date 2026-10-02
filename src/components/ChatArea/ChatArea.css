@@ -1313,3 +1313,15 @@
   .hermes-timeline-content,
   .hermes-step-content { transition: none; }
 }
+
+.user-attachment-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.attachment-file-card { display: inline-flex; align-items: center; gap: 10px; padding: 10px 12px; max-width: 100%; min-width: 180px; border: 1px solid var(--outline-color, #8884); border-radius: 12px; background: var(--surface-color, transparent); color: inherit; text-align: left; cursor: pointer; vertical-align: middle; margin: 4px 0; }
+.attachment-file-card img, .attachment-file-icon { width: 44px; height: 44px; flex-shrink: 0; object-fit: cover; border-radius: 6px; }
+.attachment-file-icon { display: grid; place-items: center; font-size: 26px; }
+.attachment-file-card > span:last-child { min-width: 0; }
+.attachment-file-card strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.attachment-file-card small { display: block; opacity: .7; font-size: 11px; margin-top: 4px; }
+.attachment-preview-image { width: 100%; max-height: 55vh; object-fit: contain; border-radius: 8px; }
+.attachment-file-info { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.attachment-file-info dd { margin: 0; overflow-wrap: anywhere; }
+.user-message-text.text-collapsed { max-height: 160px; overflow: hidden; }

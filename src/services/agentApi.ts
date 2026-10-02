@@ -42,6 +42,7 @@ export interface AgentStep {
   results?: Array<{ title: string; url: string; snippet: string; number: number }>;
 }
 export interface AgentRun {
+  attachments?: import('./attachments').AttachmentDescriptor[];
   id: string;
   conversation_id: string;
   user_message_id: string;
@@ -85,8 +86,8 @@ async function request(path: string, init?: RequestInit) {
 }
 
 export const agentApi = {
-  async start(conversationId: string, message: string, parentMessageId?: string | null, location?: string, requestId = crypto.randomUUID()): Promise<AgentRun> {
-    const body = JSON.stringify({ conversation_id: conversationId, message, parent_message_id: parentMessageId, request_id: requestId, location });
+  async start(conversationId: string, message: string, parentMessageId?: string | null, location?: string, requestId = crypto.randomUUID(), attachments?: import('./attachments').AttachmentDescriptor[]): Promise<AgentRun> {
+    const body = JSON.stringify({ conversation_id: conversationId, message, parent_message_id: parentMessageId, request_id: requestId, location, attachments });
     // Reuse the same key for one transport retry; the server owns idempotency.
     try {
       return await (await request('', { method: 'POST', body })).json();

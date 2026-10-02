@@ -15,7 +15,7 @@ from ..ai import HermesResponsesModel, Runtime
 from ..agents import generation_endpoint
 from ..conversations import is_temp
 from ..core import auth, count_tokens, decrypt, deduct, fail, now, rate_limit, reset_credits
-from ..media import COS, image_file_metadata
+from ..media import COS, image_file_metadata, is_document, document_metadata, clean_filename, attachment_type, validate_message_attachments, MAX_DOCUMENT_BYTES
 from ..storage import CustomModelConfig, HermesConfig, User
 
 router = APIRouter()
@@ -377,6 +377,7 @@ def chat(body: dict, request: Request):
         fail(400, "conversation_id and message are required")
     if mode not in ("daily", "expert", "search", "hermes"):
         fail(400, "unsupported chat mode")
+    attachments = validate_message_attachments(stt.cfg, message, body.get("attachments"))
     temporary = is_temp(cid)
     with stt.db.session() as s:
         user = s.get(User, user_id)
@@ -398,11 +399,14 @@ def chat(body: dict, request: Request):
             if not stt.temp.get(cid):
                 stt.temp.create(cid)
             user_message = stt.temp.save(cid, "user", message, body.get("parent_message_id") or "")
+            user_message["attachments"] = attachments
+            stt.temp.update(user_message)
             assistant = stt.temp.save(cid, "assistant", "", user_message["id"])
         else:
             user_message = stt.conversations.save(user_id, cid, "user", message, body.get("parent_message_id") or "")
             assistant = stt.conversations.save(user_id, cid, "assistant", "", user_message["id"])
             user_message["mode"] = assistant["mode"] = mode
+            user_message["attachments"] = attachments
             stt.conversations.update_message(user_message)
             stt.conversations.update_message(assistant)
     except Exception:
@@ -427,6 +431,9 @@ def generate_image(body: dict, request: Request):
     user_id = uid(request)
     rate_limit(request, st().db, 10, "/api/chat/image", user_id)
     cid, prompt = body.get("conversation_id", ""), body.get("prompt", "")
+    validate_message_attachments(st().cfg, prompt)
+    if body.get("ref_image_url"):
+        validate_message_attachments(st().cfg, '<image src="' + body["ref_image_url"] + '">')
     if not cid or not prompt:
         fail(400, "Invalid request")
     with st().db.session() as s:
@@ -452,7 +459,10 @@ def generate_image(body: dict, request: Request):
             if match:
                 ref = match.group(1)
     content = f'<image src="{ref}">\n{prompt}' if body.get("ref_image_url") else prompt
+    descriptors = validate_message_attachments(st().cfg, content, body.get("attachments"))
     user_message = st().conversations.save(user_id, cid, "user", content, body.get("parent_message_id") or "")
+    user_message["attachments"] = descriptors
+    st().conversations.update_message(user_message)
     assistant = st().conversations.save(user_id, cid, "assistant", "", user_message["id"])
     st().streams.start(cid)
 
@@ -460,10 +470,11 @@ def generate_image(body: dict, request: Request):
         try:
             st().streams.publish(cid, "image_gen_start", body.get("resolution") or "2048x2048")
             image = st().ai.image(prompt, body.get("resolution", ""), ref)
-            filename, _ = image_file_metadata(image)
-            url = COS(st().cfg).upload(image, filename, "images")
+            filename, mime = image_file_metadata(image)
+            url = COS(st().cfg).upload(image, filename, "images", mime)
             tag = f'<image src="{url}">'
             assistant["content"] = tag
+            assistant["attachments"] = [{"url": url, "filename": filename, "mime_type": mime, "size": len(image), "type": "image"}]
             st().conversations.update_message(assistant)
             st().streams.publish(cid, "token", tag)
             try:
@@ -490,6 +501,8 @@ def cos_presign(body: dict, request: Request):
         fail(400, "Invalid request")
     if body["folder"] not in ("avatars", "reference_files", "images"):
         fail(400, "Invalid folder name")
+    if is_document(body["filename"], body["mime_type"]) or (body["folder"] == "reference_files" and not body["mime_type"].startswith(("image/", "video/"))):
+        fail(400, "文档请在 Agent 模式使用文件上传接口")
     signed, final = COS(st().cfg).presign(body["folder"], body["filename"], body["mime_type"])
     return {"upload_url": signed, "url": final}
 
@@ -497,26 +510,43 @@ def cos_presign(body: dict, request: Request):
 @router.delete("/api/chat/reference-image")
 def delete_reference(body: dict, request: Request):
     uid(request)
-    match = re.match(r"https?://[^/]+/(.+)", body.get("url", ""))
-    if not match:
+    try:
+        key = COS(st().cfg).reference_key(body.get("url", ""))
+    except ValueError:
         fail(400, "Invalid image URL")
-    COS(st().cfg).delete(match.group(1))
+    COS(st().cfg).delete(key)
     return {"message": "Image deleted successfully"}
 
 
 @router.post("/api/chat/upload-reference")
 async def upload_reference(request: Request):
     uid(request)
+    if request.headers.get("content-length", "").isdigit() and int(request.headers["content-length"]) > 15 * 1024 * 1024 + 65536:
+        fail(413, "上传请求超过大小限制")
     form = await request.form()
     files = form.getlist("file") or form.getlist("image")
     if not files:
         fail(400, "No file provided")
-    if len(files) > 5:
-        fail(400, "Too many files. Maximum 5 files allowed")
+    if len(files) != 1:
+        fail(400, "每次请求仅支持上传一个附件")
     upload = files[0]
-    data = await upload.read(15 * 1024 * 1024 + 1)
-    if len(data) > 15 * 1024 * 1024:
+    filename = clean_filename(upload.filename or "file")
+    doc = is_document(filename, upload.content_type or "")
+    if doc and form.get("mode", "daily") != "agent":
+        fail(400, "文档附件仅限 Agent 模式")
+    limit = MAX_DOCUMENT_BYTES if doc else 15 * 1024 * 1024
+    data = await upload.read(limit + 1)
+    if doc:
+        try:
+            mime = document_metadata(data, filename)
+        except ValueError as exc:
+            fail(400, str(exc))
+    elif len(data) > limit:
         fail(400, "File size exceeds 15MB limit")
-    if not (data.startswith((b"\xff\xd8", b"\x89PNG", b"GIF8", b"RIFF", b"BM", b"\x00\x00\x00"))):
+    elif not (data.startswith((b"\xff\xd8", b"\x89PNG", b"GIF8", b"RIFF", b"BM", b"\x00\x00\x00"))):
         fail(400, "Invalid file type. Only common image and video formats are allowed")
-    return {"url": COS(st().cfg).upload(data, upload.filename or "file", "reference_files")}
+    else:
+        import mimetypes
+        mime = mimetypes.guess_type(filename)[0] or upload.content_type or "application/octet-stream"
+    url = COS(st().cfg).upload(data, filename, "reference_files", mime)
+    return {"url": url, "filename": filename, "mime_type": mime, "size": len(data), "type": attachment_type(url, "file", mime)}

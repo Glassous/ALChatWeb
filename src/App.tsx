@@ -120,6 +120,7 @@ function ChatApp({
   const [hasMessages, setHasMessages] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isMessageLoading, setIsMessageLoading] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
@@ -141,7 +142,7 @@ function ChatApp({
   const onAgentRun = useCallback((run: AgentRun) => {
     apiClient.invalidateCache(run.conversation_id);
     setMessages(previous => previous.map(message => message.id === run.assistant_message_id && message.conversation_id === run.conversation_id ? {
-      ...message, content: run.content, mode: 'agent', agent_run_id: run.id, agent_status: run.status, agent_trace: run.steps, agent_error: run.error,
+      ...message, content: run.content, attachments: run.attachments, mode: 'agent', agent_run_id: run.id, agent_status: run.status, agent_trace: run.steps, agent_error: run.error,
       agent_budget: run.budget, agent_notice: run.notice, agent_finish_reason: run.finish_reason,
       status: agentActive(run.status) ? 'loading' : run.status === 'failed' || run.status === 'interrupted' ? 'error' : 'completed',
     } : message));
@@ -349,6 +350,7 @@ function ChatApp({
           return { 
             ...msg, 
             clientId: localMsg.clientId || msg.clientId,
+            attachments: msg.attachments ?? localMsg.attachments,
             reasoning: msg.reasoning || localMsg.reasoning,
             search: msg.search || localMsg.search,
             hermes_trace: persistedHermesTrace.length > 0 ? persistedHermesTrace : localMsg.hermes_trace,
@@ -382,6 +384,7 @@ function ChatApp({
             JSON.stringify(a.hermes_trace || []) !== JSON.stringify(b.hermes_trace || [])
             || a.agent_run_id !== b.agent_run_id || a.agent_status !== b.agent_status || a.agent_error !== b.agent_error
             || JSON.stringify(a.agent_trace || []) !== JSON.stringify(b.agent_trace || [])
+             || JSON.stringify(a.attachments || []) !== JSON.stringify(b.attachments || [])
             || a.agent_notice !== b.agent_notice || a.agent_finish_reason !== b.agent_finish_reason
             || JSON.stringify(a.agent_budget || {}) !== JSON.stringify(b.agent_budget || {})
           ) {
@@ -453,9 +456,10 @@ function ChatApp({
     resolution: string; 
     refImageUrl?: string; 
     mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent';
+    attachments?: import('./services/attachments').AttachmentDescriptor[];
     overrideParentId?: string | null;
   }) => {
-    if (isLoading || agentBusy) return;
+    if (isLoading || agentBusy || isAttachmentUploading) return;
     const viewTicket = conversationView.current;
 
     let conversationId = currentConversationId;
@@ -511,7 +515,7 @@ function ChatApp({
             coordinates = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
           } catch { /* Location is optional, just as in ordinary chat. */ }
         }
-        const run = await agentApi.start(conversationId, text, effectiveParentId, coordinates);
+        const run = await agentApi.start(conversationId, text, effectiveParentId, coordinates, undefined, options?.attachments);
         apiClient.invalidateCache(conversationId);
         if (viewTicket === conversationView.current) {
           await loadConversation(conversationId, run.assistant_message_id);
@@ -536,6 +540,7 @@ function ChatApp({
       parent_id: (effectiveParentId as string) || undefined,
       role: 'user',
       content: userMsgContent,
+      attachments: options?.attachments,
       mode: currentMode,
       created_at: new Date().toISOString(),
       clientId: userMsgId,
@@ -637,7 +642,9 @@ function ChatApp({
               );
             },
             options.refImageUrl, 
-            effectiveParentId
+            effectiveParentId,
+            undefined,
+            options.attachments
           );
         } catch (error) {
         console.error('Failed to generate image:', error);
@@ -847,7 +854,8 @@ function ChatApp({
 				if (index >= 0) trace[index] = { ...trace[index], ...step, summary: step.type.endsWith('.delta') ? (trace[index].summary || '') + (step.summary || '') : step.summary }; else trace.push(step);
 				return { ...msg, hermes_trace: trace, mode: 'hermes', status: 'loading' };
 			}));
-		}
+		},
+        options?.attachments
       );
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -976,21 +984,13 @@ function ChatApp({
 
     if (!textToResend) return;
 
-    // Extract text part if it has images
-    let textOnly = textToResend;
-    let refImageUrl = undefined;
-    const imageMatch = textToResend.match(/<image src="([^"]+)">/);
-    if (imageMatch) {
-      refImageUrl = imageMatch[1];
-      textOnly = textToResend.replace(/<image src="[^"]+">\n?/, '');
-    }
-
-    handleSend(textOnly, { 
-      isImageMode: false, 
-      resolution: '1024x1024', 
-      refImageUrl,
+    const original = msg.role === 'user' ? msg : messages.find(m => m.id === msg.parent_id);
+    handleSend(textToResend, {
+      isImageMode: false,
+      resolution: '1024x1024',
+      attachments: original?.attachments,
       overrideParentId: parentId,
-      mode: msg.mode === 'agent' ? 'agent' : undefined
+      mode: original?.mode === 'agent' ? 'agent' : undefined
     });
   };
 
@@ -1013,22 +1013,15 @@ function ChatApp({
   };
 
   const handleConfirmEdit = async (newText: string) => {
-    if (!editingMessage || !currentConversationId) return;
+    if (!editingMessage || !currentConversationId || isAttachmentUploading) return;
     
-    // Extract original image if any
-    let refImageUrl = undefined;
-    const imageMatch = editingMessage.content.match(/<image src="([^"]+)">/);
-    if (imageMatch) {
-      refImageUrl = imageMatch[1];
-    }
-
     // Explicitly set the node ID to prevent jumping
     const targetParentId = editingMessage.parent_id;
 
     handleSend(newText, { 
       isImageMode: false, 
       resolution: '1024x1024', 
-      refImageUrl,
+      attachments: editingMessage.attachments,
       overrideParentId: targetParentId,
       mode: editingMessage.mode === 'agent' ? 'agent' : undefined
     });
@@ -1218,7 +1211,9 @@ function ChatApp({
             />
           )}
           <InputArea 
-            onSend={handleSend} 
+            onSend={handleSend}
+            onUploadingChange={setIsAttachmentUploading}
+            contextKey={currentConversationId} 
             disabled={isLoading || agentBusy}
             onStopAgent={agentBusy ? stopAgent : undefined}
             agentCancelling={activeAgentMessage?.agent_status === 'cancelling'}
@@ -1243,7 +1238,7 @@ function ChatApp({
       />
       <EditMessageDialog
         open={isEditOpen}
-        initialText={editingMessage ? editingMessage.content.replace(/<image src="[^"]+">\n?/, '') : ''}
+        initialText={editingMessage?.content || ''}
         onClose={() => setIsEditOpen(false)}
         onConfirm={handleConfirmEdit}
       />

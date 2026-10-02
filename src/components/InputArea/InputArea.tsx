@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import './InputArea.css';
+import { documentFile, fileSize, type AttachmentDescriptor } from '../../services/attachments';
 import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 
 interface InputAreaProps {
-  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' }) => void;
+  onSend: (message: string, options?: { isImageMode: boolean; resolution: string; refImageUrl?: string; attachments?: AttachmentDescriptor[]; mode?: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' }) => void;
+  contextKey?: string | null;
+  onUploadingChange?: (uploading: boolean) => void;
   onStopAgent?: () => void;
   agentCancelling?: boolean;
   disabled?: boolean;
@@ -32,6 +35,8 @@ const RESOLUTIONS = [
 
 export function InputArea({ 
   onSend, 
+  contextKey,
+  onUploadingChange,
   disabled = false, 
   onScrollToBottom, 
   isAtBottom = true, 
@@ -73,8 +78,8 @@ export function InputArea({
   const [showResolutions, setShowResolutions] = useState(false);
   const [refImageUrl, setRefImageUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [attachments, setAttachments] = useState<Array<{url: string, type: 'image' | 'video'}>>([]);
-  const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | null>(null);
+  const [attachments, setAttachments] = useState<AttachmentDescriptor[]>([]);
+  const [selectedAttachmentType, setSelectedAttachmentType] = useState<'image' | 'video' | 'document' | null>(null);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
 
   const [isExpanded, setIsExpanded] = useState(false);
@@ -90,6 +95,30 @@ export function InputArea({
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const uploadTicket = useRef(0);
+  const uploadingNow = useRef(false);
+  const refDescriptor = useRef<AttachmentDescriptor | null>(null);
+  useEffect(() => { onUploadingChange?.(isUploading); }, [isUploading, onUploadingChange]);
+  useEffect(() => {
+    uploadTicket.current++;
+    uploadingNow.current = false;
+    setIsUploading(false); setAttachments([]); setRefImageUrl(null); setSelectedAttachmentType(null);
+    setText(''); setSuggestion(''); setHistoryIndex(-1); setIsExpanded(false);
+    if (textareaRef.current) textareaRef.current.style.height = '44px';
+    refDescriptor.current = null;
+    return () => { uploadTicket.current++; uploadingNow.current = false; };
+  }, [contextKey]);
+  useEffect(() => {
+    if (isAgent) return;
+    setAttachments(previous => previous.filter(item => item.type !== 'document'));
+    setSelectedAttachmentType(null);
+  }, [isAgent]);
+  const leaveAgent = () => {
+    if (attachments.some(item => item.type === 'document')) showToast({ tone: 'info', message: '已移除文档附件，文档仅限 Agent 模式' });
+    setAttachments(previous => previous.filter(item => item.type !== 'document'));
+    setIsAgent(false);
+  };
+
   const handleModeSelect = (selected: 'expert' | 'image') => {
     if (disabled || isUploading) return;
 
@@ -103,43 +132,25 @@ export function InputArea({
     }
 
     setMode(targetExpert ? 'expert' : 'daily');
-    setIsAgent(false);
+    leaveAgent();
     setIsImageMode(targetImage);
     setIsSearch(false);
 
     if (targetImage) {
       setAttachments([]);
       setSelectedAttachmentType(null);
+      refDescriptor.current = null;
       setRefImageUrl(null);
     }
   };
 
-  // Sync history with userMessages from props
+  // Parent updates must not clear a draft while files upload.
+  const historyKey = JSON.stringify(userMessages);
   useEffect(() => {
-    // When userMessages changes (switching conversation or new message),
-    // we should reset the current input and suggestion state if it was from history
-    // Reset draft navigation when the active conversation changes.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSuggestion('');
-    setHistoryIndex(-1);
-    setText('');
-    setIsExpanded(false);
-    // CRITICAL: Clear memory history when conversation changes
-    setHistory([]);
-    
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '44px';
-    }
-
-    if (userMessages.length > 0) {
-      // Filter out media tags like <file src="..."> or <image src="..."> and trim
-      const filteredMessages = userMessages.map(msg => 
-        msg.replace(/<(file|image|video)\s+src="[^"]*">/g, '').trim()
-      ).filter(msg => msg.length > 0);
-
-      setHistory([...filteredMessages].reverse().slice(0, 50));
-    }
-  }, [userMessages]);
+    const messages: string[] = JSON.parse(historyKey);
+    const filtered = messages.map(msg => msg.replace(/<(file|image|video)\s+src="[^"]*">/g, '').trim()).filter(Boolean);
+    setHistory(filtered.reverse().slice(0, 50));
+  }, [historyKey]);
 
   // Sync textarea height with suggestion when text is empty
   useEffect(() => {
@@ -185,7 +196,7 @@ export function InputArea({
   };
 
   const handleSend = () => {
-    if ((text.trim() || attachments.length > 0) && !disabled && !isUploading) {
+    if ((text.trim() || attachments.length > 0) && !disabled && !isUploading && !uploadingNow.current) {
       let finalMode: 'daily' | 'expert' | 'search' | 'hermes' | 'agent' = isAgent && !isTemp ? 'agent' : isHermes ? 'hermes' : mode;
       if (isImageMode) {
         finalMode = 'daily';
@@ -196,7 +207,7 @@ export function InputArea({
       // Format attachments into message
       let finalMsg = text.trim();
       if (attachments.length > 0) {
-        const attachmentTags = attachments.map(att => `<file src="${att.url}">`).join('\n');
+        const attachmentTags = attachments.map(att => `<${att.type === 'image' ? 'image' : 'file'} src="${att.url}">`).join('\n');
         finalMsg = `${attachmentTags}\n${finalMsg}`;
       }
 
@@ -204,6 +215,7 @@ export function InputArea({
         isImageMode, 
         resolution, 
         refImageUrl: refImageUrl || undefined,
+        attachments: refDescriptor.current ? [...attachments, refDescriptor.current] : attachments,
         mode: finalMode
       });
       
@@ -214,6 +226,7 @@ export function InputArea({
       setSuggestion('');
       
       setText('');
+      refDescriptor.current = null;
       setRefImageUrl(null);
       setAttachments([]);
       setSelectedAttachmentType(null);
@@ -300,329 +313,73 @@ export function InputArea({
     }
   };
 
-   const handleUploadClick = () => {
-    if (isTemp) return;
-    fileInputRef.current?.click();
+  const handleUploadClick = () => { if (!isTemp) fileInputRef.current?.click(); };
+  const handleAttachmentClick = () => { if (!isTemp) setShowAttachmentMenu(value => !value); };
+  const handleAttachmentTypeSelect = (type: 'image' | 'video' | 'document') => {
+    if (!isAgent && attachments.some(item => item.type !== type)) {
+      showToast({ tone: 'warning', message: '请先移除不同类型的附件' }); return;
+    }
+    setSelectedAttachmentType(type); setShowAttachmentMenu(false);
+    setTimeout(() => attachmentInputRef.current?.click(), 0);
   };
-
-  const handleAttachmentClick = () => {
-    if (isTemp) return;
-    if (selectedAttachmentType) {
-      attachmentInputRef.current?.click();
-    } else {
-      setShowAttachmentMenu(!showAttachmentMenu);
+  const uploadFiles = async (files: File[], reference = false) => {
+    if (isTemp || disabled || uploadingNow.current || !files.length) return;
+    const kinds = files.map(file => documentFile(file.name) ? 'document' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file');
+    if (kinds.includes('file') || (!isAgent && kinds.includes('document'))) {
+      showToast({ tone: 'warning', message: isAgent ? '仅支持图片、视频、PDF、DOCX、XLSX' : '普通模式仅支持图片或视频' }); return;
     }
-  };
-
-  const handleAttachmentTypeSelect = (type: 'image' | 'video') => {
-    if (attachments.some(attachment => attachment.type !== type)) {
-      showToast({ tone: 'warning', message: '不能同时上传图片和视频，请先移除已有附件' });
-      return;
+    if (files.some((file, index) => kinds[index] === 'document' && file.size > 5 * 1024 * 1024)) {
+      showToast({ tone: 'warning', message: '每个文档不能超过 5 MiB' }); return;
     }
-    if (isImageMode && type === 'video') {
-      showToast({ tone: 'warning', message: '图片生成模式下只能上传图片' });
-      return;
+    if ((isImageMode || reference) && (files.length !== 1 || kinds[0] !== 'image' || refImageUrl)) {
+      showToast({ tone: 'warning', message: '图片生成模式只能上传一张图片' }); return;
     }
-    if (isImageMode && attachments.length >= 1) {
-      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
-      return;
+    if (!isAgent && !reference && new Set([...attachments.map(item => item.type), ...kinds]).size > 1) {
+      showToast({ tone: 'warning', message: '普通模式不能混合图片和视频' }); return;
     }
-    setSelectedAttachmentType(type);
-    setShowAttachmentMenu(false);
-    setTimeout(() => {
-      attachmentInputRef.current?.click();
-    }, 0);
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (isImageMode && refImageUrl) {
-      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const url = await apiClient.uploadReferenceImage(file);
-      setRefImageUrl(url);
-    } catch (error) {
-      console.error('Failed to upload image:', error);
-      showToast({ tone: 'error', message: '上传图片失败，请重试' });
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const handleAttachmentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    if (isImageMode && (attachments.length + files.length > 1)) {
-      showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
-      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const newAttachments = [...attachments];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const url = await apiClient.uploadReferenceImage(file);
-        newAttachments.push({ url, type: selectedAttachmentType! });
-        setAttachments([...newAttachments]);
-      }
-      setAttachments(newAttachments);
-    } catch (error) {
-      console.error('Failed to upload file:', error);
-      showToast({ tone: 'error', message: '上传文件失败，请重试' });
-    } finally {
-      setIsUploading(false);
-      if (attachmentInputRef.current) attachmentInputRef.current.value = '';
-    }
-  };
-
-  const removeRefImage = async () => {
-    if (refImageUrl) {
+    const ticket = ++uploadTicket.current;
+    uploadingNow.current = true; setIsUploading(true);
+    for (const file of files) {
+      if (ticket !== uploadTicket.current) break;
       try {
-        await apiClient.deleteReferenceImage(refImageUrl);
+        const item = await apiClient.uploadAttachment(file, isAgent);
+        if (ticket !== uploadTicket.current) { void apiClient.deleteReferenceImage(item.url).catch(() => {}); break; }
+        if (reference || isImageMode) { refDescriptor.current = item; setRefImageUrl(item.url); }
+        else setAttachments(previous => [...previous, item]);
       } catch (error) {
-        console.error('Failed to delete image from OSS:', error);
+        if (ticket === uploadTicket.current) showToast({ tone: 'error', message: error instanceof Error ? error.message : '上传失败，请重试' });
       }
     }
-    setRefImageUrl(null);
+    if (ticket === uploadTicket.current) { uploadingNow.current = false; setIsUploading(false); }
   };
-
-  const removeAttachment = async (index: number) => {
-    const att = attachments[index];
-    try {
-      await apiClient.deleteReferenceImage(att.url);
-    } catch (error) {
-      console.error('Failed to delete file from OSS:', error);
-    }
-    const newAttachments = [...attachments];
-    newAttachments.splice(index, 1);
-    setAttachments(newAttachments);
-    if (newAttachments.length === 0) {
-      setSelectedAttachmentType(null);
-    }
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await uploadFiles(Array.from(event.target.files || []), true); event.target.value = '';
   };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (isTemp || disabled || isUploading) return;
-
-    const items = e.dataTransfer.items;
-    if (items && items.length > 0) {
-      let hasImage = false;
-      let hasVideo = false;
-      let hasOther = false;
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          if (item.type.startsWith('image/')) {
-            hasImage = true;
-          } else if (item.type.startsWith('video/')) {
-            hasVideo = true;
-          } else {
-            hasOther = true;
-          }
-        }
-      }
-
-      // Check support and mutual exclusion
-      if (hasOther) {
-        setDragStatus('unsupported');
-        setDragMessage('仅支持图片或视频');
-      } else if (hasImage && hasVideo) {
-        setDragStatus('unsupported');
-        setDragMessage('不能同时上传图片和视频');
-      } else if (isImageMode) {
-        if (hasVideo) {
-          setDragStatus('unsupported');
-          setDragMessage('图片生成模式下只能上传图片');
-        } else if (hasImage) {
-          if (refImageUrl || attachments.length >= 1 || items.length > 1) {
-            setDragStatus('unsupported');
-            setDragMessage('图片生成模式下只能上传一张图片');
-          } else {
-            setDragStatus('supported');
-            setDragMessage('松手上传图片');
-          }
-        }
-      } else if (hasImage) {
-        if (selectedAttachmentType === 'video') {
-          setDragStatus('unsupported');
-          setDragMessage('已有视频，请先移除');
-        } else {
-          setDragStatus('supported');
-          setDragMessage('松手上传图片');
-        }
-      } else if (hasVideo) {
-        if (selectedAttachmentType === 'image') {
-          setDragStatus('unsupported');
-          setDragMessage('已有图片，请先移除');
-        } else {
-          setDragStatus('supported');
-          setDragMessage('松手上传视频');
-        }
-      } else {
-        setDragStatus('unsupported');
-        setDragMessage('不支持的文件格式');
-      }
-    }
+  const handleAttachmentFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    await uploadFiles(Array.from(event.target.files || [])); event.target.value = '';
   };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragStatus('none');
-    setDragMessage('');
+  const removeRefImage = () => {
+    if (refImageUrl) void apiClient.deleteReferenceImage(refImageUrl).catch(() => {});
+    refDescriptor.current = null; setRefImageUrl(null);
   };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const status = dragStatus;
-    setDragStatus('none');
-    setDragMessage('');
-
-    if (isTemp || disabled || isUploading || status !== 'supported') return;
-
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-
-    // Determine type from first file
-    const firstFile = files[0];
-    const type = firstFile.type.startsWith('video/') ? 'video' : 'image';
-
-    // If type changed or not set, update it
-    if (selectedAttachmentType === null) {
-      setSelectedAttachmentType(type);
-    }
-
-    setIsUploading(true);
-    try {
-      const newAttachments = [...attachments];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        // Ensure file matches the determined type (mutual exclusion)
-        const fileType = file.type.startsWith('video/') ? 'video' : 'image';
-        if (fileType !== (selectedAttachmentType || type)) continue;
-
-        const url = await apiClient.uploadReferenceImage(file);
-        newAttachments.push({ url, type: fileType });
-        setAttachments([...newAttachments]);
-      }
-      setAttachments(newAttachments);
-    } catch (error) {
-      console.error('Failed to upload dropped files:', error);
-      showToast({ tone: 'error', message: '上传文件失败，请重试' });
-    } finally {
-      setIsUploading(false);
-    }
+  const removeAttachment = (index: number) => {
+    const item = attachments[index];
+    setAttachments(previous => previous.filter(value => value.url !== item.url));
+    void apiClient.deleteReferenceImage(item.url).catch(() => {});
   };
-
-  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (isTemp || disabled || isUploading) return;
-
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    const filesToUpload: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) {
-          filesToUpload.push(file);
-        }
-      }
-    }
-
-    if (filesToUpload.length === 0) return;
-
-    // 1. 画图模式下的类型和数量校验
-    if (isImageMode) {
-      const hasNonImage = filesToUpload.some(file => !file.type.startsWith('image/'));
-      if (hasNonImage) {
-        showToast({ tone: 'warning', message: '图片生成模式下只能上传图片' });
-        return;
-      }
-      if (refImageUrl || attachments.length >= 1 || filesToUpload.length > 1) {
-        showToast({ tone: 'warning', message: '图片生成模式下只能上传一张图片' });
-        return;
-      }
-
-      setIsUploading(true);
-      try {
-        const url = await apiClient.uploadReferenceImage(filesToUpload[0]);
-        setRefImageUrl(url);
-      } catch (error) {
-        console.error('Failed to upload pasted image:', error);
-        showToast({ tone: 'error', message: '上传图片失败，请重试' });
-      } finally {
-        setIsUploading(false);
-      }
-      return;
-    }
-
-    // 2. 普通聊天模式下的类型和混合互斥校验
-    let currentType = selectedAttachmentType;
-    const newFiles: File[] = [];
-
-    for (const file of filesToUpload) {
-      const isImg = file.type.startsWith('image/');
-      const isVid = file.type.startsWith('video/');
-
-      if (!isImg && !isVid) {
-        showToast({ tone: 'warning', message: '仅支持粘贴图片或视频文件' });
-        return;
-      }
-
-      const fileType = isImg ? 'image' : 'video';
-
-      if (currentType === null) {
-        currentType = fileType;
-      } else if (currentType !== fileType) {
-        const errorMsg = currentType === 'image' ? '已有图片，请先移除才能粘贴视频' : '已有视频，请先移除才能粘贴图片';
-        showToast({ tone: 'error', message: errorMsg });
-        return;
-      }
-      newFiles.push(file);
-    }
-
-    const hasImages = newFiles.some(f => f.type.startsWith('image/'));
-    const hasVideos = newFiles.some(f => f.type.startsWith('video/'));
-    if (hasImages && hasVideos) {
-      showToast({ tone: 'warning', message: '不能同时上传图片和视频' });
-      return;
-    }
-
-    setSelectedAttachmentType(currentType);
-    setIsUploading(true);
-    try {
-      const newAttachments = [...attachments];
-      for (const file of newFiles) {
-        const url = await apiClient.uploadReferenceImage(file);
-        newAttachments.push({ url, type: currentType! });
-        setAttachments([...newAttachments]);
-      }
-      setAttachments(newAttachments);
-    } catch (error) {
-      console.error('Failed to upload pasted files:', error);
-      showToast({ tone: 'error', message: '上传文件失败，请重试' });
-    } finally {
-      setIsUploading(false);
-    }
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    if (isTemp || disabled || uploadingNow.current) return;
+    setDragStatus('supported'); setDragMessage(isAgent ? '松手上传图片、视频或文档' : '松手上传图片或视频');
+  };
+  const handleDragLeave = (event: React.DragEvent) => { event.preventDefault(); setDragStatus('none'); setDragMessage(''); };
+  const handleDrop = async (event: React.DragEvent) => {
+    event.preventDefault(); event.stopPropagation(); setDragStatus('none'); setDragMessage('');
+    await uploadFiles(Array.from(event.dataTransfer.files));
+  };
+  const handlePaste = async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.items).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => !!file);
+    if (files.length) { event.preventDefault(); await uploadFiles(files); }
   };
 
   const isExhausted = userCredits !== null && userCredits <= 0;
@@ -678,8 +435,8 @@ export function InputArea({
             </div>
           )}
           {attachments.map((att, index) => (
-            <div key={index} className="ref-image-preview-card">
-              {att.type === 'image' ? (
+            <div key={index} className="ref-image-preview-card" title={`${att.filename} · ${fileSize(att.size)}`}>
+              {att.type === 'document' ? <div className="video-preview-placeholder" style={{fontSize: 10, padding: 4}}>{att.filename}</div> : att.type === 'image' ? (
                 <img 
                   src={att.url} 
                   alt={`Attachment ${index}`} 
@@ -694,7 +451,7 @@ export function InputArea({
                   }}
                 />
               ) : (
-                <div className="video-preview-placeholder">
+                <div className="video-preview-placeholder" title={`${att.filename} · ${fileSize(att.size)}`}>
                   <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
                     <path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09s-.03 1.29-.1 2.09c-.06.8-.15 1.43-.28 1.9-.13.47-.4.83-.8 1.08-.4.25-.97.43-1.7.54-1 .16-2.23.23-3.69.23-1.47 0-2.7-.07-3.69-.23-.74-.11-1.3-.29-1.7-.54-.4-.25-.67-.61-.8-1.08-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09s.03-1.29.1-2.09c.06-.8.15-1.43.28-1.9.13-.46.4-.82.8-1.07.4-.25.97-.43 1.7-.54 1-.16 2.23-.23 3.69-.23 1.47 0 2.7.07 3.69.23.74.11 1.3.29 1.7.54.4.25.67.61.8 1.07z" />
                   </svg>
@@ -737,7 +494,7 @@ export function InputArea({
                 onKeyDown={handleKeyDown}
                 onScroll={handleScroll}
                 onPaste={handlePaste}
-                disabled={disabled || isUploading}
+                disabled={disabled}
                 rows={1}
                 ref={textareaRef}
                 spellCheck={false}
@@ -887,7 +644,7 @@ export function InputArea({
                 )}
                 {!isHermes && !isTemp && <div className="tool-slot">
                   <button className={`tool-btn agent-mode-btn ${isAgent ? 'active' : ''}`} aria-pressed={isAgent} title="自主搜索与整理" disabled={disabled || isUploading}
-                    onClick={() => { setIsAgent(value => !value); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setRefImageUrl(null); setShowAttachmentMenu(false); }}>Agent</button>
+                    onClick={() => { if (isAgent) leaveAgent(); else setIsAgent(true); setIsHermes(false); setIsSearch(false); setIsImageMode(false); setMode('daily'); setRefImageUrl(null); setShowAttachmentMenu(false); }}>Agent</button>
                 </div>}
                 {onStopAgent && <button type="button" className="tool-btn agent-stop-btn" onClick={onStopAgent} disabled={agentCancelling}
                   aria-label={agentCancelling ? '停止中' : '停止 Agent'} title={agentCancelling ? '停止中' : '停止 Agent'}>
@@ -943,13 +700,14 @@ export function InputArea({
                               </svg>
                               <span>视频</span>
                             </div>
+                            {isAgent && <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('document')}>PDF / DOCX / XLSX · 5 MiB</div>}
                           </motion.div>
                       </AnchoredPopover>
                       <input 
                         type="file"
                         ref={attachmentInputRef}
                         onChange={handleAttachmentFileChange}
-                        accept={selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
+                        accept={selectedAttachmentType === 'document' ? '.pdf,.docx,.xlsx' : selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
                         multiple
                         style={{ display: 'none' }}
                       />

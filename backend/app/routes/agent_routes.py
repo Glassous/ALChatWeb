@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from ..agents import manager, request_hash, require_agent_schema
 from ..core import auth, fail, now, rate_limit, reset_credits
 from ..storage import User, oid
+from ..media import validate_message_attachments
 from .chat_routes import _cleanup_history, _system_prompt
 
 router = APIRouter()
@@ -24,6 +25,7 @@ class StartRun(BaseModel):
     parent_message_id: str | None = None
     request_id: str = Field(min_length=1, max_length=100)
     location: str = Field(default="", max_length=200)
+    attachments: list[dict] = Field(default_factory=list, max_length=100)
 
 
 @router.post("/api/agent/runs")
@@ -52,6 +54,7 @@ def start(body: StartRun, request: Request):
         if not state.ai.runtime("daily").api_key:
             fail(400, "请先配置项目日常模型")
         require_agent_schema(state.db)
+        attachments = validate_message_attachments(state.cfg, message, body.attachments, agent=True)
         with state.db.session() as session:
             user = session.get(User, user_id)
             reset_credits(state.db, user)
@@ -62,6 +65,7 @@ def start(body: StartRun, request: Request):
         user_message = state.conversations.save(user_id, cid, "user", message, parent)
         assistant = state.conversations.save(user_id, cid, "assistant", "", user_message["id"])
         user_message["mode"] = "agent"
+        user_message["attachments"] = attachments
         state.conversations.update_message(user_message)
         run = {"_id": ObjectId(), "user_id": user_id, "conversation_id": cid, "user_message_id": user_message["id"], "assistant_message_id": assistant["id"], "request_id": body.request_id, "request_hash": fingerprint,
             "message": message, "content": "", "status": "running", "steps": [], "sources": [], "credits": credits, "seq": 0, "created_at": now(), "updated_at": now(), "error": ""}

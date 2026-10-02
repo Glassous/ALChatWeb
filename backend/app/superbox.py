@@ -5,13 +5,14 @@ import hashlib
 import asyncio
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 from jsonschema import Draft202012Validator
 
-from .media import image_file_metadata
+from .media import image_file_metadata, MAX_DOCUMENT_BYTES
 
 EXIF_INPUT_LIMIT = 20 * 1024 * 1024
 EXIF_OUTPUT_LIMIT = 21 * 1024 * 1024
@@ -51,10 +52,14 @@ def preview(value, limit=8192):
 
 
 def failure(code, message, **extra):
-    return {"error": message, "code": code, **extra}
+    return {"error": message, "code": code, "message": message, "details": None, "http_status": None, **extra}
 
 
 class Unsupported(ValueError):
+    pass
+
+
+class ResponseTooLarge(Unsupported):
     pass
 
 
@@ -77,7 +82,32 @@ def resolve_schema(schema, document, refs=()):
             raise Unsupported("schema 引用不存在") from None
         merged = resolve_schema(value, document, (*refs, ref))
         return {**merged, **resolve_schema({k: v for k, v in schema.items() if k != "$ref"}, document, (*refs, ref))}
-    return {k: resolve_schema(v, document, refs) for k, v in schema.items()}
+    resolved = {k: resolve_schema(v, document, refs) for k, v in schema.items() if k != "nullable"}
+    if schema.get("nullable"):
+        resolved = {"anyOf": [resolved, {"type": "null"}], **({"default": resolved["default"]} if "default" in resolved else {})}
+    return resolved
+
+
+def apply_defaults(value, schema):
+    """Keep string scalars intact and apply only schema-declared defaults."""
+    if not isinstance(schema, dict):
+        return value
+    for branch in schema.get("allOf", []):
+        value = apply_defaults(value, branch)
+    for keyword in ("oneOf", "anyOf"):
+        for branch in schema.get(keyword, []):
+            if Draft202012Validator(branch).is_valid(value):
+                value = apply_defaults(value, branch)
+                break
+    if isinstance(value, dict):
+        for key, child in schema.get("properties", {}).items():
+            if key not in value and "default" in child:
+                value[key] = deepcopy(child["default"])
+            if key in value:
+                value[key] = apply_defaults(value[key], child)
+    elif isinstance(value, list) and isinstance(schema.get("items"), dict):
+        value = [apply_defaults(item, schema["items"]) for item in value]
+    return value
 
 
 @dataclass
@@ -90,14 +120,15 @@ class Operation:
     schema: dict
     validator: Draft202012Validator = field(repr=False)
     transport: str = "json"
+    responses: dict = field(default_factory=dict)
 
     def validate(self, arguments):
         error = next(self.validator.iter_errors(arguments), None)
         if error:
             location = ".".join(str(p) for p in error.absolute_path) or "请求"
             return failure("VALIDATION_ERROR", f"参数 {location} 不符合 {error.validator} 约束，请按工具参数定义修正")
-        if len(json.dumps(arguments).encode()) > 1024 * 1024:
-            return failure("INPUT_TOO_LARGE", "插件参数超过 1 MiB 上限")
+        if len(json.dumps(arguments).encode()) > 8 * 1024 * 1024:
+            return failure("INPUT_TOO_LARGE", "插件参数超过 8 MiB 上限")
         if any(p in (".", "..") for value in arguments.get("path", {}).values() for p in unquote(str(value)).split("/")):
             return failure("VALIDATION_ERROR", "路径参数包含不支持的路径片段")
         return None
@@ -140,7 +171,7 @@ class Superbox:
             raise Unsupported("无效的操作路径")
         return path
 
-    def request(self, method, path, timeout, max_bytes=2 * 1024 * 1024, **kwargs):
+    def request(self, method, path, timeout, max_bytes=2 * 1024 * 1024, check=lambda: None, **kwargs):
         # No redirects, cookies from other requests, user JWT, or inherited auth.
         async def fetch():
             # An absolute timeout also bounds redirects/streaming/slow trickles,
@@ -150,10 +181,11 @@ class Superbox:
                     async with client.stream(method, self.base_url + self.relative(path), **kwargs) as response:
                         data = bytearray()
                         async for chunk in response.aiter_bytes():
+                            check()
                             data.extend(chunk)
-                            limit = max_bytes if response.headers.get("content-type", "").split(";")[0] in ("image/jpeg", "image/png", "image/webp") and 200 <= response.status_code < 300 else 2 * 1024 * 1024
+                            limit = max_bytes if 200 <= response.status_code < 300 else 2 * 1024 * 1024
                             if len(data) > limit:
-                                raise Unsupported("Superbox 响应超过大小上限")
+                                raise ResponseTooLarge("Superbox 响应超过大小上限")
                         return response.status_code, response.headers.get("content-type", ""), bytes(data)
         return asyncio.run(fetch())
 
@@ -162,7 +194,7 @@ class Superbox:
         for path in ("/skill", "/skill.json", "/openapi.json"):
             check()
             try:
-                status, kind, raw = self.request("GET", path, timeout())
+                status, kind, raw = self.request("GET", path, timeout(), check=check)
                 if status != 200:
                     raise Unsupported("功能文档请求失败")
                 documents[path] = raw.decode("utf-8") if path == "/skill" else json.loads(raw)
@@ -176,10 +208,13 @@ class Superbox:
         if not isinstance(manifest, dict) or not isinstance(spec, dict) or not isinstance(manifest.get("endpoints"), list) or not isinstance(spec.get("paths"), dict):
             catalog.warnings.append("Superbox 功能文档结构无效，插件暂不可用")
             return catalog
-        catalog.version = str(manifest.get("version", ""))[:100]
+        catalog.version = str(spec.get("info", {}).get("version", manifest.get("version", "")))[:100]
         catalog.digest = hashlib.sha256(json.dumps(documents, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         instructions = documents.get("/skill") or json.dumps({"conventions": manifest.get("conventions", []), "guidance": manifest.get("guidance", [])}, ensure_ascii=False)
-        catalog.guidance = preview(instructions, 12000)[0]
+        # Operational guidance also lives on each tool, so later tools are never
+        # silently removed by truncating a monolithic Skill document.
+        catalog.guidance = preview({"conventions": manifest.get("conventions", []), "guidance": manifest.get("guidance", [])}, 12000)[0]
+        sections = re.split(r"(?m)^#{3,4}\s+", instructions)
         seen = set()
         for endpoint in manifest["endpoints"]:
             if not isinstance(endpoint, dict):
@@ -220,13 +255,20 @@ class Superbox:
                         transport = "exif"
                         properties["body"] = exif_schema(path == "/exif/edit")
                         required.append("body")
+                    elif method == "POST" and path == "/documents/convert" and "multipart/form-data" in content:
+                        fields = content["multipart/form-data"]["schema"].get("properties", {})
+                        if not {"file", "file_url", "format"} <= fields.keys():
+                            raise Unsupported("文档接口参数不兼容")
+                        transport = "document"
+                        properties["body"] = {"type": "object", "properties": {"file_url": {"type": "string", "minLength": 1, "maxLength": 2048}, "format": fields["format"]}, "required": ["file_url"], "additionalProperties": False}
+                        required.append("body")
                     elif "application/json" not in content or any(t != "application/json" for t in content):
                         raise Unsupported("暂不支持文件上传或非 JSON 请求")
                     else:
                         properties["body"] = content["application/json"]["schema"]
                         if body.get("required"):
                             required.append("body")
-                responses = operation.get("responses", {})
+                responses = resolve_schema(operation.get("responses", {}), spec)
                 for code, response in responses.items():
                     if str(code).startswith("2"):
                         types = resolve_schema(response, spec).get("content", {})
@@ -241,10 +283,15 @@ class Superbox:
                 signature = f"{method} {path}"
                 label = re.sub(r"[^a-zA-Z0-9_]", "_", str(operation.get("operationId", "tool")))[:36]
                 name = f"superbox_{label}_{hashlib.sha256(signature.encode()).hexdigest()[:10]}"
-                description = str(endpoint.get("summary", ""))[:1000]
+                description = str(endpoint.get("summary", ""))[:1000] + "\n请求规则：" + str(endpoint.get("request", ""))[:4000]
+                matching = [section for section in sections if path in section or full_path in section]
+                if matching:
+                    description += "\n" + preview(matching[0], 7000)[0]
                 if transport == "exif":
                     description += " 仅处理当前会话 COS 原始图片（JPEG/PNG/WebP，20 MiB）。编辑前先调用读取或可写标签查询确认 key；changes 是结构化数组。编辑成功返回 COS 图片 URL，最终回复须提供预览和下载链接。"
-                catalog.operations.append(Operation(name, title, description, method, path, schema, Draft202012Validator(schema), transport))
+                if transport == "document":
+                    description += " 使用当前分支 COS 文档或已转存文件的 file_url；PDF/DOCX/XLSX 最大 5 MiB，不支持 OCR、加密和宏。返回全文、统计、警告和可下载文件；预览截断不代表完整文档已被阅读。"
+                catalog.operations.append(Operation(name, title, description, method, path, schema, Draft202012Validator(schema), transport, responses))
             except (ValueError, KeyError, TypeError, AttributeError) as exc:
                 reason = str(exc) if isinstance(exc, Unsupported) else "无法解析参数 schema"
                 catalog.unsupported.append({"title": title, "reason": reason})
@@ -267,6 +314,7 @@ class Superbox:
         return None
 
     def call(self, operation, arguments, timeout, attachments=None):
+        arguments = apply_defaults(deepcopy(arguments), operation.schema)
         invalid = self.validate(operation, arguments)
         if invalid:
             return invalid
@@ -274,7 +322,7 @@ class Superbox:
         for name, value in arguments.get("path", {}).items():
             path = path.replace("{" + name + "}", quote(str(value), safe=""))
         try:
-            kwargs = {"params": arguments.get("query", {})}
+            kwargs = {"params": {k: v for k, v in arguments.get("query", {}).items() if v is not None}, "max_bytes": 8 * 1024 * 1024, "check": attachments.check if attachments else lambda: None}
             if operation.transport == "exif":
                 if attachments is None:
                     return failure("ATTACHMENT_UNAVAILABLE", "当前做不到附件处理：附件上下文不可用")
@@ -292,37 +340,80 @@ class Superbox:
                     kwargs["data"] = {"changes": json.dumps(body["changes"], ensure_ascii=False)}
                     kwargs["max_bytes"] = EXIF_OUTPUT_LIMIT
                 timeout = min(timeout, attachments.timeout())
+            elif operation.transport == "document":
+                if attachments is None:
+                    return failure("ATTACHMENT_UNAVAILABLE", "附件上下文不可用")
+                body = arguments["body"]
+                url = body["file_url"]
+                if url not in attachments.items:
+                    return failure("ATTACHMENT_UNAVAILABLE", "请先转存文件；只能转换当前分支附件和本次转存结果")
+                info = attachments.cos().metadata(url)
+                if info["size"] > MAX_DOCUMENT_BYTES:
+                    return failure("FILE_TOO_LARGE", "Superbox 文档转换限制为 5 MiB")
+                # Field-only multipart, not application/x-www-form-urlencoded.
+                kwargs["files"] = {"file_url": (None, url), "format": (None, body.get("format", "markdown"))}
             elif "body" in arguments:
-                if len(json.dumps(arguments["body"]).encode()) > 1024 * 1024:
-                    return failure("INPUT_TOO_LARGE", "插件请求体超过 1 MiB 上限")
                 kwargs["json"] = arguments["body"]
             status, kind, raw = self.request(operation.method, path, timeout, **kwargs)
-            if operation.transport == "exif" and operation.path == "/exif/edit" and 200 <= status < 300:
+            mime = kind.split(";")[0].strip().lower()
+            if operation.transport == "exif" and operation.path == "/exif/edit" and 200 <= status < 300 and mime.startswith("image/"):
                 filename, mime = image_file_metadata(raw)
                 if kind.split(";")[0].lower() != mime or len(raw) > EXIF_OUTPUT_LIMIT:
                     return failure("UNSUPPORTED_RESPONSE", "当前做不到结果交付：EXIF 返回的图片格式或大小无效")
                 try:
-                    url = attachments.cos().upload(raw, filename, "images")
-                    attachments.add(url, mime=mime)
-                    attachments.check()
+                    item = attachments.save(raw, filename, mime)
                 except Exception:
                     attachments.check()
                     return failure("COS_UPLOAD_FAILED", "当前做不到结果交付：修改后的图片上传 COS 失败，未交付结果文件")
-                return {"result": {"url": url, "mime_type": mime, "size": len(raw)}, "truncated": False}
-            if "application/json" not in kind.lower():
-                return failure("UNSUPPORTED_RESPONSE", "Superbox 返回非 JSON 结果，首版暂不支持", http_status=status)
-            payload = safe_value(json.loads(raw))
+                return {"result": item, "attachments": [item], "truncated": False}
+            if mime != "application/json":
+                if not 200 <= status < 300:
+                    code = {413: "FILE_TOO_LARGE", 415: "UNSUPPORTED_FORMAT", 429: "TOOL_BUSY", 503: "SERVICE_UNAVAILABLE", 504: "PROVIDER_TIMEOUT"}.get(status, "HTTP_ERROR")
+                    return failure(code, "Superbox 返回非 JSON 错误响应", http_status=status)
+                return failure("UNSUPPORTED_RESPONSE", "Superbox 响应类型不符合接口规范", http_status=status)
+            payload = json.loads(raw)
             if not 200 <= status < 300:
                 code = str(payload.get("code", "HTTP_ERROR")) if isinstance(payload, dict) else "HTTP_ERROR"
                 code = code if re.fullmatch(r"[A-Z0-9_]{1,64}", code) else "HTTP_ERROR"
                 message = str(payload.get("message", "插件请求失败"))[:1000] if isinstance(payload, dict) else "插件请求失败"
-                return failure(code, message, http_status=status)
+                return failure(code, message, details=safe_value(payload.get("details")) if isinstance(payload, dict) else None, http_status=status)
+            response_schema = operation.responses.get(str(status), operation.responses.get("2XX", {})).get("content", {}).get("application/json", {}).get("schema", {})
+            if next(Draft202012Validator(response_schema).iter_errors(payload), None):
+                return failure("INVALID_RESPONSE", "Superbox 成功响应不符合 OpenAPI schema", http_status=status)
+            if operation.path == "/exif/edit":
+                return failure("UNSUPPORTED_RESPONSE", "EXIF 编辑未返回结果图片，无法交付")
             if path in ("/exif/inspect", "/exif/tags") and isinstance(payload, dict):
                 tags = payload.get("tags", [])
                 self.writable.update(t["key"] for t in tags if isinstance(t, dict) and t.get("writable") is True and isinstance(t.get("key"), str))
                 if path == "/exif/inspect":
                     self.readonly[arguments["body"]["image_url"]] = {t["key"] for t in tags if isinstance(t, dict) and t.get("writable") is False and isinstance(t.get("key"), str)}
             text, truncated = preview(payload, 32768)
-            return {"result": payload if not truncated else text, "truncated": truncated}
-        except (httpx.HTTPError, ValueError, TimeoutError):
-            return failure("PROVIDER_ERROR", "Superbox 请求失败或响应无效，可调整参数或使用其他功能")
+            files = []
+            if operation.transport == "document" or truncated:
+                if attachments is None:
+                    return failure("COS_UPLOAD_FAILED", "完整结果无法保存：附件上下文不可用")
+                if operation.transport == "document":
+                    filename, content = payload["filename"], payload["result"]
+                    output_mime = "text/markdown" if payload["format"] == "markdown" else "text/plain"
+                    filename = re.sub(r"\.[^.]+$", "", filename) + (".md" if payload["format"] == "markdown" else ".txt")
+                elif isinstance(payload, dict) and isinstance(payload.get("result"), str) and set(payload) == {"result"}:
+                    filename, content, output_mime = "superbox-result.txt", payload["result"], "text/plain"
+                else:
+                    filename = "superbox-result.json"
+                    content = json.dumps(payload, ensure_ascii=False, indent=2)
+                    output_mime = "application/json"
+                try:
+                    files.append(attachments.save(content.encode("utf-8"), filename, output_mime))
+                except Exception:
+                    attachments.check()
+                    return failure("COS_UPLOAD_FAILED", "完整结果上传 COS 失败，未交付结果文件")
+            return {"result": safe_value(payload) if not truncated else text, "attachments": files, "truncated": truncated,
+                    **({"stats": payload.get("stats", {}), "warnings": payload.get("warnings", []), "format": payload["format"], "filename": payload["filename"], "source_type": payload["source_type"]} if operation.transport == "document" else {})}
+        except (httpx.TimeoutException, TimeoutError):
+            return failure("PROVIDER_TIMEOUT", "Superbox 请求超时")
+        except ResponseTooLarge:
+            return failure("RESPONSE_TOO_LARGE", "Superbox 响应超过传输大小上限")
+        except httpx.HTTPError:
+            return failure("SERVICE_UNAVAILABLE", "Superbox 服务暂不可用")
+        except ValueError:
+            return failure("INVALID_RESPONSE", "Superbox 响应无效，可调整参数或使用其他功能")

@@ -1,5 +1,6 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 import type { AgentBudget, AgentStatus, AgentStep } from './agentApi';
+import { documentFile, type AttachmentDescriptor } from './attachments';
 
 export interface Conversation {
   id: string;
@@ -9,6 +10,7 @@ export interface Conversation {
 }
 
 export interface Message {
+  attachments?: import('./attachments').AttachmentDescriptor[];
   id: string;
   conversation_id: string;
   parent_id?: string;
@@ -514,7 +516,8 @@ class APIClient {
     onError: (error: string) => void,
     refImageUrl?: string,
     parentMessageId?: string | null,
-    onImageGenStart?: (resolution: string) => void
+    onImageGenStart?: (resolution: string) => void,
+    attachments?: AttachmentDescriptor[]
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -527,7 +530,8 @@ class APIClient {
         parent_message_id: parentMessageId,
         prompt, 
         resolution,
-        ref_image_url: refImageUrl
+        ref_image_url: refImageUrl,
+        attachments
       }),
     });
 
@@ -622,6 +626,18 @@ class APIClient {
     return url;
   }
 
+  async uploadAttachment(file: File, agent = false): Promise<import('./attachments').AttachmentDescriptor> {
+    if (documentFile(file.name)) {
+      if (!agent) throw new Error('文档附件仅限 Agent 模式');
+      if (file.size > 5 * 1024 * 1024) throw new Error('文档不能超过 5 MiB');
+      const form = new FormData(); form.append('file', file); form.append('mode', 'agent');
+      const headers = new Headers(this.getHeaders()); headers.delete('Content-Type');
+      return this.handleResponse(await fetch(`${this.baseURL}/api/chat/upload-reference`, { method: 'POST', headers, body: form }));
+    }
+    const url = await this.uploadReferenceImage(file);
+    return { url, filename: file.name, mime_type: file.type || 'application/octet-stream', size: file.size, type: file.type.startsWith('video/') ? 'video' : 'image' };
+  }
+
   async deleteReferenceImage(url: string) {
     const response = await fetch(`${this.baseURL}/api/chat/reference-image`, {
       method: 'DELETE',
@@ -648,6 +664,7 @@ class APIClient {
 		onFallback?: (message: string) => void,
 		onGenerationMode?: (mode: 'stream' | 'non_stream') => void,
 		onHermesEvent?: (step: HermesStep) => void,
+    attachments?: import('./attachments').AttachmentDescriptor[],
   ): Promise<void> {
     this.invalidateCache(conversationId);
     
@@ -661,6 +678,7 @@ class APIClient {
         message,
         mode,
         location,
+        attachments,
       }),
     });
 

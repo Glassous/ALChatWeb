@@ -6,16 +6,83 @@ import os
 import re
 import time
 import uuid
-from urllib.parse import urlparse
+import zipfile
+from urllib.parse import urlparse, quote, unquote
 
 from .config import Settings
 
 
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+MAX_TRANSFER_BYTES = 10 * 1024 * 1024
+DOCUMENT_MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 MEDIA_TAG = re.compile(r'<(image|file|video)\s+src="([^"]+)">', re.I)
 
 
+def clean_filename(value: str) -> str:
+    return re.sub(r'[\x00-\x1f\x7f]', '', str(value).replace('\\', '/').split('/')[-1])[:240] or "file"
+
+
+def is_document(filename: str, mime: str = "") -> bool:
+    return os.path.splitext(urlparse(filename).path)[1].lower() in DOCUMENT_MIMES or mime in DOCUMENT_MIMES.values()
+
+
+def document_metadata(content: bytes, filename: str) -> str:
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in DOCUMENT_MIMES:
+        raise ValueError("仅支持 PDF、DOCX、XLSX 文档")
+    if not content or len(content) > MAX_DOCUMENT_BYTES:
+        raise ValueError("文档大小必须大于零且不超过 5 MiB")
+    if ext == ".pdf":
+        if not re.match(br"%PDF-(?:1\.[0-9]|2\.0)", content) or b"%%EOF" not in content[-2048:]:
+            raise ValueError("PDF 文件内容无效")
+    else:
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                entries = archive.infolist()
+                required = "word/document.xml" if ext == ".docx" else "xl/workbook.xml"
+                names = {entry.filename for entry in entries}
+                if not {"[Content_Types].xml", required} <= names or len(entries) > 2000 or sum(e.file_size for e in entries) > 50 * 1024 * 1024 or any(e.flag_bits & 1 or "vbaProject.bin" in e.filename for e in entries):
+                    raise ValueError("Office 文档结构无效、加密或超过限制")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("Office 文档内容无效") from exc
+    return DOCUMENT_MIMES[ext]
+
+
+def validate_message_attachments(cfg, content: str, supplied=None, agent=False) -> list[dict]:
+    """The object HEAD, not client metadata, decides type and size."""
+    from .core import fail
+    if supplied is not None and (not isinstance(supplied, list) or len(supplied) > 100 or any(not isinstance(item, dict) or not isinstance(item.get("url"), str) for item in supplied)):
+        fail(400, "附件描述必须是有效的 URL 列表（最多 100 项）")
+    descriptors = {item["url"]: item for item in (supplied or [])}
+    result = []
+    references = {match.group(2): match.group(1) for match in MEDIA_TAG.finditer(content)}
+    references.update({url: references.get(url, "file") for url in descriptors})
+    for url, tag in references.items():
+        try:
+            info = COS(cfg).metadata(url)
+        except Exception:
+            fail(400, "附件不可用，请重新上传")
+        filename = clean_filename(info.get("filename") or descriptors.get(url, {}).get("filename") or unquote(urlparse(url).path.split('/')[-1]))
+        mime = info.get("mime_type", "")
+        if info["size"] <= 0:
+            fail(400, "附件为空，请重新上传")
+        if is_document(url, mime) or is_document(filename, mime):
+            if not agent:
+                fail(400, "文档附件仅限 Agent 模式")
+            if info["size"] > MAX_DOCUMENT_BYTES:
+                fail(400, "文档大小不能超过 5 MiB")
+        kind = attachment_type(url, "file", mime)
+        if not agent and kind not in ("image", "video"):
+            fail(400, "普通模式仅支持图片或视频附件")
+        if not any(item["url"] == url for item in result):
+            result.append({"url": url, "filename": filename, "mime_type": mime, "size": info["size"], "type": kind})
+    return result
+
+
 def attachment_type(url: str, tag: str = "file", mime: str = "") -> str:
+    if is_document(url, mime):
+        return "document"
     if mime.startswith("video/"):
         return "video"
     if mime.startswith("image/"):
@@ -25,11 +92,11 @@ def attachment_type(url: str, tag: str = "file", mime: str = "") -> str:
         return "video"
     if guessed.startswith("image/") or tag.lower() == "image":
         return "image"
-    return "unknown"
+    return "file"
 
 
 def attachment_text(url: str, kind: str) -> str:
-    label = {"image": "图片", "video": "视频", "unknown": "未知类型附件"}[kind]
+    label = {"image": "图片", "video": "视频", "document": "文档", "file": "文件", "unknown": "文件"}.get(kind, "文件")
     notice = "；当前做不到视频内容分析" if kind == "video" else ""
     return f"[附件：{label}；原始 COS URL：{url}{notice}]"
 
@@ -58,10 +125,13 @@ class COS:
         domain = self.cfg.COS_CUSTOM_DOMAIN.removeprefix("https://").rstrip("/") or f"{self.cfg.COS_BUCKET}.cos.{self.cfg.COS_REGION}.myqcloud.com"
         return f"https://{domain}/{key}"
 
-    def upload(self, content: bytes, filename: str, folder: str) -> str:
+    def upload(self, content: bytes, filename: str, folder: str, mime: str = "") -> str:
+        filename = clean_filename(filename)
         key = f"{folder}/{uuid.uuid4()}{os.path.splitext(filename)[1]}" if folder else f"{uuid.uuid4()}{os.path.splitext(filename)[1]}"
-        mime = mimetypes.guess_type(filename)[0]
-        options = {"ContentType": mime} if mime else {}
+        mime = mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        options = {"ContentType": mime, "Metadata": {"filename": quote(filename, safe="")}}
+        if not mime.startswith(("image/", "video/")) or mime == "image/svg+xml":
+            options["ContentDisposition"] = "attachment; filename*=UTF-8''" + quote(filename, safe="")
         self.client.put_object(Bucket=self.cfg.COS_BUCKET, Body=io.BytesIO(content), Key=key, **options)
         return self.url(key)
 
@@ -80,7 +150,7 @@ class COS:
 
     def metadata(self, url: str) -> dict:
         response = self.client.head_object(Bucket=self.cfg.COS_BUCKET, Key=self.reference_key(url))
-        return {"mime_type": str(response.get("Content-Type", "")).split(";")[0].lower(),
+        return {"filename": unquote(str(response.get("x-cos-meta-filename", ""))), "mime_type": str(response.get("Content-Type", "")).split(";")[0].lower(),
                 "size": int(response.get("Content-Length", 0))}
 
     def download_reference(self, url: str, limit: int = MAX_IMAGE_BYTES) -> bytes:

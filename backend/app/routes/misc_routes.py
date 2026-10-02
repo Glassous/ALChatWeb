@@ -274,6 +274,7 @@ def save_share(token: str, request: Request):
     for message in source:
         parent = ids.get(str(message.get("parent_id", "")), "")
         copied = st().conversations.save(user_id, new["id"], message["role"], message.get("content", ""), parent)
+        copied["attachments"] = message.get("attachments", [])
         ids[str(message["_id"])] = copied["id"]
         copied["reasoning"] = message.get("reasoning", "")
         copied["search"] = message.get("search")
