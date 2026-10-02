@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
@@ -469,6 +469,7 @@ function MessageItem({
   const [isManual, setIsManual] = useState(false);
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
   const [showExpandButton, setShowExpandButton] = useState(false);
+  const [streamedAgent, setStreamedAgent] = useState<{ runId?: string; answer: string; stepId?: string }>({ answer: '' });
   const userBubbleRef = useRef<HTMLDivElement>(null);
   const pureImageUrl = msg.role === 'assistant' ? /^<image src="([^"]+)">$/.exec(msg.content.trim())?.[1] : undefined;
   const isPureImage = Boolean(pureImageUrl);
@@ -557,11 +558,23 @@ function MessageItem({
     }
   };
 
+  const agentActive = msg.agent_status === 'running' || msg.agent_status === 'cancelling';
   const agentDisplay = msg.role === 'assistant' && msg.mode === 'agent'
-    ? agentMessageDisplay(msg.content, msg.agent_trace || [], msg.id) : undefined;
+    ? agentMessageDisplay(msg.content, msg.agent_trace || [], msg.id, {
+      active: agentActive,
+      previousAnswer: streamedAgent.runId === msg.agent_run_id ? streamedAgent.answer : undefined,
+      previousStepId: streamedAgent.runId === msg.agent_run_id ? streamedAgent.stepId : undefined,
+    }) : undefined;
+  const agentAnswer = agentDisplay?.answer;
+  const agentStepId = agentDisplay?.finalStepId;
+  useEffect(() => {
+    if (agentAnswer === undefined || !agentActive) return;
+    setStreamedAgent(previous => previous.runId === msg.agent_run_id && previous.answer === agentAnswer && previous.stepId === agentStepId
+      ? previous : { runId: msg.agent_run_id, answer: agentAnswer, stepId: agentStepId });
+  }, [agentAnswer, agentStepId, agentActive, msg.agent_run_id]);
 
   const renderContent = () => {
-    if (msg.mode === 'agent' && (msg.agent_status === 'running' || msg.agent_status === 'cancelling')) return null;
+    if (msg.mode === 'agent' && !agentDisplay?.answer) return null;
     if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
       return <WaitingForModel nonStreaming={msg.metadata?.generationMode === 'non_stream'} />;
     }
@@ -1017,14 +1030,26 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const isAutoScrollEnabledRef = useRef(true);
-  const prevLastMessageIdRef = useRef<string | null>(messages[messages.length - 1]?.id || null);
+  const prevLastMessageIdRef = useRef<string | null>(null);
   const isFirstRenderRef = useRef(true);
   // Track user-initiated scroll interactions to prevent content-change scrolls
   // from falsely re-enabling auto-scroll
   const isUserScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const followFrameRef = useRef<number | null>(null);
+  const streamingRef = useRef(false);
+  const scrollStateCallbackRef = useRef(onScrollStateChange);
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageKey = lastMessage ? lastMessage.clientId || lastMessage.id : null;
+  const isStreaming = lastMessage?.status === 'loading' || lastMessage?.agent_status === 'running' || lastMessage?.agent_status === 'cancelling';
+
+  useLayoutEffect(() => {
+    streamingRef.current = isStreaming;
+    scrollStateCallbackRef.current = onScrollStateChange;
+  }, [isStreaming, onScrollStateChange]);
 
   // Detect user scroll interactions (wheel, touch, scrollbar drag)
   useEffect(() => {
@@ -1036,17 +1061,41 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
       scrollTimeoutRef.current = setTimeout(() => {
         isUserScrollingRef.current = false;
-      }, 200);
+      }, 300);
+    };
+    const handleWheel = (event: WheelEvent) => {
+      markUserScrolling();
+      if (event.deltaY < 0) isAutoScrollEnabledRef.current = false;
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+      markUserScrolling();
+      if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) {
+        isAutoScrollEnabledRef.current = false;
+      }
+    };
+    const handleTouch = () => {
+      markUserScrolling();
+      isAutoScrollEnabledRef.current = false;
+    };
+    const handlePointer = (event: PointerEvent) => {
+      if (event.target === el) {
+        markUserScrolling();
+        isAutoScrollEnabledRef.current = false;
+      }
     };
 
-    el.addEventListener('wheel', markUserScrolling, { passive: true });
-    el.addEventListener('touchmove', markUserScrolling, { passive: true });
-    el.addEventListener('mousedown', markUserScrolling);
+    el.addEventListener('wheel', handleWheel, { passive: true });
+    el.addEventListener('touchmove', handleTouch, { passive: true });
+    el.addEventListener('pointerdown', handlePointer);
+    el.addEventListener('keydown', handleKey);
 
     return () => {
-      el.removeEventListener('wheel', markUserScrolling);
-      el.removeEventListener('touchmove', markUserScrolling);
-      el.removeEventListener('mousedown', markUserScrolling);
+      el.removeEventListener('wheel', handleWheel);
+      el.removeEventListener('touchmove', handleTouch);
+      el.removeEventListener('pointerdown', handlePointer);
+      el.removeEventListener('keydown', handleKey);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, []);
@@ -1062,6 +1111,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     // can shift scroll position near bottom, which should NOT re-enable auto-scroll.
     if (isUserScrollingRef.current) {
       isAutoScrollEnabledRef.current = isNearBottom;
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => { isUserScrollingRef.current = false; }, 300);
     }
     // Always report to parent for scroll-to-bottom button visibility
     onScrollStateChange?.(isNearBottom);
@@ -1102,11 +1153,6 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     }
   }, [onScrollStateChange, messages, activeMessageId]);
 
-  // Remove the IntersectionObserver effect as we're now using manual scroll detection
-  useEffect(() => {
-    // No-op, functionality moved to handleScroll for better control
-  }, [messages]);
-
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
@@ -1118,50 +1164,72 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
 
   useImperativeHandle(ref, () => ({
     scrollToBottom: () => {
+      isUserScrollingRef.current = false;
       isAutoScrollEnabledRef.current = true;
-      scrollToBottom('smooth');
+      scrollToBottom('auto');
     }
   }));
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    const lastMessageId = lastMessage?.id || null;
-    const prevLastMessageId = prevLastMessageIdRef.current;
-    // Case 1: First render after mount — scroll to bottom immediately
+  // Only a new stable identity can initiate a scroll; completion and ID swaps cannot.
+  useLayoutEffect(() => {
+    const previousKey = prevLastMessageIdRef.current;
+    prevLastMessageIdRef.current = lastMessageKey;
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
-      prevLastMessageIdRef.current = lastMessageId;
-      if (messages.length > 0) {
-        scrollToBottom('auto');
-      }
+      if (lastMessageKey) scrollToBottom('auto');
       return;
     }
-
-    // Detect genuinely new messages (excluding temp->real ID renames)
-    const isRename = !!(
-      prevLastMessageId?.startsWith('temp-') &&
-      lastMessageId &&
-      !lastMessageId.startsWith('temp-')
-    );
-    const isGenuinelyNew =
-      lastMessageId !== null &&
-      lastMessageId !== prevLastMessageId &&
-      !isRename;
-
-    prevLastMessageIdRef.current = lastMessageId;
-
-    // Case 2: A genuinely new message was added → force scroll to bottom
-    if (isGenuinelyNew) {
+    if (lastMessageKey && lastMessageKey !== previousKey) {
+      isUserScrollingRef.current = false;
       isAutoScrollEnabledRef.current = true;
-      scrollToBottom('smooth');
-      return;
+      scrollToBottom('auto');
     }
+  }, [lastMessageKey, scrollToBottom]);
 
-    // Case 3: Streaming update → do NOTHING (auto-scroll disabled during generation)
-
-    // Case 4: Generation ended, content update, ID rename, etc. → do NOTHING
-  }, [messages, scrollToBottom]);
+  useEffect(() => {
+    const container = scrollRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
+    const input = container.closest('.chat-container')?.querySelector<HTMLElement>('.input-area-wrapper');
+    let inputClearance = 0;
+    const reserveInputSpace = () => {
+      if (!input) return;
+      const clearance = Math.ceil(input.getBoundingClientRect().height) + 16;
+      if (clearance > inputClearance) {
+        // Retain the space when controls disappear at completion to avoid scroll clamping.
+        inputClearance = clearance;
+        content.style.setProperty('--chat-input-clearance', `${clearance}px`);
+      }
+    };
+    reserveInputSpace();
+    let previousHeight = content.getBoundingClientRect().height;
+    const reportBottom = () => scrollStateCallbackRef.current?.(container.scrollHeight - container.scrollTop - container.clientHeight < 10);
+    const observer = new ResizeObserver(() => {
+      reserveInputSpace();
+      const height = content.getBoundingClientRect().height;
+      const grew = height > previousHeight;
+      previousHeight = height;
+      if (followFrameRef.current !== null) return;
+      if (!grew || !streamingRef.current || !isAutoScrollEnabledRef.current) {
+        reportBottom();
+        return;
+      }
+      followFrameRef.current = requestAnimationFrame(() => {
+        followFrameRef.current = null;
+        if (streamingRef.current && isAutoScrollEnabledRef.current) scrollToBottom('auto');
+        reportBottom();
+      });
+    });
+    observer.observe(content);
+    observer.observe(container);
+    if (input) observer.observe(input);
+    reportBottom();
+    return () => {
+      observer.disconnect();
+      if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
+      followFrameRef.current = null;
+    };
+  }, [scrollToBottom]);
 
   const handleDownload = async () => {
     if (!previewUrl) return;
@@ -1185,6 +1253,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   const scrollToMessage = (id: string) => {
     const el = messageRefs.current.get(id);
     if (el && scrollRef.current) {
+      isAutoScrollEnabledRef.current = false;
+      isUserScrollingRef.current = false;
       // el.offsetTop gives the distance from the top of the scrollable container
       // We subtract the container's padding-top (24px) to align it perfectly
       const targetScrollTop = el.offsetTop - 24;
@@ -1223,8 +1293,8 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   };
 
   return (
-    <div className="chat-area" ref={scrollRef} onScroll={handleScroll}>
-      <div className="chat-content">
+    <div className="chat-area" ref={scrollRef} onScroll={handleScroll} tabIndex={0}>
+      <div className="chat-content" ref={contentRef}>
         {messages.map((msg) => (
           <div 
             key={msg.clientId || msg.id} 

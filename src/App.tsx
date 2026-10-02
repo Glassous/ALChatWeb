@@ -29,6 +29,31 @@ import { useAgentRun } from './hooks/useAgentRun';
 
 const isTempID = (id: string | null | undefined): id is string => typeof id === 'string' && id.startsWith('temp_');
 
+function completeMessages(messages: Message[], userId: string, assistantId: string, realUserId?: string, realAssistantId?: string): Message[] {
+  const ids = new Map([[userId, realUserId || userId], [assistantId, realAssistantId || assistantId]]);
+  return messages.map(message => ({
+    ...message,
+    id: ids.get(message.id) || message.id,
+    parent_id: message.parent_id ? ids.get(message.parent_id) || message.parent_id : message.parent_id,
+    clientId: message.clientId || message.id,
+    status: message.id === assistantId ? 'completed' : message.status,
+  }));
+}
+
+function hasCompletePath(messages: Message[], nodeId: string): boolean {
+  const byId = new Map(messages.map(message => [message.id, message]));
+  const visited = new Set<string>();
+  let id: string | undefined = nodeId;
+  while (id) {
+    if (visited.has(id)) return false;
+    visited.add(id);
+    const message = byId.get(id);
+    if (!message) return false;
+    id = message.parent_id;
+  }
+  return true;
+}
+
 // Extract HTML code block content from markdown (supports active streaming)
 const extractHtmlFromMarkdown = (markdown: string): string | null => {
   if (!markdown) return null;
@@ -86,9 +111,12 @@ function ChatApp({
     messagesRef.current = messages;
   }, [messages]);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
+  const currentNodeIdRef = useRef(currentNodeId);
+  useEffect(() => { currentNodeIdRef.current = currentNodeId; }, [currentNodeId]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const conversationView = useRef(0);
+  const conversationLoad = useRef(0);
   const [hasMessages, setHasMessages] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -275,6 +303,9 @@ function ChatApp({
     silent = false,
     pendingMessages?: Message[]
   ) => {
+    const viewTicket = conversationView.current;
+    const loadTicket = ++conversationLoad.current;
+    const isCurrentLoad = () => viewTicket === conversationView.current && loadTicket === conversationLoad.current;
     if (!silent) {
       setIsMessageLoading(true);
     }
@@ -285,6 +316,7 @@ function ChatApp({
       } else {
         conv = await apiClient.getConversation(conversationId);
       }
+      if (!isCurrentLoad()) return;
       const newMessages = (Array.isArray(conv.messages) ? conv.messages : []) as Message[];
 
       // Map server messages to preserve clientIds from local messages
@@ -292,9 +324,21 @@ function ChatApp({
       
       // If targetNodeId is provided (e.g. after sending a message) but it's not in the server response,
       // it means the server's read replica is lagging. In silent mode, we should just abort and keep local state.
-      if (silent && targetNodeId && !newMessages.some(m => m.id === targetNodeId)) {
-        console.warn('Server response is missing the target node (likely DB lag). Aborting silent update.');
-        return;
+      if (silent) {
+        const nodeId = targetNodeId || currentNodeIdRef.current;
+        if (nodeId && !hasCompletePath(newMessages, nodeId)) return;
+        // A lagging response must not remove ancestors that are still visible locally.
+        const serverIds = new Set(newMessages.map(message => message.id));
+        const localById = new Map(currentMessages.map(message => [message.id, message]));
+        const visited = new Set<string>();
+        let id: string | undefined = nodeId || undefined;
+        while (id && !visited.has(id)) {
+          visited.add(id);
+          const local = localById.get(id);
+          if (!local) break;
+          if (!serverIds.has(id)) return;
+          id = local.parent_id;
+        }
       }
 
       const localMsgMap = new Map(currentMessages.map(m => [m.id, m]));
@@ -355,7 +399,9 @@ function ChatApp({
       
       // Determine the next node ID to display.
       let nextNodeId: string | null = null;
-      if (targetNodeId && newMessages.some(m => m.id === targetNodeId)) {
+      if (silent && currentNodeIdRef.current && newMessages.some(m => m.id === currentNodeIdRef.current)) {
+        nextNodeId = currentNodeIdRef.current;
+      } else if (targetNodeId && newMessages.some(m => m.id === targetNodeId)) {
         // 1. If targetNodeId is provided and exists in the new messages, use it.
         nextNodeId = targetNodeId;
       } else if (newMessages.length > 0) {
@@ -381,13 +427,14 @@ function ChatApp({
         setIsMobileDrawerOpen(false); // Close drawer on mobile after loading
       }
     } catch (error) {
+      if (!isCurrentLoad()) return;
       console.error('Failed to load conversation:', error);
       if (!silent) {
         setMessages([]);
         setHasMessages(false);
       }
     } finally {
-      if (!silent) {
+      if (!silent && isCurrentLoad()) {
         setIsMessageLoading(false);
       }
     }
@@ -434,6 +481,7 @@ function ChatApp({
       } else {
         try {
           const newConv = await apiClient.createConversation(' ');
+          if (viewTicket !== conversationView.current) return;
           conversationId = newConv.id;
           setCurrentConversationId(conversationId);
           setConversations((prev) => [newConv, ...prev]);
@@ -447,6 +495,7 @@ function ChatApp({
     if (!hasMessages && currentMode !== 'agent') {
       setIsExiting(true);
       setTimeout(() => {
+        if (viewTicket !== conversationView.current) return;
         setHasMessages(true);
         setIsExiting(false);
       }, 400);
@@ -470,7 +519,7 @@ function ChatApp({
         }
       } catch (error) {
         showToast({ tone: 'error', message: error instanceof Error ? error.message : 'Agent 启动失败' });
-      } finally { setIsLoading(false); }
+      } finally { if (viewTicket === conversationView.current) setIsLoading(false); }
       return;
     }
 
@@ -522,6 +571,7 @@ function ChatApp({
             text, 
             options.resolution,
             (imageTag) => {
+              if (viewTicket !== conversationView.current) return;
               setMessages((prev) =>
                 (Array.isArray(prev) ? prev : []).map((msg) =>
                   msg.id === assistantMsgId
@@ -531,6 +581,7 @@ function ChatApp({
               );
             },
             (doneData) => {
+              if (viewTicket !== conversationView.current) return;
               // Refresh user profile to get latest credits and membership info
               loadUserProfile();
 
@@ -554,21 +605,7 @@ function ChatApp({
               // (messagesRef may lag behind queued React state updates from streaming)
               let updatedForLoad: Message[] | undefined;
               setMessages((prev) => {
-                const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
-                  if (msg.id === assistantMsgId) {
-                    return { ...msg, id: realAssistantId || msg.id, status: 'completed' };
-                  }
-                  if (msg.id === userMsgId) {
-                    return { ...msg, id: realUserId || msg.id };
-                  }
-                  if (msg.parent_id === userMsgId) {
-                    return { ...msg, parent_id: realUserId || msg.parent_id };
-                  }
-                  if (msg.parent_id === assistantMsgId) {
-                    return { ...msg, parent_id: realAssistantId || msg.parent_id };
-                  }
-                  return msg;
-                });
+                const updated = completeMessages(Array.isArray(prev) ? prev : [], userMsgId, assistantMsgId, realUserId, realAssistantId);
                 updatedForLoad = updated;
                 return updated;
               });
@@ -588,6 +625,7 @@ function ChatApp({
               }
             },
             (error) => {
+              if (viewTicket !== conversationView.current) return;
               console.error('SSE Error:', error);
               setIsLoading(false);
               setMessages((prev) =>
@@ -603,6 +641,7 @@ function ChatApp({
           );
         } catch (error) {
         console.error('Failed to generate image:', error);
+        if (viewTicket !== conversationView.current) return;
         setMessages((prev) =>
           (Array.isArray(prev) ? prev : []).map((msg): Message =>
             msg.id === assistantMsgId
@@ -651,6 +690,7 @@ function ChatApp({
         text,
         currentMode,
         (token) => {
+          if (viewTicket !== conversationView.current) return;
           // Update assistant message with new token
           setMessages((prev) => {
             const list = Array.isArray(prev) ? prev : [];
@@ -685,6 +725,7 @@ function ChatApp({
           });
         },
         (reasoning) => {
+          if (viewTicket !== conversationView.current) return;
           // Update assistant message with reasoning token
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg): Message =>
@@ -695,6 +736,7 @@ function ChatApp({
           );
         },
         (searchData) => {
+          if (viewTicket !== conversationView.current) return;
           // Update assistant message with search data
           setMessages((prev) =>
             (Array.isArray(prev) ? prev : []).map((msg) =>
@@ -705,6 +747,7 @@ function ChatApp({
           );
         },
         async (doneData) => {
+          if (viewTicket !== conversationView.current) return;
           // Done - reload conversations to get updated timestamp and re-sort
           setIsLoading(false);
           
@@ -744,22 +787,7 @@ function ChatApp({
             // Use functional updater to get absolute latest state
             // (messagesRef may lag behind queued React state updates from streaming)
             setMessages((prev) => {
-              const updated = (Array.isArray(prev) ? prev : []).map((msg): Message => {
-                if (msg.id === assistantMsgId) {
-                  return { ...msg, id: realAssistantId, status: 'completed' };
-                }
-                if (msg.id === userMsgId) {
-                  return { ...msg, id: realUserId };
-                }
-                // Update parent_ids of any messages pointing to temp IDs
-                if (msg.parent_id === userMsgId) {
-                  return { ...msg, parent_id: realUserId };
-                }
-                if (msg.parent_id === assistantMsgId) {
-                  return { ...msg, parent_id: realAssistantId };
-                }
-                return msg;
-              });
+              const updated = completeMessages(Array.isArray(prev) ? prev : [], userMsgId, assistantMsgId, realUserId, realAssistantId);
               updatedForLoad = updated;
               return updated;
             });
@@ -779,6 +807,7 @@ function ChatApp({
           }
         },
         (error) => {
+          if (viewTicket !== conversationView.current) return;
           console.error('SSE Error:', error);
           setIsLoading(false);
           setMessages((prev) =>
@@ -822,6 +851,7 @@ function ChatApp({
       );
     } catch (error) {
       console.error('Failed to send message:', error);
+      if (viewTicket !== conversationView.current) return;
       setIsLoading(false);
 			if (error instanceof Error && error.message === 'Stream ended before completion') {
 				apiClient.invalidateCache(conversationId);
@@ -840,6 +870,9 @@ function ChatApp({
 
   const handleNewChat = () => {
     conversationView.current++;
+    setIsLoading(false);
+    setIsMessageLoading(false);
+    setIsExiting(false);
     setMessages([]);
     setCurrentNodeId(null);
     setHasMessages(false);
@@ -854,6 +887,9 @@ function ChatApp({
 
   const handleNewTempChat = () => {
     conversationView.current++;
+    setIsLoading(false);
+    setIsMessageLoading(false);
+    setIsExiting(false);
     setMessages([]);
     setCurrentNodeId(null);
     setHasMessages(false);
@@ -868,6 +904,8 @@ function ChatApp({
 
   const handleSelectConversation = (conversationId: string) => {
     conversationView.current++;
+    setIsLoading(false);
+    setIsExiting(false);
     setIsTempChat(isTempID(conversationId));
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
