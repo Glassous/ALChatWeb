@@ -574,14 +574,15 @@ function MessageItem({
   }, [agentAnswer, agentStepId, agentActive, msg.agent_run_id]);
 
   const renderContent = () => {
+    let contentForRender = agentDisplay?.content ?? msg.content;
     if (msg.mode === 'agent' && !agentDisplay?.answer) return null;
-    if (msg.status === 'loading' && !msg.content && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
+    // Agent answer tokens arrive through step events before msg.content is finalized.
+    if (msg.status === 'loading' && !contentForRender && !msg.reasoning && !msg.search && !msg.metadata?.resolution) {
       return <WaitingForModel nonStreaming={msg.metadata?.generationMode === 'non_stream'} />;
     }
 
     const showImageFrame = Boolean(msg.metadata?.resolution) && (msg.status === 'loading' || isPureImage);
 
-    let contentForRender = agentDisplay?.content ?? msg.content;
     if (contentForRender.includes('<image')) {
       contentForRender = contentForRender.substring(contentForRender.indexOf('<image'));
     }
