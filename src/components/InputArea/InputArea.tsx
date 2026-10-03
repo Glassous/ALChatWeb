@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import './InputArea.css';
-import { documentFile, fileSize, type AttachmentDescriptor } from '../../services/attachments';
+import { attachmentFor, documentFile, type AttachmentDescriptor } from '../../services/attachments';
 import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
+import { AttachmentCard } from '../FilePreview/AttachmentCard';
 import { VideoIcon } from '../Icons/VideoIcon';
 
 type ComposerMode = 'daily' | 'expert' | 'image' | 'agent' | 'hermes';
@@ -405,56 +406,8 @@ export function InputArea({
       )}
       {(refImageUrl || attachments.length > 0 || isUploading) && !isExhausted && (
         <div className="previews-container">
-          {refImageUrl && (
-            <div className="ref-image-preview-card">
-              <img 
-                src={refImageUrl} 
-                alt="Reference" 
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (refImageUrl && refImageUrl.includes('alchatfiles.fiacloud.top')) {
-                    const fallback = refImageUrl.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
-                    if (target.src !== fallback) {
-                      target.src = fallback;
-                    }
-                  }
-                }}
-              />
-              <button className="remove-ref-image" onClick={removeRefImage}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-              </button>
-            </div>
-          )}
-          {attachments.map((att, index) => (
-            <div key={index} className="ref-image-preview-card" title={`${att.filename} · ${fileSize(att.size)}`}>
-              {att.type === 'document' ? <div className="video-preview-placeholder" style={{fontSize: 10, padding: 4}}>{att.filename}</div> : att.type === 'image' ? (
-                <img 
-                  src={att.url} 
-                  alt={`Attachment ${index}`} 
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    if (att.url && att.url.includes('alchatfiles.fiacloud.top')) {
-                      const fallback = att.url.replace('alchatfiles.fiacloud.top', 'alchatfiles-1350226447.cos.ap-tokyo.myqcloud.com');
-                      if (target.src !== fallback) {
-                        target.src = fallback;
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <div className="video-preview-placeholder" title={`${att.filename} · ${fileSize(att.size)}`}>
-                  <VideoIcon size={32} />
-                </div>
-              )}
-              <button className="remove-ref-image" onClick={() => removeAttachment(index)}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-              </button>
-            </div>
-          ))}
+          {refImageUrl && <AttachmentCard file={refDescriptor.current || attachmentFor(refImageUrl, [], 'image')} variant="composer" onRemove={removeRefImage} />}
+          {attachments.map((att, index) => <AttachmentCard key={att.url} file={att} variant="composer" onRemove={() => removeAttachment(index)} />)}
           {isUploading && (
             <div className="ref-image-preview-card uploading">
               <div className="upload-spinner"></div>

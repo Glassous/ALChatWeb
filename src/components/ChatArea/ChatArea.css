@@ -737,67 +737,7 @@
   object-fit: contain;
 }
 
-/* Image Preview Overlay */
-.image-preview-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.9);
-  z-index: var(--z-overlay);
-  display: flex;
-  flex-direction: column;
-  animation: chatImagePreviewFadeIn 0.2s ease;
-}
 
-.preview-header {
-  display: flex;
-  justify-content: space-between;
-  padding: 16px 24px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
-  z-index: var(--z-sticky);
-}
-
-.preview-action-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: white;
-  padding: 8px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.preview-action-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.1);
-}
-
-.preview-content {
-  flex-grow: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  overflow: hidden;
-}
-
-.preview-image {
-  max-width: 90vw;
-  max-height: 80vh;
-  object-fit: contain;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  animation: zoomIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes chatImagePreviewFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
 @keyframes zoomIn {
   from { opacity: 0; transform: scale(0.9); }
@@ -1315,17 +1255,5 @@
 }
 
 .user-attachment-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.attachment-file-card { display: inline-flex; align-items: center; gap: 10px; padding: 10px 12px; max-width: 100%; min-width: 180px; border: 1px solid var(--outline-color, #8884); border-radius: 12px; background: var(--surface-color, transparent); color: inherit; text-align: left; cursor: pointer; vertical-align: middle; margin: 4px 0; }
-.attachment-file-card img, .attachment-file-icon { width: 44px; height: 44px; flex-shrink: 0; object-fit: cover; border-radius: 6px; }
-.attachment-file-icon { display: grid; place-items: center; font-size: 26px; }
-.attachment-file-card > span:last-child { min-width: 0; }
-.attachment-file-card strong { display: block; overflow-wrap: anywhere; font-size: 13px; }
-.attachment-file-card small { display: block; opacity: .7; font-size: 11px; margin-top: 4px; }
-.attachment-preview-image { width: 100%; max-height: 55vh; object-fit: contain; border-radius: 8px; }
-.attachment-file-info { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 10px; font-size: 14px; }
-.attachment-file-info dd { margin: 0; overflow-wrap: anywhere; }
-.attachment-text-section { margin-top: 20px; }
-.attachment-text-section > strong { font-size: 14px; }
-.attachment-text-section p { color: var(--text-color); font-size: 14px; }
-.attachment-raw-text { max-height: 42vh; overflow: auto; margin: 12px 0 0; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--surface-color); color: var(--text-color); font: 13px/1.6 'Cascadia Code', Consolas, monospace; white-space: pre; tab-size: 4; text-align: left; user-select: text; }
+
 .user-message-text.text-collapsed { max-height: 160px; overflow: hidden; }

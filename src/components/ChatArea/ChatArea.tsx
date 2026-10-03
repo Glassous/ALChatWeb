@@ -6,7 +6,7 @@ import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import './ChatArea.css';
 import { FileAttachment } from './FileAttachment';
 import { messageAttachments, attachmentFor, type AttachmentDescriptor } from '../../services/attachments';
-import { FullscreenLayer } from '../LayerSystem/LayerSystem';
+import { useFilePreview, type PreviewSource } from '../FilePreview/FilePreview';
 import { AgentTimeline } from './AgentTimeline';
 import { type AgentBudget, type AgentStatus, type AgentStep } from '../../services/agentApi';
 import { agentMessageDisplay } from '../../services/agentPresentation';
@@ -391,7 +391,7 @@ function GeneratedImageFrame({
 }: {
   src?: string;
   resolution: string;
-  onImageClick: (url: string) => void;
+  onImageClick: (url: string, source: PreviewSource) => void;
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -420,7 +420,16 @@ function GeneratedImageFrame({
     <div
       className={`generated-image-frame ${isReady ? 'is-ready' : ''}`}
       style={{ aspectRatio, maxWidth }}
-      onClick={() => src && isReady && onImageClick(src)}
+      role={isReady ? 'button' : undefined}
+      tabIndex={isReady ? 0 : undefined}
+      aria-label={isReady ? '预览生成的图片' : undefined}
+      onClick={event => src && isReady && onImageClick(src, { root: event.currentTarget, image: event.currentTarget.querySelector('img') })}
+      onKeyDown={event => {
+        if (src && isReady && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          onImageClick(src, { root: event.currentTarget, image: event.currentTarget.querySelector('img') });
+        }
+      }}
     >
       {src && (
         <img
@@ -457,7 +466,7 @@ function MessageItem({
 }: { 
   msg: Message; 
   allMessages: Message[];
-  onImageClick: (url: string) => void;
+  onImageClick: (url: string, source: PreviewSource) => void;
   onShowSearch?: (data: SearchData) => void;
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
@@ -661,7 +670,16 @@ function MessageItem({
               src={src}
               alt={alt || "Generated"} 
               className="generated-image" 
-              onClick={() => onImageClick(src!)}
+              role="button"
+              tabIndex={0}
+              aria-label={`预览 ${alt || '图片'}`}
+              onClick={event => src && onImageClick(src, { root: event.currentTarget, image: event.currentTarget })}
+              onKeyDown={event => {
+                if (src && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  onImageClick(src, { root: event.currentTarget, image: event.currentTarget });
+                }
+              }}
               onError={handleImgError}
             />
           </span>
@@ -980,7 +998,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   activeWorkspaceMessageId,
   onStopAgent
 }, ref) => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { openPreview } = useFilePreview();
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1184,25 +1202,6 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
     };
   }, [scrollToBottom]);
 
-  const handleDownload = async () => {
-    if (!previewUrl) return;
-    try {
-      const response = await fetch(previewUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png';
-      a.download = `generated-image-${Date.now()}.${extension}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error('Failed to download image:', err);
-    }
-  };
-
   const scrollToMessage = (id: string) => {
     const el = messageRefs.current.get(id);
     if (el && scrollRef.current) {
@@ -1260,7 +1259,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
             <MessageItem 
               msg={msg} 
               allMessages={allMessages}
-              onImageClick={setPreviewUrl} 
+              onImageClick={(url, source) => openPreview(attachmentFor(url, msg.attachments, 'image'), source)} 
               onShowSearch={onShowSearch}
               onResend={onResend}
               onEdit={onEdit}
@@ -1291,23 +1290,7 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
         </div>
       )}
 
-      {previewUrl && (
-        <FullscreenLayer open ariaLabel="图片预览" onClose={() => setPreviewUrl(null)}>
-          <div className="image-preview-overlay" onClick={() => setPreviewUrl(null)}>
-            <div className="preview-header" onClick={e => e.stopPropagation()}>
-              <button className="preview-action-btn download-btn" onClick={handleDownload} title="下载图片">
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>
-              </button>
-              <button className="preview-action-btn close-btn" onClick={() => setPreviewUrl(null)} title="关闭预览">
-                <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="currentColor"><path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/></svg>
-              </button>
-            </div>
-            <div className="preview-content" onClick={e => e.stopPropagation()}>
-              <img src={previewUrl} alt="预览" className="preview-image" />
-            </div>
-          </div>
-        </FullscreenLayer>
-      )}
+
     </div>
   );
 });

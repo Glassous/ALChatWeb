@@ -5,6 +5,7 @@ import './types.d.ts'
 import './index.css'
 import App from './App.tsx'
 import { LayerProvider } from './components/LayerSystem/LayerSystem'
+import { FilePreviewProvider } from './components/FilePreview/FilePreview'
 
 try {
   const cachedUser = localStorage.getItem('user')
@@ -22,7 +23,9 @@ try {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LayerProvider>
-      <App />
+      <FilePreviewProvider>
+        <App />
+      </FilePreviewProvider>
     </LayerProvider>
   </StrictMode>,
 )
