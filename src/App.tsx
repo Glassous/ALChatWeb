@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar/Sidebar';
 import { TopBar } from './components/TopBar/TopBar';
 import { ChatArea, type Message, type ChatAreaHandle } from './components/ChatArea/ChatArea';
 import { Workspace } from './components/Workspace/Workspace';
+import { useWorkspace } from './components/Workspace/WorkspaceContext';
 import { TreeView } from './components/ChatArea/TreeView';
 import { EditMessageDialog } from './components/ChatArea/EditMessageDialog';
 import { SearchSidebar, type SearchData } from './components/SearchSidebar/SearchSidebar';
@@ -57,28 +58,12 @@ function hasCompletePath(messages: Message[], nodeId: string): boolean {
 // Extract HTML code block content from markdown (supports active streaming)
 const extractHtmlFromMarkdown = (markdown: string): string | null => {
   if (!markdown) return null;
-  const startTag = '```html';
-  const startIndex = markdown.indexOf(startTag);
-  if (startIndex === -1) return null;
-
-  const codeStartIndex = startIndex + startTag.length;
-  let actualStartIndex = codeStartIndex;
-  while (actualStartIndex < markdown.length && (markdown[actualStartIndex] === '\n' || markdown[actualStartIndex] === '\r' || markdown[actualStartIndex] === ' ')) {
-    actualStartIndex++;
-  }
-
-  const closingTag = '```';
-  const closingIndex = markdown.indexOf(closingTag, actualStartIndex);
-
-  if (closingIndex === -1) {
-    let content = markdown.substring(actualStartIndex);
-    if (content.endsWith('`')) {
-      content = content.replace(/`+$/, '');
-    }
-    return content;
-  } else {
-    return markdown.substring(actualStartIndex, closingIndex);
-  }
+  const opening = /(?:^|\n)[ \t]*(`{3,}|~{3,})(?:html|htm)\b[^\n]*\n/i.exec(markdown);
+  if (!opening) return null;
+  const source = markdown.slice(opening.index + opening[0].length);
+  const fence = opening[1];
+  const closing = new RegExp(`(?:^|\\n)[ \\t]*${fence[0]}{${fence.length},}[ \\t]*(?:\\n|$)`).exec(source);
+  return (closing ? source.slice(0, closing.index) : source.replace(new RegExp(`${fence[0]}+$`), '')).replace(/\n$/, '');
 };
 
 // Protected Route component
@@ -166,12 +151,12 @@ function ChatApp({
     catch (error) { showToast({ tone: 'error', message: error instanceof Error ? error.message : '停止请求失败' }); }
   };
 
-  // Workspace states
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [workspaceHtml, setWorkspaceHtml] = useState('');
-  const [workspaceMode, setWorkspaceMode] = useState<'code' | 'preview'>('preview');
-  const [workspaceTitle, setWorkspaceTitle] = useState('网页 HTML 预览');
-  const [workspaceMessageId, setWorkspaceMessageId] = useState<string | null>(null);
+  const { entry: workspaceEntry, closeWorkspace, changeMode: setWorkspaceMode, retry: retryWorkspace, updateStream, finishStream } = useWorkspace();
+  const workspaceOpen = Boolean(workspaceEntry);
+  const workspaceHtml = workspaceEntry?.html || '';
+  const workspaceMode = workspaceEntry?.mode || 'preview';
+  const workspaceTitle = workspaceEntry?.title || '网页 HTML 预览';
+  const setWorkspaceOpen = (open: boolean) => { if (!open) closeWorkspace(); };
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => {
@@ -219,20 +204,6 @@ function ChatApp({
     };
   }, [resize, stopResizing]);
 
-
-  const handleOpenWorkspace = (messageId: string, html: string, mode: 'code' | 'preview') => {
-    setWorkspaceMessageId(messageId);
-    setWorkspaceHtml(html);
-    setWorkspaceMode(mode);
-    setWorkspaceOpen(true);
-    
-    const titleMatch = html.match(/<title>([\s\S]*?)<\/title>/i);
-    if (titleMatch && titleMatch[1]) {
-      setWorkspaceTitle(titleMatch[1].trim());
-    } else {
-      setWorkspaceTitle('网页 HTML 预览');
-    }
-  };
 
   const chatAreaRef = useRef<ChatAreaHandle>(null);
 
@@ -692,38 +663,22 @@ function ChatApp({
         }
       }
 
+      let streamedContent = '';
       await apiClient.sendMessage(
         conversationId,
         text,
         currentMode,
         (token) => {
           if (viewTicket !== conversationView.current) return;
+          streamedContent += token;
+          const htmlCode = extractHtmlFromMarkdown(streamedContent);
+          if (htmlCode !== null) updateStream(assistantMsgId, htmlCode);
           // Update assistant message with new token
           setMessages((prev) => {
             const list = Array.isArray(prev) ? prev : [];
             return list.map((msg) => {
               if (msg.id === assistantMsgId) {
                 const newContent = msg.content + token;
-                
-                // Extract HTML code block during streaming and open workspace
-                const htmlCode = extractHtmlFromMarkdown(newContent);
-                if (htmlCode !== null) {
-                  setWorkspaceHtml(htmlCode);
-                  setWorkspaceMessageId(assistantMsgId);
-                  
-                  // Only auto-open on desktop!
-                  if (window.innerWidth > 768) {
-                    setWorkspaceOpen(true);
-                  }
-                  setWorkspaceMode('code'); // Force code view during stream
-                  
-                  const titleMatch = htmlCode.match(/<title>([\s\S]*?)<\/title>/i);
-                  if (titleMatch && titleMatch[1]) {
-                    setWorkspaceTitle(titleMatch[1].trim());
-                  } else {
-                    setWorkspaceTitle('网页 HTML 预览');
-                  }
-                }
                 
                 return { ...msg, content: newContent, status: 'loading' };
               }
@@ -781,15 +736,7 @@ function ChatApp({
 
           // Swap temporary IDs with real IDs immediately to stabilize the UI
           if (realAssistantId && realUserId) {
-            // Sync active workspace message ID
-            setWorkspaceMessageId((prevId) => {
-              if (prevId === assistantMsgId) {
-                return realAssistantId;
-              }
-              return prevId;
-            });
-            // Switch workspace mode to preview on completion
-            setWorkspaceMode('preview');
+            finishStream(assistantMsgId, realAssistantId);
 
             // Use functional updater to get absolute latest state
             // (messagesRef may lag behind queued React state updates from streaming)
@@ -815,6 +762,7 @@ function ChatApp({
         },
         (error) => {
           if (viewTicket !== conversationView.current) return;
+          finishStream(assistantMsgId);
           console.error('SSE Error:', error);
           setIsLoading(false);
           setMessages((prev) =>
@@ -888,9 +836,8 @@ function ChatApp({
     setIsTempChat(false);
     setIsMobileDrawerOpen(false); // Close drawer on mobile
     setIsInitialLoad(false); // Disable animation for subsequent new chats
-    setWorkspaceOpen(false);
-    setWorkspaceHtml('');
-    setWorkspaceMessageId(null);
+    closeWorkspace();
+
   };
 
   const handleNewTempChat = () => {
@@ -905,9 +852,8 @@ function ChatApp({
     setIsTempChat(true);
     setIsMobileDrawerOpen(false);
     setIsInitialLoad(false);
-    setWorkspaceOpen(false);
-    setWorkspaceHtml('');
-    setWorkspaceMessageId(null);
+    closeWorkspace();
+
   };
 
   const handleSelectConversation = (conversationId: string) => {
@@ -918,9 +864,8 @@ function ChatApp({
     loadConversation(conversationId);
     setIsMobileDrawerOpen(false); // Close drawer on mobile after selection
     setIsInitialLoad(false);
-    setWorkspaceOpen(false);
-    setWorkspaceHtml('');
-    setWorkspaceMessageId(null);
+    closeWorkspace();
+
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -1149,8 +1094,6 @@ function ChatApp({
                   onResend={handleResend}
                   onEdit={handleEdit}
                   onSwitchBranch={handleSwitchBranch}
-                  onOpenWorkspace={handleOpenWorkspace}
-                  activeWorkspaceMessageId={workspaceMessageId}
                   onStopAgent={agentBusy ? stopAgent : undefined}
                 />
               </div>
@@ -1188,8 +1131,12 @@ function ChatApp({
                           mode={workspaceMode}
                           onChangeMode={setWorkspaceMode}
                           onClose={() => setWorkspaceOpen(false)}
+                          file={workspaceEntry?.file}
                           title={workspaceTitle}
-                          isLoading={isLoading}
+                          isLoading={workspaceEntry?.loading || workspaceEntry?.streaming}
+                          filename={workspaceEntry?.filename}
+                          error={workspaceEntry?.error}
+                          onRetry={retryWorkspace}
                         />
                       </div>
                     </motion.div>

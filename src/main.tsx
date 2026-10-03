@@ -6,6 +6,7 @@ import './index.css'
 import App from './App.tsx'
 import { LayerProvider } from './components/LayerSystem/LayerSystem'
 import { FilePreviewProvider } from './components/FilePreview/FilePreview'
+import { WorkspaceProvider } from './components/Workspace/WorkspaceContext'
 
 try {
   const cachedUser = localStorage.getItem('user')
@@ -23,9 +24,9 @@ try {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LayerProvider>
-      <FilePreviewProvider>
+      <WorkspaceProvider><FilePreviewProvider>
         <App />
-      </FilePreviewProvider>
+      </FilePreviewProvider></WorkspaceProvider>
     </LayerProvider>
   </StrictMode>,
 )

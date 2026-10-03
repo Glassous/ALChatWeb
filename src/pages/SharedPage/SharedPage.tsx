@@ -4,11 +4,15 @@ import { apiClient, type SharedConversationResponse, type Message } from '../../
 import { ChatArea } from '../../components/ChatArea/ChatArea';
 import './SharedPage.css';
 import { useToast } from '../../components/LayerSystem/LayerSystem';
+import { Workspace } from '../../components/Workspace/Workspace';
+import { useWorkspace } from '../../components/Workspace/WorkspaceContext';
 
 export function SharedPage() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const showToast = useToast();
+  const { entry, closeWorkspace, changeMode, retry } = useWorkspace();
+  useEffect(() => { closeWorkspace(); return closeWorkspace; }, [token, closeWorkspace]);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<SharedConversationResponse | null>(null);
   const [saving, setSaving] = useState(false);
@@ -166,6 +170,7 @@ export function SharedPage() {
           </div>
         )}
       </main>
+      {entry && <aside className="shared-workspace"><Workspace html={entry.html} mode={entry.mode} onChangeMode={changeMode} onClose={closeWorkspace} title={entry.title} filename={entry.filename} file={entry.file} isLoading={entry.loading} error={entry.error} onRetry={retry} /></aside>}
     </div>
   );
 }

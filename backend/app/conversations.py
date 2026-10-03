@@ -91,7 +91,7 @@ class Conversations:
             fields["search"] = value["search"]
         if value.get("hermes_trace"):
             fields["hermes_trace"] = value["hermes_trace"]
-        for key in ("attachments", "agent_run_id", "agent_status", "agent_trace", "agent_error", "agent_budget", "agent_notice", "agent_finish_reason", "agent_discovery"):
+        for key in ("attachments", "attachment_texts", "agent_run_id", "agent_status", "agent_trace", "agent_error", "agent_budget", "agent_notice", "agent_finish_reason", "agent_discovery"):
             if key in value:
                 fields[key] = value[key]
         self.messages.update_one({"_id": oid(value["id"])}, {"$set": fields})

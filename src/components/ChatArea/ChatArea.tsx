@@ -1,6 +1,10 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownPre, markdownRemarkPlugins, markdownRehypePlugins } from '../FilePreview/MarkdownSupport';
+import type { PluggableList } from 'unified';
+import type { Element } from 'hast';
+import { useWorkspace } from '../Workspace/WorkspaceContext';
+import { previewFormat } from '../../services/attachments';
 import { type SearchData } from '../SearchSidebar/SearchSidebar';
 import { WeatherCard, type WeatherData } from '../WeatherCard/WeatherCard';
 import './ChatArea.css';
@@ -69,8 +73,6 @@ interface ChatAreaProps {
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
   onSwitchBranch?: (messageId: string) => void;
-  onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
-  activeWorkspaceMessageId?: string | null;
   onStopAgent?: () => void;
 }
 
@@ -85,42 +87,6 @@ const CopyIcon = () => (
 const CheckIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/></svg>
 );
-
-interface CodeBlockWrapperProps {
-  lang: string;
-  rawCode: string;
-  children: React.ReactNode;
-}
-
-const CodeBlockWrapper = ({ lang, rawCode, children }: CodeBlockWrapperProps) => {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(rawCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy code: ', err);
-    }
-  };
-
-  return (
-    <div className="code-block-container">
-      <div className="code-block-header">
-        <span className="code-block-lang">{lang || 'text'}</span>
-        <button 
-          className={`code-block-copy-btn ${copied ? 'copied' : ''}`}
-          onClick={handleCopy}
-          title="复制代码"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-        </button>
-      </div>
-      {children}
-    </div>
-  );
-};
 
 const ResendIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="currentColor"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
@@ -344,7 +310,7 @@ const HermesEventDetails = ({ step }: { step: HermesStep }) => {
   }
   if (kind === 'message') {
     const content = firstValue(data, 'content', 'text', 'message');
-    return <><HermesDataCard title="消息" icon="◌" tone="message"><LabeledValue label="角色" value={firstValue(data, 'role')} />{typeof content === 'string' ? <div className="hermes-message-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown></div> : <JsonValueCard value={content ?? data} />}</HermesDataCard></>;
+    return <><HermesDataCard title="消息" icon="◌" tone="message"><LabeledValue label="角色" value={firstValue(data, 'role')} />{typeof content === 'string' ? <div className="hermes-message-markdown"><ReactMarkdown remarkPlugins={markdownRemarkPlugins} rehypePlugins={markdownRehypePlugins as PluggableList} components={{ pre: ({ children, node }) => <MarkdownPre source={content} offset={node?.position?.start.offset} children={children} /> }}>{content}</ReactMarkdown></div> : <JsonValueCard value={content ?? data} />}</HermesDataCard></>;
   }
   return <HermesDataCard title="事件数据" icon="{}"><div className="hermes-generic-toolbar"><HermesCopyButton value={value} /></div><JsonValueCard value={value} /></HermesDataCard>;
 };
@@ -460,8 +426,6 @@ function MessageItem({
   onResend,
   onEdit,
   onSwitchBranch,
-  onOpenWorkspace,
-  activeWorkspaceMessageId,
   onStopAgent
 }: { 
   msg: Message; 
@@ -471,11 +435,10 @@ function MessageItem({
   onResend?: (msg: Message) => void;
   onEdit?: (msg: Message) => void;
   onSwitchBranch?: (messageId: string) => void;
-  onOpenWorkspace?: (messageId: string, html: string, mode: 'code' | 'preview') => void;
-  activeWorkspaceMessageId?: string | null;
   onStopAgent?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const { openHtml } = useWorkspace();
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [isManual, setIsManual] = useState(false);
   const [isUserCollapsed, setIsUserCollapsed] = useState(true);
@@ -642,18 +605,11 @@ function MessageItem({
     }
 
 
-    type MarkdownElement = React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-    type PreRendererProps = React.HTMLAttributes<HTMLPreElement> & { children?: React.ReactNode };
-    type CodeRendererProps = React.HTMLAttributes<HTMLElement> & {
-      inline?: boolean;
-      children?: React.ReactNode;
-    };
-
     const markdownComponents = {
       img: ({ src, alt }: { src?: string, alt?: string }) => {
-        if (alt === 'alchat-file' && src) {
+        if (src) {
           const file = attachmentFor(src, msg.attachments);
-          if (file.type !== 'image') return <FileAttachment file={file} />;
+          if ((alt === 'alchat-file' && file.type !== 'image') || previewFormat(file) === 'svg') return <FileAttachment file={file} />;
         }
         const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
           const target = e.target as HTMLImageElement;
@@ -705,81 +661,13 @@ function MessageItem({
             </span>
           );
         }
-        return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+        const attachment = href ? attachmentFor(href, msg.attachments) : null;
+        return <a href={href} target="_blank" rel="noopener noreferrer" onClick={event => {
+          if (attachment && previewFormat(attachment) === 'html') { event.preventDefault(); openHtml({ id: attachment.url, file: attachment }); }
+        }}>{children}</a>;
       },
-      pre: ({ children, ...props }: PreRendererProps) => {
-        const isHtmlCodeBlock = React.Children.toArray(children).some((child) => {
-          return React.isValidElement(child) && (child as MarkdownElement).props.className === 'language-html';
-        });
-        if (isHtmlCodeBlock) {
-          return <>{children}</>;
-        }
+      pre: ({ children, node }: { children?: React.ReactNode; node?: Element }) => <MarkdownPre children={children} prefix={msg.id} source={processedContent} offset={node?.position?.start.offset} streaming={msg.status === 'loading' || agentActive} />,
 
-        const codeElement = React.Children.toArray(children).find(
-          (child): child is MarkdownElement => React.isValidElement(child),
-        );
-
-        if (codeElement) {
-          const className = codeElement.props.className || '';
-          const match = /language-(\w+)/.exec(className);
-          const lang = match ? match[1] : '';
-          
-          const getRawText = (node: unknown): string => {
-            if (typeof node === 'string') return node;
-            if (typeof node === 'number') return String(node);
-            if (Array.isArray(node)) return node.map(getRawText).join('');
-            if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
-              return getRawText(node.props.children);
-            }
-            return '';
-          };
-          
-          const rawCode = getRawText(codeElement.props.children).replace(/\n$/, '');
-
-          return (
-            <CodeBlockWrapper lang={lang} rawCode={rawCode}>
-              <pre {...props}>{children}</pre>
-            </CodeBlockWrapper>
-          );
-        }
-
-        return <pre {...props}>{children}</pre>;
-      },
-      code: ({ inline, className, children, ...props }: CodeRendererProps) => {
-        const match = /language-(\w+)/.exec(className || '');
-        const lang = match ? match[1] : '';
-        const codeContent = String(children).replace(/\n$/, '');
-        
-        if (!inline && lang === 'html') {
-          const isActive = activeWorkspaceMessageId === msg.id;
-          
-          return (
-            <div className={`html-preview-card ${isActive ? 'active' : ''}`}>
-              <div className="html-preview-card-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                  <path d="M320-240 120-440l200-200 56 56-144 144 144 144-56 56Zm320 0-56-56 144-144-144-144 56-56 200 200-200 200Z"/>
-                </svg>
-              </div>
-              <div className="html-preview-card-actions">
-                <button 
-                  className="html-preview-card-btn code-btn" 
-                  onClick={() => onOpenWorkspace?.(msg.id, codeContent, 'code')}
-                >
-                  代码
-                </button>
-                <button 
-                  className="html-preview-card-btn preview-btn" 
-                  onClick={() => onOpenWorkspace?.(msg.id, codeContent, 'preview')}
-                >
-                  预览
-                </button>
-              </div>
-            </div>
-          );
-        }
-        
-        return <code className={className} {...props}>{children}</code>;
-      }
     };
 
     return (
@@ -833,7 +721,8 @@ function MessageItem({
                 <div className="reasoning-content">
                   <div className="reasoning-text">
                     <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={markdownRemarkPlugins}
+                      rehypePlugins={markdownRehypePlugins as PluggableList}
                       components={markdownComponents}
                     >
                       {msg.reasoning.replace(/(?:ref\((\d+)\)|\[(\d+)\]|【(\d+)】)/g, (_, g1, g2, g3) => `[${g1 || g2 || g3}](ref:${g1 || g2 || g3})`)}
@@ -852,7 +741,8 @@ function MessageItem({
           />
         ) : (
           <ReactMarkdown 
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={markdownRemarkPlugins}
+                      rehypePlugins={markdownRehypePlugins as PluggableList}
             components={markdownComponents}
           >
             {processedContent}
@@ -994,8 +884,6 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
   onResend, 
   onEdit,
   onSwitchBranch,
-  onOpenWorkspace,
-  activeWorkspaceMessageId,
   onStopAgent
 }, ref) => {
   const { openPreview } = useFilePreview();
@@ -1259,13 +1147,11 @@ export const ChatArea = forwardRef<ChatAreaHandle, ChatAreaProps>(({
             <MessageItem 
               msg={msg} 
               allMessages={allMessages}
-              onImageClick={(url, source) => openPreview(attachmentFor(url, msg.attachments, 'image'), source)} 
+              onImageClick={(url, source) => openPreview(attachmentFor(url, msg.attachments, 'image'), { ...source, imageOnly: msg.role === 'assistant' })} 
               onShowSearch={onShowSearch}
               onResend={onResend}
               onEdit={onEdit}
               onSwitchBranch={onSwitchBranch}
-              onOpenWorkspace={onOpenWorkspace}
-              activeWorkspaceMessageId={activeWorkspaceMessageId}
               onStopAgent={onStopAgent}
             />
           </div>

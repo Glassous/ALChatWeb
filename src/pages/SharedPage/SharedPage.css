@@ -5,6 +5,13 @@
   background: var(--bg-color);
 }
 
+.shared-workspace { position: fixed; top: 68px; bottom: 12px; right: 12px; width: min(65vw, 1000px); z-index: 110; }
+.shared-page:has(.shared-workspace) .shared-main { margin-right: min(65vw, 1000px); }
+@media (max-width: 768px) {
+  .shared-workspace { width: auto; left: 12px; right: 12px; }
+  .shared-page:has(.shared-workspace) .shared-main { margin-right: 0; }
+}
+
 .shared-header {
   position: fixed;
   top: 0;

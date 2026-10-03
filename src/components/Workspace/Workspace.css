@@ -118,6 +118,7 @@
 
 /* Body container styling */
 .workspace-body {
+  min-height: 0;
   flex-grow: 1;
   position: relative;
   overflow: hidden;
@@ -125,6 +126,8 @@
   display: flex;
   flex-direction: column;
 }
+
+.workspace-body > .code-viewer { flex: 1; min-height: 0; border: none; border-radius: 0; margin: 0; }
 
 /* Code Editor container styling */
 .workspace-editor-container {

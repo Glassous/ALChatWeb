@@ -1,5 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { readAttachmentData, type AttachmentDescriptor } from '../../services/attachments';
+import { useToast } from '../LayerSystem/LayerSystem';
 import './Workspace.css';
+
+const CodePreview = lazy(() => import('../FilePreview/CodePreview').then(module => ({ default: module.CodePreview })));
 
 interface WorkspaceProps {
   html: string;
@@ -7,140 +11,47 @@ interface WorkspaceProps {
   onChangeMode: (mode: 'code' | 'preview') => void;
   onClose: () => void;
   title: string;
+  filename?: string;
+  file?: AttachmentDescriptor;
   isLoading?: boolean;
+  error?: string;
+  onRetry?: () => void;
 }
 
-export const Workspace: React.FC<WorkspaceProps> = ({
-  html,
-  mode,
-  onChangeMode,
-  onClose,
-  title,
-  isLoading = false,
-}) => {
-  const [localHtml, setLocalHtml] = useState(html);
-  const [previewKey, setPreviewKey] = useState(0); // For forcing iframe reload
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumbersRef = useRef<HTMLPreElement>(null);
-  const isCodeAutoScrollRef = useRef(true);
-
-  // Sync state when external HTML changes (e.g. streaming update)
-  useEffect(() => {
-    // The editor mirrors streamed HTML owned by the parent.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocalHtml(html);
-  }, [html]);
-
-  // Auto-scroll textarea to bottom during streaming if user hasn't scrolled up
-  const syncLineNumbers = useCallback(() => {
-    if (lineNumbersRef.current && textareaRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  }, []);
-
-  const handleCodeScroll = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 10;
-    isCodeAutoScrollRef.current = isNearBottom;
-    syncLineNumbers();
-  }, [syncLineNumbers]);
-
-  useEffect(() => {
-    if (textareaRef.current && (isLoading || isCodeAutoScrollRef.current)) {
-      textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
-      syncLineNumbers();
-    }
-  }, [html, isLoading, syncLineNumbers]);
-
-  const handleDownload = () => {
-    const blob = new Blob([localHtml], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title || 'workspace_page'}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+export function Workspace({ html, mode, onChangeMode, onClose, title, filename, file, isLoading, error, onRetry }: WorkspaceProps) {
+  const [previewKey, setPreviewKey] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const showToast = useToast();
+  const downloadRequest = useRef<AbortController | null>(null);
+  const iframe = useRef<HTMLIFrameElement>(null);
+  useEffect(() => () => { downloadRequest.current?.abort(); }, [file]);
+  const download = async () => {
+    const controller = new AbortController(); downloadRequest.current = controller; setDownloading(true);
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const data = file ? (await readAttachmentData(file, controller.signal)).bytes : html;
+      const url = URL.createObjectURL(new Blob([data], { type: 'text/html;charset=utf-8' }));
+      const anchor = document.createElement('a'); anchor.href = url;
+      anchor.download = filename || (/\.html?$/i.test(title) ? title : `${title || 'workspace_page'}.html`);
+      anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { if (!controller.signal.aborted) showToast({ tone: 'error', message: '下载失败，请重试' }); }
+    finally { clearTimeout(timer); setDownloading(false); }
   };
-
-  const handleRefresh = () => {
-    setPreviewKey((prev) => prev + 1);
-  };
-
-  // Generate line numbers for the code block textarea
-  const lineNumbers = localHtml.split('\n').map((_, index) => index + 1).join('\n');
-
-  return (
-    <div className="workspace-panel">
-      {/* Workspace Header */}
-      <div className="workspace-header">
-        <div className="workspace-header-left">
-          <div className="workspace-tabs">
-            <button
-              className={`workspace-tab ${mode === 'code' ? 'active' : ''}`}
-              onClick={() => onChangeMode('code')}
-            >
-              代码
-            </button>
-            <button
-              className={`workspace-tab ${mode === 'preview' ? 'active' : ''}`}
-              onClick={() => onChangeMode('preview')}
-            >
-              预览
-            </button>
-          </div>
-        </div>
-
-        <div className="workspace-header-right">
-          {mode === 'preview' && (
-            <button className="workspace-tool-btn" onClick={handleRefresh} title="刷新页面">
-              <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-                <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.5T720-690v-110h80v280H520v-80h168q-32-56-87.5-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/>
-              </svg>
-            </button>
-          )}
-          <button className="workspace-tool-btn" onClick={handleDownload} title="下载代码文件">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-              <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>
-            </svg>
-          </button>
-          <button className="workspace-tool-btn close-btn" onClick={onClose} title="关闭工作区">
-            <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
-              <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Workspace Content */}
-      <div className="workspace-body">
-        {mode === 'code' ? (
-          <div className="workspace-editor-container">
-            <pre ref={lineNumbersRef} className="workspace-line-numbers">{lineNumbers}</pre>
-            <textarea
-              ref={textareaRef}
-              className={`workspace-textarea${isLoading ? ' loading' : ''}`}
-              value={localHtml}
-              readOnly={true}
-              placeholder="在这里查看 HTML 代码..."
-              spellCheck="false"
-              onScroll={handleCodeScroll}
-            />
-          </div>
-        ) : (
-          <div className="workspace-preview-container">
-            <iframe
-              key={previewKey}
-              title="workspace-html-preview"
-              srcDoc={localHtml}
-              className="workspace-iframe"
-              sandbox="allow-scripts allow-same-origin allow-popups"
-            />
-          </div>
-        )}
+  return <div className="workspace-panel">
+    <div className="workspace-header">
+      <div className="workspace-tabs"><button className={`workspace-tab ${mode === 'code' ? 'active' : ''}`} onClick={() => onChangeMode('code')}>代码</button>
+        <button className={`workspace-tab ${mode === 'preview' ? 'active' : ''}`} onClick={() => onChangeMode('preview')}>预览</button></div>
+      <div className="workspace-header-right">
+        {mode === 'preview' && <button className="workspace-tool-btn" onClick={() => setPreviewKey(value => value + 1)} title="刷新页面">↻</button>}
+        <button className="workspace-tool-btn" onClick={() => void download()} disabled={downloading || (!html && !file)} title="下载 HTML 文件" aria-label="下载 HTML 文件">↓</button>
+        <button className="workspace-tool-btn close-btn" onClick={onClose} title="关闭工作区" aria-label="关闭工作区">×</button>
       </div>
     </div>
-  );
-};
+    <div className="workspace-body">
+      {error ? <div className="preview-loading" role="status"><p>{error}</p><button type="button" onClick={onRetry}>重新加载</button></div>
+        : isLoading && !html ? <p className="preview-loading" role="status">正在加载 HTML…</p>
+          : mode === 'code' ? <Suspense fallback={<p className="preview-loading" role="status">正在加载代码预览…</p>}><CodePreview code={html} language="html" virtualized follow={isLoading} /></Suspense>
+            : <div className="workspace-preview-container"><iframe ref={iframe} key={previewKey} title={title} srcDoc={html} className="workspace-iframe" sandbox="allow-scripts allow-popups" /></div>}
+    </div>
+  </div>;
+}

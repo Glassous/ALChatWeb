@@ -1,19 +1,24 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import gsap from 'gsap';
 import { Flip } from 'gsap/Flip';
 import { useGSAP } from '@gsap/react';
-import { fileSize, isTextAttachment, readTextAttachment, type AttachmentDescriptor } from '../../services/attachments';
+import { fileSize, isTextAttachment, previewFormat, readTextAttachment, type AttachmentDescriptor } from '../../services/attachments';
+import { useWorkspace } from '../Workspace/WorkspaceContext';
 import { useBlockingLayer, useToast } from '../LayerSystem/LayerSystem';
 import layerStyles from '../LayerSystem/LayerSystem.module.css';
 import { VideoIcon } from '../Icons/VideoIcon';
+import { TextFilePreview } from './TextFilePreview';
+import { PreviewBoundary } from './PreviewBoundary';
 import styles from './FilePreview.module.css';
 
 gsap.registerPlugin(Flip, useGSAP);
+const DocumentPreview = lazy(() => import('./DocumentPreview'));
 
 export interface PreviewSource {
   root: HTMLElement;
+  imageOnly?: boolean;
   card?: HTMLElement | null;
   image?: HTMLImageElement | null;
   filename?: HTMLElement | null;
@@ -80,15 +85,21 @@ function visibleSource(root: HTMLElement) {
 }
 
 export function FilePreviewProvider({ children }: { children: ReactNode }) {
+  const { openHtml, openRevision } = useWorkspace();
   const [request, setRequest] = useState<PreviewRequest | null>(null);
   const sequence = useRef(0);
   const openPreview = useCallback((file: AttachmentDescriptor, source: PreviewSource) => {
+    if (isTextAttachment(file) && file.type !== 'file') file = { ...file, type: 'file' };
+    if (previewFormat(file) === 'html') {
+      setRequest(null); openHtml({ id: file.url, file, mode: 'preview' }); return;
+    }
     const image = source.image;
     const ratio = image?.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : undefined;
     setRequest({ id: ++sequence.current, file, source, parts: capture(source, ratio), ratio,
       imageUrl: image?.currentSrc || image?.src,
       focus: document.activeElement instanceof HTMLElement ? document.activeElement : null });
-  }, []);
+  }, [openHtml]);
+  useEffect(() => { setRequest(null); }, [openRevision]);
   const dismiss = useCallback((id: number) => setRequest(current => current?.id === id ? null : current), []);
   const value = useMemo(() => ({ openPreview }), [openPreview]);
   return <PreviewContext.Provider value={value}>{children}{request && <PreviewCard key={request.id} request={request} onDismiss={dismiss} />}</PreviewContext.Provider>;
@@ -108,7 +119,9 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
   const [previewError, setPreviewError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageRatio, setImageRatio] = useState(request.ratio || 1);
   const layer = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLButtonElement>(null);
   const image = useRef<HTMLImageElement>(null);
@@ -121,8 +134,13 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
   const interrupted = useRef<{ parts: Parts; backdrop: number; extras: number } | null>(null);
   const titleId = useId();
   const alive = useRef(true);
+  const sourceVisibility = useRef(source.root.style.visibility);
   const toast = useToast();
   const textFile = isTextAttachment(file);
+  const format = previewFormat(file);
+  const documentFile = ['pdf', 'docx', 'xlsx', 'pptx'].includes(format);
+  const imageFile = format === 'image';
+  const imageOnly = imageFile && Boolean(source.imageOnly);
   const close = useCallback(() => {
     if (!interrupted.current) {
       const parts: Parts = {};
@@ -131,29 +149,36 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
         if (node?.isConnected) parts[key] = measure(node);
       }
       interrupted.current = { parts, backdrop: Number(gsap.getProperty(backdrop.current, 'opacity')),
-        extras: Number(gsap.getProperty(dialog.current?.querySelector('[data-preview-extra]') || dialog.current, 'opacity')) };
+        extras: Number(gsap.getProperty(frame.current?.querySelector('[data-preview-extra]') || dialog.current, 'opacity')) };
     }
     setClosing(true);
   }, []);
-  const finish = useCallback(() => onDismiss(request.id), [onDismiss, request.id]);
+  const finish = useCallback(() => {
+    // Restore the source and remove the overlay in one commit. Leaving this to a
+    // passive effect lets Flip's revert briefly reveal the full-size preview.
+    source.root.style.visibility = sourceVisibility.current;
+    if (layer.current) layer.current.style.visibility = 'hidden';
+    flushSync(() => onDismiss(request.id));
+  }, [onDismiss, request.id, source]);
   useBlockingLayer(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     alive.current = true;
     const visibility = source.root.style.visibility;
+    sourceVisibility.current = visibility;
     source.root.style.visibility = 'hidden';
-    dialog.current?.focus({ preventScroll: true });
+    frame.current?.focus({ preventScroll: true });
     const observer = new MutationObserver(() => { if (!source.root.isConnected) close(); });
     const appRoot = document.getElementById('root');
     if (appRoot) observer.observe(appRoot, { childList: true, subtree: true });
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const nodes = Array.from(dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], video[controls], [tabindex="0"]'));
+      if (event.key !== 'Tab' || !frame.current) return;
+      const nodes = Array.from(frame.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], video[controls], [tabindex="0"]'));
       const first = nodes[0], last = nodes[nodes.length - 1];
-      if (!first) { event.preventDefault(); dialog.current.focus(); }
-      else if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus(); }
+      if (!first) { event.preventDefault(); frame.current.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || document.activeElement === frame.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === frame.current)) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', keydown, true);
     return () => {
@@ -161,7 +186,7 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
       observer.disconnect();
       document.removeEventListener('keydown', keydown, true);
       source.root.style.visibility = visibility;
-      if (request.focus?.isConnected) request.focus.focus({ preventScroll: true });
+      queueMicrotask(() => { if (request.focus?.isConnected) request.focus.focus({ preventScroll: true }); });
     };
   }, [close, request, source]);
 
@@ -185,7 +210,7 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
     const origin = closing ? (visibleSource(source.root) ? capture(source, request.ratio) : {}) : request.parts;
     const ghosts: HTMLElement[] = [];
     const hidden: HTMLElement[] = [];
-    const extras: HTMLElement[] = Array.from(card.querySelectorAll<HTMLElement>('[data-preview-extra]'));
+    const extras: HTMLElement[] = Array.from(frame.current!.querySelectorAll<HTMLElement>('[data-preview-extra]'));
     const pairs: { key: keyof Parts; ghost: HTMLElement; start: Part; end: Part }[] = [];
     // Read both layouts before writing any animation styles. Every ghost is a sibling,
     // so the image and filename never inherit the card's scale.
@@ -212,13 +237,11 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
       if (target && !hidden.includes(target)) extras.push(target);
     }
     const timeline = gsap.timeline({ defaults: { ease: 'power3.inOut' }, onComplete: contextSafe(() => {
+      if (closing) { finish(); return; }
+      gsap.set(card, { clearProps: 'backgroundColor,borderColor,boxShadow,opacity,transform' });
+      gsap.set([...hidden, ...extras], { clearProps: 'visibility,opacity' });
       ghosts.forEach(ghost => ghost.remove());
       movingParts.current = {};
-      if (closing) finish();
-      else {
-        gsap.set(card, { clearProps: 'backgroundColor,borderColor,boxShadow,opacity,transform' });
-        gsap.set([...hidden, ...extras], { clearProps: 'visibility,opacity' });
-      }
     }) });
     motion.current = timeline;
     const place = (ghost: HTMLElement, part: Part) => {
@@ -260,40 +283,58 @@ function PreviewCard({ request, onDismiss }: { request: PreviewRequest; onDismis
     } catch { if (alive.current) toast({ tone: 'error', message: '下载失败，请重试' }); }
     finally { if (alive.current) setDownloading(false); }
   };
-  const media = file.type === 'image' || file.type === 'video';
+  const media = imageFile || file.type === 'video';
+  const toolbar = <div className={`${styles.toolbar} ${imageOnly ? styles.imageToolbar : ''}`} data-preview-extra>
+    <button type="button" className={styles.toolbarButton} disabled={downloading || closing}
+      aria-label={downloading ? '下载中' : '下载文件'} title={downloading ? '下载中…' : '下载文件'} onClick={() => void download()}>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5" /></svg>
+    </button>
+    <button type="button" className={styles.toolbarButton} aria-label="关闭预览" title="关闭预览" onClick={close}>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+    </button>
+  </div>;
+  const previewImage = <img ref={image} src={request.imageUrl || file.url} alt={imageOnly ? '图片预览' : file.filename}
+    className={imageOnly ? styles.imageOnlyPicture : styles.media}
+    onLoad={event => { setImageFailed(false); if (imageOnly && event.currentTarget.naturalHeight) setImageRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight); }}
+    onError={event => {
+      if (event.currentTarget.src.includes('alchatfiles.fiacloud.top')) handlePreviewImageError(event);
+      else { motion.current?.progress(1); setImageFailed(true); }
+    }} />;
   const layerRoot = document.getElementById('layer-root');
   if (!layerRoot) return null;
   return createPortal(<div ref={layer} className={styles.layer}>
     <button ref={backdrop} type="button" className={styles.backdrop} aria-label="关闭文件预览" tabIndex={-1} onClick={close} />
     <div ref={shellFlight} className={`${styles.flight} ${styles.shellFlight}`} aria-hidden="true" />
-    <div ref={dialog} className={`${styles.dialog} ${media ? styles.mediaDialog : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-      <header className={styles.header}>
-        {file.type !== 'image' && <span ref={icon} className={styles.fileIcon}>{file.type === 'video' ? <VideoIcon size={28} /> : '▤'}</span>}
-        <h2 ref={filename} id={titleId} className={styles.title} title={file.filename}>{file.filename}</h2>
-        <button type="button" className={styles.close} aria-label="关闭预览" data-preview-extra onClick={close}>×</button>
-      </header>
-      <div className={styles.body}>
-        {file.type === 'image' && <img ref={image} src={request.imageUrl || file.url} alt={file.filename} className={styles.media}
-          onLoad={() => setImageFailed(false)} onError={event => {
-            if (event.currentTarget.src.includes('alchatfiles.fiacloud.top')) handlePreviewImageError(event);
-            else { motion.current?.progress(1); setImageFailed(true); }
-          }} />}
-        {imageFailed && <p className={styles.error} role="status" data-preview-extra>图片加载失败，请重试或下载原文件。</p>}
-        {file.type === 'video' && <video className={styles.media} src={file.url} controls data-preview-extra />}
-        <dl className={styles.metadata} data-preview-extra>
-          <div><dt>格式</dt><dd>{file.mime_type === 'application/octet-stream' ? file.filename.split('.').pop()?.toUpperCase() || '未知' : file.mime_type}</dd></div>
-          <div><dt>大小</dt><dd>{fileSize(file.size)}</dd></div>
-        </dl>
-        {textFile && <section className={styles.textSection} aria-label="原文预览" data-preview-extra>
-          <strong>原文预览</strong>
-          <div className={styles.textBody}>{previewError ? <div role="status"><p>{previewError}</p><button type="button" className={layerStyles.secondaryButton} onClick={() => setAttempt(value => value + 1)}>重新加载</button></div>
-            : rawText === null ? <p role="status">加载原文中…</p> : <pre className={styles.rawText} tabIndex={0}>{rawText}</pre>}</div>
-        </section>}
+    <div ref={frame} className={`${styles.frame} ${imageOnly ? styles.imageFrame : textFile || documentFile ? styles.textFrame : media ? styles.mediaFrame : ''}`}
+      style={imageOnly ? { '--preview-image-ratio': imageRatio } as CSSProperties : undefined}
+      role="dialog" aria-modal="true" aria-labelledby={imageOnly ? undefined : titleId} aria-label={imageOnly ? '图片预览' : undefined} tabIndex={-1}>
+      {imageOnly && toolbar}
+      <div ref={dialog} className={`${styles.dialog} ${imageOnly ? styles.imageSurface : ''}`}>
+        {imageOnly ? <>
+          {previewImage}
+          {imageFailed && <p className={styles.imageError} role="status" data-preview-extra>图片加载失败，请下载原文件。</p>}
+        </> : <>
+          <header className={styles.header}>
+            {!imageFile && <span ref={icon} className={styles.fileIcon}>{file.type === 'video' ? <VideoIcon size={28} /> : '▤'}</span>}
+            <h2 ref={filename} id={titleId} className={styles.title} title={file.filename}>{file.filename}</h2>
+            {toolbar}
+          </header>
+          <div className={styles.body}>
+            {imageFile && previewImage}
+            {imageFailed && <p className={styles.error} role="status" data-preview-extra>图片加载失败，请重试或下载原文件。</p>}
+            {file.type === 'video' && <video className={styles.media} src={file.url} controls data-preview-extra />}
+            <dl className={styles.metadata} data-preview-extra>
+              <div><dt>格式</dt><dd>{file.mime_type === 'application/octet-stream' ? file.filename.split('.').pop()?.toUpperCase() || '未知' : file.mime_type}</dd></div>
+              <div><dt>大小</dt><dd>{fileSize(file.size)}</dd></div>
+            </dl>
+            {textFile && <section className={styles.textSection} aria-label="文本预览" data-preview-extra>
+              <div className={styles.textBody}>{previewError ? <div role="status"><p>{previewError}</p><button type="button" className={layerStyles.secondaryButton} onClick={() => setAttempt(value => value + 1)}>重新加载</button></div>
+                : rawText === null ? <p role="status">正在加载文本…</p> : <PreviewBoundary resetKey={`${file.url}:${attempt}`} onRetry={() => setAttempt(value => value + 1)}><TextFilePreview file={file} text={rawText} /></PreviewBoundary>}</div>
+            </section>}
+            {documentFile && <section className={`${styles.textSection} ${styles.textBody}`} aria-label="文档预览" data-preview-extra><PreviewBoundary resetKey={`${file.url}:${attempt}`} onRetry={() => setAttempt(value => value + 1)}><Suspense fallback={<p>正在加载文档组件…</p>}><DocumentPreview key={attempt} file={file} closing={closing} /></Suspense></PreviewBoundary></section>}
+          </div>
+        </>}
       </div>
-      <footer className={styles.actions} data-preview-extra>
-        <button type="button" className={layerStyles.secondaryButton} onClick={close}>关闭</button>
-        <button type="button" className={layerStyles.primaryButton} disabled={downloading || closing} onClick={() => void download()}>{downloading ? '下载中…' : '下载文件'}</button>
-      </footer>
     </div>
     <div ref={flight} className={styles.flight} aria-hidden="true" />
   </div>, layerRoot);

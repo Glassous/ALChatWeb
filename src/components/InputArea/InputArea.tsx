@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import './InputArea.css';
-import { attachmentFor, documentFile, type AttachmentDescriptor } from '../../services/attachments';
+import { attachmentFor, documentFile, textFile, textFileAccept, isTextAttachment, type AttachmentDescriptor } from '../../services/attachments';
 import { apiClient } from '../../services/api';
 import { AnchoredPopover, useToast } from '../LayerSystem/LayerSystem';
 import { AttachmentCard } from '../FilePreview/AttachmentCard';
@@ -116,15 +116,15 @@ export function InputArea({
   }, [contextKey]);
   useEffect(() => {
     if (isAgent) return;
-    setAttachments(previous => previous.filter(item => item.type !== 'document'));
+    setAttachments(previous => previous.filter(item => item.type !== 'document' && (!isTextAttachment(item) || (item.size || 0) <= 1024 * 1024)));
     setSelectedAttachmentType(null);
   }, [isAgent]);
   const handleModeSelect = (selected: ComposerMode) => {
     if (disabled || isUploading || uploadingNow.current || isTemp) return;
     const target = selected === composerMode ? 'daily' : selected;
     if (isAgent && target !== 'agent') {
-      if (attachments.some(item => item.type === 'document')) showToast({ tone: 'info', message: '已移除文档附件，文档仅限 Agent 模式' });
-      setAttachments(previous => previous.filter(item => item.type !== 'document'));
+      if (attachments.some(item => item.type === 'document' || (isTextAttachment(item) && (item.size || 0) > 1024 * 1024))) showToast({ tone: 'info', message: '已移除目标模式不支持或超过 1MB 的附件' });
+      setAttachments(previous => previous.filter(item => item.type !== 'document' && (!isTextAttachment(item) || (item.size || 0) <= 1024 * 1024)));
     }
     setComposerMode(target);
     setIsSearch(false);
@@ -134,6 +134,7 @@ export function InputArea({
     refDescriptor.current = null;
     setRefImageUrl(null);
     if (target === 'image' || target === 'hermes') {
+      if (attachments.length) showToast({ tone: 'info', message: target === 'hermes' ? '已移除附件：Hermes 模式仅支持文本输入' : '已移除附件：图片生成模式仅支持参考图片' });
       setAttachments([]);
     }
   };
@@ -310,7 +311,7 @@ export function InputArea({
   const handleUploadClick = () => { if (!isTemp) fileInputRef.current?.click(); };
   const handleAttachmentClick = () => { if (!isTemp) setShowAttachmentMenu(value => !value); };
   const handleAttachmentTypeSelect = (type: 'image' | 'video' | 'document') => {
-    if (!isAgent && attachments.some(item => item.type !== type)) {
+    if (!isAgent && type !== 'document' && attachments.some(item => !isTextAttachment(item) && item.type !== type)) {
       showToast({ tone: 'warning', message: '请先移除不同类型的附件' }); return;
     }
     setSelectedAttachmentType(type); setShowAttachmentMenu(false);
@@ -318,17 +319,21 @@ export function InputArea({
   };
   const uploadFiles = async (files: File[], reference = false) => {
     if (isTemp || disabled || uploadingNow.current || !files.length) return;
-    const kinds = files.map(file => documentFile(file.name) ? 'document' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file');
-    if (kinds.includes('file') || (!isAgent && kinds.includes('document'))) {
-      showToast({ tone: 'warning', message: isAgent ? '仅支持图片、视频、PDF、DOCX、XLSX' : '普通模式仅支持图片或视频' }); return;
+    const kinds = files.map(file => textFile(file.name) ? 'file' : documentFile(file.name) ? 'document' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file');
+    if (files.some((file, index) => kinds[index] === 'file' && !textFile(file.name)) || (!isAgent && kinds.includes('document'))) {
+      showToast({ tone: 'warning', message: isAgent ? '仅支持图片、视频、纯文本、PDF、DOCX、XLSX、PPTX' : '普通模式仅支持图片、视频或纯文本附件' }); return;
     }
     if (files.some((file, index) => kinds[index] === 'document' && file.size > 5 * 1024 * 1024)) {
       showToast({ tone: 'warning', message: '每个文档不能超过 5 MiB' }); return;
     }
+    if (files.some((file, index) => kinds[index] === 'file' && file.size > (isAgent ? 5 : 1) * 1024 * 1024)) {
+      showToast({ tone: 'warning', message: isAgent ? '每个文本附件不能超过 5 MiB' : '每个文本附件不能超过 1MB' }); return;
+    }
+    if (isHermes) { showToast({ tone: 'warning', message: 'Hermes 模式仅支持文本输入' }); return; }
     if ((isImageMode || reference) && (files.length !== 1 || kinds[0] !== 'image' || refImageUrl)) {
       showToast({ tone: 'warning', message: '图片生成模式只能上传一张图片' }); return;
     }
-    if (!isAgent && !reference && new Set([...attachments.map(item => item.type), ...kinds]).size > 1) {
+    if (!isAgent && !reference && new Set([...attachments.filter(item => !isTextAttachment(item)).map(item => item.type), ...kinds.filter(kind => kind !== 'file')]).size > 1) {
       showToast({ tone: 'warning', message: '普通模式不能混合图片和视频' }); return;
     }
     const ticket = ++uploadTicket.current;
@@ -336,7 +341,7 @@ export function InputArea({
     for (const file of files) {
       if (ticket !== uploadTicket.current) break;
       try {
-        const item = await apiClient.uploadAttachment(file, isAgent);
+        const item = await apiClient.uploadAttachment(file, isAgent ? 'agent' : mode === 'daily' && isSearch ? 'search' : mode);
         if (ticket !== uploadTicket.current) { void apiClient.deleteReferenceImage(item.url).catch(() => {}); break; }
         if (reference || isImageMode) { refDescriptor.current = item; setRefImageUrl(item.url); }
         else setAttachments(previous => [...previous, item]);
@@ -642,17 +647,17 @@ export function InputArea({
                               <VideoIcon size={20} />
                               <span>视频</span>
                             </div>
-                            {isAgent && <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('document')}>
+                            <div className="attachment-menu-item" onClick={() => handleAttachmentTypeSelect('document')}>
                               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg>
-                              <span>附件</span>
-                            </div>}
+                              <span>{isAgent ? '文件 · 5 MiB' : '纯文本 · 1MB'}</span>
+                            </div>
                           </motion.div>
                       </AnchoredPopover>
                       <input 
                         type="file"
                         ref={attachmentInputRef}
                         onChange={handleAttachmentFileChange}
-                        accept={selectedAttachmentType === 'document' ? '.pdf,.docx,.xlsx' : selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
+                        accept={selectedAttachmentType === 'document' ? (isAgent ? `.pdf,.docx,.xlsx,.pptx,${textFileAccept}` : textFileAccept) : selectedAttachmentType === 'image' ? 'image/*' : 'video/*'}
                         multiple
                         style={{ display: 'none' }}
                       />

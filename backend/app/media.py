@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 import zipfile
+import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, quote, unquote
 
 from .config import Settings
@@ -14,9 +15,63 @@ from .config import Settings
 
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
+MAX_CHAT_TEXT_BYTES = 1024 * 1024
 MAX_TRANSFER_BYTES = 10 * 1024 * 1024
-DOCUMENT_MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
-TEXT_EXTENSIONS = {"txt", "md", "markdown", "csv", "tsv", "log", "json", "jsonl", "ndjson", "yaml", "yml", "xml", "ini", "cfg", "conf", "toml", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "sh", "bat", "ps1", "sql", "r", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "tex"}
+DOCUMENT_MIMES = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}
+TEXT_EXTENSIONS = {"txt", "md", "markdown", "csv", "tsv", "log", "json", "jsonl", "ndjson", "yaml", "yml", "xml", "ini", "cfg", "conf", "toml", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "sh", "bat", "ps1", "sql", "r", "java", "kt", "kts", "c", "h", "cpp", "hpp", "rs", "go", "tex", "mmd", "mermaid", "svg"}
+
+
+def is_text_file(filename: str, mime: str = "") -> bool:
+    path = urlparse(filename).path if filename.startswith(("http://", "https://")) else filename
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    return ext in TEXT_EXTENSIONS
+
+
+def text_encoding(content: bytes, mime: str = "") -> str:
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return "utf-16"
+    if content.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    charset = re.search(r'charset\s*=\s*[\"\x27]?([^;\"\x27\s]+)', mime, re.I)
+    if charset:
+        return charset.group(1)
+    # XML/HTML may declare their encoding in the ASCII-compatible header.
+    prefix = content[:8192]
+    xml = re.match(br'\s*<\?xml\b[^>]*\bencoding\s*=\s*["\x27]([^"\x27]+)', prefix, re.I)
+    if xml:
+        return xml.group(1).decode("ascii", errors="strict")
+    if mime.split(";")[0].strip().lower() == "text/html":
+        meta = re.search(br'<meta\b[^>]*\bcharset\s*=\s*["\x27]?([a-z0-9._-]+)', prefix, re.I)
+        if meta:
+            return meta.group(1).decode("ascii")
+    return "utf-8"
+
+
+def decode_text(content: bytes, mime: str = "") -> str:
+    try:
+        text = content.decode(text_encoding(content, mime))
+    except (UnicodeError, LookupError) as exc:
+        raise ValueError("文件无法按声明的文本编码读取，请使用 UTF-8 或 UTF-16 文本") from exc
+    if "\x00" in text or not text:
+        raise ValueError("文件为空或包含二进制内容")
+    return text
+
+
+def validate_svg(text: str) -> None:
+    if re.search(r"<!\s*(DOCTYPE|ENTITY)\b", text, re.I):
+        raise ValueError("SVG 不支持 DTD 或实体声明")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise ValueError("SVG XML 内容无效") from exc
+    if root.tag not in ("svg", "{http://www.w3.org/2000/svg}svg"):
+        raise ValueError("SVG 文件必须包含 svg 根节点")
+
+
+def text_mime(filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower()
+    # OS MIME tables may classify .ts source as video/mp2t; use text-specific MIME.
+    return {"md": "text/markdown", "markdown": "text/markdown", "csv": "text/csv", "tsv": "text/tab-separated-values", "json": "application/json", "jsonl": "application/x-ndjson", "ndjson": "application/x-ndjson", "xml": "application/xml", "html": "text/html", "htm": "text/html", "svg": "image/svg+xml", "mmd": "text/vnd.mermaid", "mermaid": "text/vnd.mermaid", "css": "text/css", "js": "text/javascript", "mjs": "text/javascript", "cjs": "text/javascript", "ts": "application/typescript", "tsx": "text/tsx", "jsx": "text/jsx", "yaml": "application/yaml", "yml": "application/yaml"}.get(ext, "text/plain") + "; charset=utf-8"
 
 
 def text_file_metadata(filename: str, content: str) -> tuple[str, bytes]:
@@ -27,8 +82,9 @@ def text_file_metadata(filename: str, content: str) -> tuple[str, bytes]:
     data = content.encode("utf-8")
     if len(data) > MAX_TRANSFER_BYTES:
         raise ValueError("创建的文本文件不能超过 10 MiB")
-    mime = {"md": "text/markdown", "markdown": "text/markdown", "csv": "text/csv", "tsv": "text/tab-separated-values", "json": "application/json", "xml": "application/xml"}.get(filename.rsplit(".", 1)[-1].lower(), "text/plain")
-    return mime + "; charset=utf-8", data
+    if filename.lower().endswith(".svg"):
+        validate_svg(content)
+    return text_mime(filename), data
 MEDIA_TAG = re.compile(r'<(image|file|video)\s+src="([^"]+)">', re.I)
 
 
@@ -37,13 +93,14 @@ def clean_filename(value: str) -> str:
 
 
 def is_document(filename: str, mime: str = "") -> bool:
-    return os.path.splitext(urlparse(filename).path)[1].lower() in DOCUMENT_MIMES or mime in DOCUMENT_MIMES.values()
+    path = urlparse(filename).path if filename.startswith(("http://", "https://")) else filename
+    return os.path.splitext(path)[1].lower() in DOCUMENT_MIMES or mime.split(";")[0].strip() in DOCUMENT_MIMES.values()
 
 
 def document_metadata(content: bytes, filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()
     if ext not in DOCUMENT_MIMES:
-        raise ValueError("仅支持 PDF、DOCX、XLSX 文档")
+        raise ValueError("仅支持 PDF、DOCX、XLSX、PPTX 文档")
     if not content or len(content) > MAX_DOCUMENT_BYTES:
         raise ValueError("文档大小必须大于零且不超过 5 MiB")
     if ext == ".pdf":
@@ -53,7 +110,7 @@ def document_metadata(content: bytes, filename: str) -> str:
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as archive:
                 entries = archive.infolist()
-                required = "word/document.xml" if ext == ".docx" else "xl/workbook.xml"
+                required = {".docx": "word/document.xml", ".xlsx": "xl/workbook.xml", ".pptx": "ppt/presentation.xml"}[ext]
                 names = {entry.filename for entry in entries}
                 if not {"[Content_Types].xml", required} <= names or len(entries) > 2000 or sum(e.file_size for e in entries) > 50 * 1024 * 1024 or any(e.flag_bits & 1 or "vbaProject.bin" in e.filename for e in entries):
                     raise ValueError("Office 文档结构无效、加密或超过限制")
@@ -62,7 +119,7 @@ def document_metadata(content: bytes, filename: str) -> str:
     return DOCUMENT_MIMES[ext]
 
 
-def validate_message_attachments(cfg, content: str, supplied=None, agent=False) -> list[dict]:
+def validate_message_attachments(cfg, content: str, supplied=None, agent=False, allow_text=False) -> list[dict]:
     """The object HEAD, not client metadata, decides type and size."""
     from .core import fail
     if supplied is not None and (not isinstance(supplied, list) or len(supplied) > 100 or any(not isinstance(item, dict) or not isinstance(item.get("url"), str) for item in supplied)):
@@ -86,14 +143,23 @@ def validate_message_attachments(cfg, content: str, supplied=None, agent=False) 
             if info["size"] > MAX_DOCUMENT_BYTES:
                 fail(400, "文档大小不能超过 5 MiB")
         kind = attachment_type(url, "file", mime)
-        if not agent and kind not in ("image", "video"):
-            fail(400, "普通模式仅支持图片或视频附件")
+        text = is_text_file(filename, mime)
+        if text and info["size"] > (MAX_DOCUMENT_BYTES if agent else MAX_CHAT_TEXT_BYTES):
+            fail(400, "文本附件不能超过 5 MiB" if agent else "普通模式文本附件不能超过 1MB")
+        if not agent and kind not in ("image", "video") and not (allow_text and text):
+            fail(400, "当前模式不支持此附件类型")
         if not any(item["url"] == url for item in result):
             result.append({"url": url, "filename": filename, "mime_type": mime, "size": info["size"], "type": kind})
+    if not agent and {item["type"] for item in result}.issuperset({"image", "video"}):
+        fail(400, "普通模式不能混合图片和视频")
     return result
 
 
 def attachment_type(url: str, tag: str = "file", mime: str = "") -> str:
+    if mime.split(";")[0] == "image/svg+xml" or urlparse(url).path.lower().endswith(".svg"):
+        return "file"
+    if is_text_file(url, mime):
+        return "file"
     if is_document(url, mime):
         return "document"
     if mime.startswith("video/"):
@@ -143,7 +209,7 @@ class COS:
         key = f"{folder}/{uuid.uuid4()}{os.path.splitext(filename)[1]}" if folder else f"{uuid.uuid4()}{os.path.splitext(filename)[1]}"
         mime = mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
         options = {"ContentType": mime, "Metadata": {"filename": quote(filename, safe="")}}
-        if not mime.startswith(("image/", "video/")) or mime == "image/svg+xml":
+        if not mime.startswith(("image/", "video/")) or mime.split(";")[0].strip() == "image/svg+xml":
             options["ContentDisposition"] = "attachment; filename*=UTF-8''" + quote(filename, safe="")
         self.client.put_object(Bucket=self.cfg.COS_BUCKET, Body=io.BytesIO(content), Key=key, **options)
         return self.url(key)
@@ -163,7 +229,7 @@ class COS:
 
     def metadata(self, url: str) -> dict:
         response = self.client.head_object(Bucket=self.cfg.COS_BUCKET, Key=self.reference_key(url))
-        return {"filename": unquote(str(response.get("x-cos-meta-filename", ""))), "mime_type": str(response.get("Content-Type", "")).split(";")[0].lower(),
+        return {"filename": unquote(str(response.get("x-cos-meta-filename", ""))), "mime_type": str(response.get("Content-Type", "")).lower(),
                 "size": int(response.get("Content-Length", 0))}
 
     def download_reference(self, url: str, limit: int = MAX_IMAGE_BYTES) -> bytes:

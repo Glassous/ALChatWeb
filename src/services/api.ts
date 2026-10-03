@@ -1,6 +1,6 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 import type { AgentBudget, AgentStatus, AgentStep } from './agentApi';
-import { documentFile, type AttachmentDescriptor } from './attachments';
+import { documentFile, textFile, type AttachmentDescriptor } from './attachments';
 
 export interface Conversation {
   id: string;
@@ -626,11 +626,12 @@ class APIClient {
     return url;
   }
 
-  async uploadAttachment(file: File, agent = false): Promise<import('./attachments').AttachmentDescriptor> {
-    if (documentFile(file.name)) {
-      if (!agent) throw new Error('文档附件仅限 Agent 模式');
-      if (file.size > 5 * 1024 * 1024) throw new Error('文档不能超过 5 MiB');
-      const form = new FormData(); form.append('file', file); form.append('mode', 'agent');
+  async uploadAttachment(file: File, mode: 'daily' | 'expert' | 'search' | 'agent' = 'daily'): Promise<import('./attachments').AttachmentDescriptor> {
+    if (documentFile(file.name) || textFile(file.name)) {
+      const agent = mode === 'agent';
+      if (documentFile(file.name) && !agent) throw new Error('文档附件仅限 Agent 模式');
+      if (file.size > (agent ? 5 : 1) * 1024 * 1024) throw new Error(agent ? '文件不能超过 5 MiB' : '纯文本附件不能超过 1MB');
+      const form = new FormData(); form.append('file', file); form.append('mode', mode);
       const headers = new Headers(this.getHeaders()); headers.delete('Content-Type');
       return this.handleResponse(await fetch(`${this.baseURL}/api/chat/upload-reference`, { method: 'POST', headers, body: form }));
     }

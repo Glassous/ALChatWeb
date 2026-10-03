@@ -21,7 +21,7 @@ from pydantic import Field, SecretStr
 
 from .config import Settings
 from .core import count_tokens, validate_public_url
-from .media import COS, MAX_IMAGE_BYTES, MEDIA_TAG, attachment_type, attachment_text, image_file_metadata
+from .media import COS, MAX_IMAGE_BYTES, MEDIA_TAG, attachment_type, attachment_text, image_file_metadata, is_text_file
 
 
 def _wire_messages(messages: list[BaseMessage]) -> list[dict]:
@@ -304,9 +304,20 @@ class AIService:
         return ReasoningChatOpenAI(**options)
 
     def has_multimodal(self, history: list[dict], system_prompt: str = "") -> bool:
-        if system_prompt and ("<file" in system_prompt or "<image" in system_prompt):
-            return True
-        return any("<file" in m.get("content", "") or "<image" in m.get("content", "") for m in history)
+        for message in history:
+            descriptors = {item["url"]: item for item in message.get("attachments", [])}
+            snapshots = message.get("attachment_texts", {})
+            if any(item.get("type") in ("image", "video") and not is_text_file(item.get("filename") or url) and item.get("mime_type", "").split(";")[0].strip() != "image/svg+xml" and url not in snapshots for url, item in descriptors.items()):
+                return True
+            for match in MEDIA_TAG.finditer(message.get("content", "")):
+                url, tag = match.group(2), match.group(1)
+                if url in snapshots:
+                    continue
+                item = descriptors.get(url, {})
+                kind = "file" if is_text_file(item.get("filename") or url) else item.get("type") or attachment_type(url, tag, item.get("mime_type", ""))
+                if kind in ("image", "video") and item.get("mime_type", "").split(";")[0].strip() != "image/svg+xml":
+                    return True
+        return False
 
     def _external_url(self, url: str) -> str:
         cfg = self.cfg
@@ -315,30 +326,45 @@ class AIService:
             return url.replace(domain, f"{cfg.COS_BUCKET}.cos.{cfg.COS_REGION}.myqcloud.com")
         return url
 
-    def _blocks(self, content: str, multimodal: bool = True) -> list[dict]:
+    def _blocks(self, content: str, multimodal: bool = True, text_snapshots: dict | None = None, descriptors: list | None = None) -> list[dict]:
         matches = list(MEDIA_TAG.finditer(content))
-        if not matches:
-            return [{"type": "text", "text": content}] if content else []
         blocks: list[dict] = []
+        text_snapshots = text_snapshots or {}
+        included: set[str] = set()
+        by_url = {item["url"]: item for item in descriptors or []}
         last = 0
         for match in matches:
             if match.start() > last:
                 blocks.append({"type": "text", "text": content[last:match.start()]})
             url, tag = match.group(2), match.group(1)
-            mime = ""
-            if all((self.cfg.COS_SECRET_ID, self.cfg.COS_SECRET_KEY, self.cfg.COS_BUCKET, self.cfg.COS_REGION)):
+            if url in text_snapshots:
+                # Attachments are opaque text blocks: never parse their contents as media tags.
+                if url not in included:
+                    blocks.append({"type": "text", "text": text_snapshots[url]})
+                    included.add(url)
+                last = match.end()
+                continue
+            mime = by_url.get(url, {}).get("mime_type", "")
+            if not mime and all((self.cfg.COS_SECRET_ID, self.cfg.COS_SECRET_KEY, self.cfg.COS_BUCKET, self.cfg.COS_REGION)):
                 try:
                     mime = COS(self.cfg).metadata(url)["mime_type"]
                 except Exception:
                     pass
-            kind = attachment_type(url, tag, mime)
+            descriptor = by_url.get(url, {})
+            kind = "file" if is_text_file(descriptor.get("filename") or url) else descriptor.get("type") or attachment_type(url, tag, mime)
             blocks.append({"type": "text", "text": attachment_text(url, kind)})
             if multimodal and kind == "image":
                 blocks.append({"type": "image_url", "image_url": {"url": self._external_url(url)}})
             last = match.end()
         if content[last:]:
             blocks.append({"type": "text", "text": content[last:]})
+        for url, body in text_snapshots.items():
+            if url not in included:
+                blocks.append({"type": "text", "text": body})
         return blocks
+
+    def message_text(self, message: dict) -> str:
+        return "\n".join(block["text"] for block in self._blocks(message.get("content", ""), False, message.get("attachment_texts"), message.get("attachments")))
 
     def messages(self, history: list[dict], system_prompt: str = "", multimodal: bool = False, leading: tuple[str, ...] = ()) -> list[BaseMessage]:
         output: list[BaseMessage] = [SystemMessage(content=text) for text in leading]
@@ -346,9 +372,9 @@ class AIService:
             output.append(SystemMessage(content=system_prompt))
         for m in history:
             content: Any = m.get("content", "")
-            if multimodal or MEDIA_TAG.search(content):
-                blocks = self._blocks(content, multimodal)
-                content = blocks if multimodal else "".join(block["text"] for block in blocks)
+            if multimodal or MEDIA_TAG.search(content) or m.get("attachment_texts"):
+                blocks = self._blocks(content, multimodal, m.get("attachment_texts"), m.get("attachments"))
+                content = blocks if multimodal or m.get("attachment_texts") else "".join(block["text"] for block in blocks)
             cls = {"system": SystemMessage, "assistant": AIMessage}.get(m.get("role"), HumanMessage)
             output.append(cls(content=content))
         return output
@@ -381,7 +407,7 @@ class AIService:
         prompt = "你是一个搜索专家。根据提供的对话历史，总结出 1-3 个最适合用于联网搜索的联网搜索关键词或短语。要求：1. 关键词应简洁、准确；2. 只输出关键词，用空格分隔；3. 不要包含任何解释或标点符号。"
         model = self.model_for("search", runtime)
         result = model.invoke(self.messages(history[-5:], prompt))
-        return (result.content if isinstance(result.content, str) else "").strip() or history[-1]["content"]
+        return (result.content if isinstance(result.content, str) else "").strip() or self.message_text(history[-1])
 
     @staticmethod
     def result_view(title: str, url: str, snippet: str, site_name: str = "", site_icon: str = "", date_published: str = "") -> dict:

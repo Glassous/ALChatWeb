@@ -15,7 +15,7 @@ from ..ai import HermesResponsesModel, Runtime
 from ..agents import generation_endpoint
 from ..conversations import is_temp
 from ..core import auth, count_tokens, decrypt, deduct, fail, now, rate_limit, reset_credits
-from ..media import COS, image_file_metadata, is_document, document_metadata, clean_filename, attachment_type, validate_message_attachments, MAX_DOCUMENT_BYTES
+from ..media import COS, image_file_metadata, is_document, document_metadata, clean_filename, attachment_type, validate_message_attachments, MAX_DOCUMENT_BYTES, MAX_CHAT_TEXT_BYTES, is_text_file, decode_text, text_encoding, text_mime, validate_svg
 from ..storage import CustomModelConfig, HermesConfig, User
 
 router = APIRouter()
@@ -93,7 +93,7 @@ CLASSIFY_PROMPT = (
 
 def _search_needed(history: list[dict]) -> str:
     try:
-        answer = st().ai.complete([{"role": "system", "content": CLASSIFY_PROMPT}, {"role": "user", "content": history[-1]["content"]}], "daily").upper()
+        answer = st().ai.complete([{"role": "system", "content": CLASSIFY_PROMPT}, history[-1]], "daily").upper()
         return "tavily" if "SEARCH_TAVILY" in answer else "bocha" if "SEARCH" in answer else ""
     except Exception:
         return ""
@@ -152,7 +152,7 @@ def _process_chat(user_id: str, body: dict, user_message: dict, assistant: dict,
             return
         if mode == "daily":
             history = _cleanup_history(history)
-        multimodal = any("<file" in m.get("content", "") or "<image" in m.get("content", "") for m in history)
+        multimodal = st().ai.has_multimodal(history)
         effective = mode
         if mode == "daily" and not multimodal:
             source = _search_needed(history)
@@ -194,7 +194,7 @@ def _process_chat(user_id: str, body: dict, user_message: dict, assistant: dict,
         else:
             st().conversations.update_message(assistant)
         if not used_custom:
-            credits = deduct(st().db, user_id, count_tokens(user_message["content"]), count_tokens(assistant["content"]))
+            credits = deduct(st().db, user_id, count_tokens(st().ai.message_text(user_message)), count_tokens(assistant["content"]))
         if not temporary:
             try:
                 title = st().conversations.auto_title(user_id, cid)
@@ -377,7 +377,16 @@ def chat(body: dict, request: Request):
         fail(400, "conversation_id and message are required")
     if mode not in ("daily", "expert", "search", "hermes"):
         fail(400, "unsupported chat mode")
-    attachments = validate_message_attachments(stt.cfg, message, body.get("attachments"))
+    attachments = validate_message_attachments(stt.cfg, message, body.get("attachments"), allow_text=mode in ("daily", "expert", "search"))
+    text_snapshots = {}
+    try:
+        for item in attachments:
+            if is_text_file(item["filename"], item["mime_type"]):
+                text_snapshots[item["url"]] = decode_text(COS(stt.cfg).download_reference(item["url"], MAX_CHAT_TEXT_BYTES), item["mime_type"])
+    except (ValueError, TimeoutError) as exc:
+        fail(400, str(exc))
+    except Exception:
+        fail(400, "文本附件读取失败，请重新上传")
     temporary = is_temp(cid)
     with stt.db.session() as s:
         user = s.get(User, user_id)
@@ -392,7 +401,7 @@ def chat(body: dict, request: Request):
                 fail(400, "请先在设置中配置并测试 Hermes")
         else:
             reset_credits(stt.db, user)
-        if mode != "hermes" and not _custom(user_id, mode, "<image" in message or "<file" in message) and user.credits <= 0:
+        if mode != "hermes" and not _custom(user_id, mode, any(item["type"] in ("image", "video") for item in attachments)) and user.credits <= 0:
             fail(403, "Insufficient credits", credits=float(user.credits))
     try:
         if temporary:
@@ -400,6 +409,7 @@ def chat(body: dict, request: Request):
                 stt.temp.create(cid)
             user_message = stt.temp.save(cid, "user", message, body.get("parent_message_id") or "")
             user_message["attachments"] = attachments
+            user_message["attachment_texts"] = text_snapshots
             stt.temp.update(user_message)
             assistant = stt.temp.save(cid, "assistant", "", user_message["id"])
         else:
@@ -407,6 +417,7 @@ def chat(body: dict, request: Request):
             assistant = stt.conversations.save(user_id, cid, "assistant", "", user_message["id"])
             user_message["mode"] = assistant["mode"] = mode
             user_message["attachments"] = attachments
+            user_message["attachment_texts"] = text_snapshots
             stt.conversations.update_message(user_message)
             stt.conversations.update_message(assistant)
     except Exception:
@@ -532,11 +543,27 @@ async def upload_reference(request: Request):
     upload = files[0]
     filename = clean_filename(upload.filename or "file")
     doc = is_document(filename, upload.content_type or "")
+    text_file = is_text_file(filename, upload.content_type or "")
     if doc and form.get("mode", "daily") != "agent":
         fail(400, "文档附件仅限 Agent 模式")
-    limit = MAX_DOCUMENT_BYTES if doc else 15 * 1024 * 1024
+    if text_file and form.get("mode", "daily") not in ("agent", "daily", "expert", "search"):
+        fail(400, "当前模式不支持文本附件")
+    limit = (MAX_DOCUMENT_BYTES if form.get("mode") == "agent" else MAX_CHAT_TEXT_BYTES) if text_file else MAX_DOCUMENT_BYTES if doc else 15 * 1024 * 1024
     data = await upload.read(limit + 1)
-    if doc:
+    if text_file:
+        if len(data) > limit:
+            fail(413, "文本附件不能超过 5 MiB" if form.get("mode") == "agent" else "普通模式文本附件不能超过 1MB")
+        try:
+            declared_mime = upload.content_type or text_mime(filename).split(";")[0]
+            text = decode_text(data, declared_mime)
+            if filename.lower().endswith(".svg"):
+                validate_svg(text)
+            # Keep original bytes for download, while snapshots decode to Unicode.
+            encoding = text_encoding(data, declared_mime)
+            mime = text_mime(filename).split(";")[0] + "; charset=" + ("utf-8" if encoding == "utf-8-sig" else encoding)
+        except ValueError as exc:
+            fail(400, str(exc))
+    elif doc:
         try:
             mime = document_metadata(data, filename)
         except ValueError as exc:

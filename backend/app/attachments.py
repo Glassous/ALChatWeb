@@ -125,7 +125,7 @@ class Attachments:
         self.items.setdefault(url, {"url": url, "type": attachment_type(url, tag, mime), "mime_type": mime, **info})
 
     def save(self, content, filename, mime):
-        if mime.startswith("image/") and mime != "image/svg+xml":
+        if mime.startswith("image/") and mime.split(";")[0].strip() != "image/svg+xml":
             try:
                 detected_name, detected_mime = image_file_metadata(content)
                 mime = detected_mime
@@ -136,7 +136,7 @@ class Attachments:
                     mime = "image/gif"
                 elif not content.startswith(b"BM"):
                     mime = "application/octet-stream"
-        url = self.cos().upload(content, filename, "images" if mime.startswith("image/") and mime != "image/svg+xml" else "reference_files", mime)
+        url = self.cos().upload(content, filename, "images" if mime.startswith("image/") and mime.split(";")[0].strip() != "image/svg+xml" else "reference_files", mime)
         self.add(url, "file", mime, filename=clean_filename(filename), size=len(content))
         self.delivered.append(self.items[url])
         self.check()
